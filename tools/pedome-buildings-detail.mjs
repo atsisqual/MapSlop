@@ -142,12 +142,14 @@ export function buildDetailedBuildings(){
     if(!Number.isFinite(min)||!Number.isFinite(max)||max<min)foundationIssues.push('nonfinite_or_reversed_terrain_bounds');
     if(!Number.isFinite(sourceHeight)||sourceHeight<=0)adjustments.push('invalid_input_height_default_3m');
     const src=sample[String(b.id)];
-    const elevated=Number.isFinite(sourceMinH)&&sourceMinH>0;
+    const canopy=!!(b.roofOnly||b.use==='roof');
+    const elevated=canopy||(Number.isFinite(sourceMinH)&&sourceMinH>0);
     if(!Number.isFinite(sourceMinH)||sourceMinH<0)adjustments.push('invalid_min_height_reset');
-    b.minH=elevated?sourceMinH:0;
-    if(elevated){base=min+sourceMinH;if(top<base+.5){top=base+.5;adjustments.push('elevated_part_top_below_min_height_raised_to_minimum_thickness');}}
+    b.minH=elevated?Math.max(0,sourceMinH||0):0;
+    if(canopy&&!b.explicitMinH){const inferred=Math.max(0,top-min-.3);if(Math.abs(b.minH-inferred)>.001)adjustments.push('inferred_canopy_min_height_corrected_to_roof_slab');b.minH=inferred;}
+    if(elevated){base=min+b.minH;if(top<base+.3){top=base+.3;adjustments.push('explicit_elevated_part_top_below_min_height_raised_to_minimum_thickness');}}
     else if(top-base<1.6){top=base+1.6;adjustments.push('procedural_height_extended_to_clear_terrain');}
-    if(src?.policy==='roofer_lod22_candidate'&&!elevated){
+    if(src?.policy==='roofer_lod22_candidate'&&(!elevated||canopy&&!b.explicitMinH)){
       // Verify correspondence to OSM footprint and the approved TIN in the actual runtime frame.
       const xs=b.ring.filter((_,i)=>i%2===0),zs=b.ring.filter((_,i)=>i%2===1);
       const coords=src.roof.concat(src.walls);
@@ -159,16 +161,19 @@ export function buildDetailedBuildings(){
       if(envelopeMax>1.5)failures.push('roof_or_wall_outside_osm_envelope');
       if(!Number.isFinite(clearance)||clearance<.15)failures.push('roof_intersects_local_terrain');
       if(!Number.isFinite(src.wall_min_y)||!Number.isFinite(src.roof_max_y)||src.wall_min_y>src.roof_max_y)failures.push('invalid_wall_roof_order');
-      if(src.wall_min_y>wallGroundMax+2)failures.push('whole_wall_base_above_local_terrain_by_over_2m');
+      if(!canopy&&src.wall_min_y>wallGroundMax+2)failures.push('whole_wall_base_above_local_terrain_by_over_2m');
       Object.assign(measuredChecks,{envelope_excess_m:envelopeMax,roof_clearance_min_m:clearance,roof_ground_min_y:roofGroundMin,roof_ground_max_y:roofGroundMax,wall_ground_min_y:wallGroundMin,wall_ground_max_y:wallGroundMax,source_wall_min_y:src.wall_min_y,source_roof_min_y:src.roof_min_y,source_roof_max_y:src.roof_max_y,old_global_platform_rejection:!(src.roof_min_y>base+1&&src.roof_max_y>max+1&&src.wall_min_y>=min-1&&src.wall_min_y<=base+.15),failures});
       if(!failures.length){
         for(let i=0;i<src.roof.length;i+=9)tri(rm,src.roof.slice(i,i+3),src.roof.slice(i+3,i+6),src.roof.slice(i+6,i+9));
+        if(!canopy){
         for(let i=0;i<src.walls.length;i+=9){const q=clipTerrain([src.walls.slice(i,i+3),src.walls.slice(i+3,i+6),src.walls.slice(i+6,i+9)]);for(let j=1;j<q.length-1;j++)tri(fm,q[0],q[j],q[j+1]);}
         terrainSkirt(b,min,stone);
         measuredChecks.foundation_edges=measuredFoundation(src.walls,min,stone);
+        }
         top=src.roof_max_y;eave=src.roof_min_y;policy='roofer_lod22';
         // There is no single measured horizontal floor; base is the lowest visible wall/support.
-        base=Math.max(min,Math.min(src.wall_min_y,wallGroundMin));
+        base=canopy?Math.max(min,src.roof_min_y-.15):Math.max(min,Math.min(src.wall_min_y,wallGroundMin));
+        if(canopy)b.minH=base-min;
       }else reason=failures.join(';');
     }else if(src?.policy==='roofer_lod22_candidate'){reason='explicit_elevated_part';measuredChecks.failures=[reason];}
     if(policy!=='roofer_lod22'){
@@ -199,8 +204,8 @@ export function buildDetailedBuildings(){
     if(top<base)foundationIssues.push('roof_below_base');
     if(!elevated&&base<min)foundationIssues.push('base_below_foundation_min');
     rows.push({osm_id:b.id,policy,reason,foundation_min_m:min,terrain_max_m:max,habitable_base_m:base,roof_top_m:top,
-      foundation_mode:elevated?'explicit_elevated_part':policy==='roofer_lod22'?'terrain_following_measured':'platform',foundation_issues:foundationIssues,
-      input_height_m:inputHeight,input_min_height_m:inputMinH,adjustments,measured_requested:src?.policy==='roofer_lod22_candidate',measured_checks:measuredChecks});
+      foundation_mode:canopy?'open_canopy':elevated?'explicit_elevated_part':policy==='roofer_lod22'?'terrain_following_measured':'platform',foundation_issues:foundationIssues,
+      input_height_m:inputHeight,input_min_height_m:inputMinH,osm_open_canopy:canopy,explicit_min_height:!!b.explicitMinH,adjustments,measured_requested:src?.policy==='roofer_lod22_candidate',measured_checks:measuredChecks});
   }
   let shell=0;
   for(const [m,pos] of buckets){
