@@ -3,6 +3,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 from road_profiles import BERM
 from road_surface_policy import RAMP,junction_groups,platform_radii
+from road_sections import SectionProfile
 
 
 def parts(g,kinds):
@@ -60,9 +61,15 @@ class Corridor:
         self.strip_vertices,self.strip_heights,self.strip_triangles=self.make_strips()
 
     def make_strips(self):
-        vertices=[];heights=[];triangles=[]
+        vertices=[];heights=[];triangles=[];self.strip_segment=[];self.profiles=[]
+        self.segment_profile=[];self.segment_s0=[];self.segment_s1=[]
+        node_r={i:r for i,r in zip(self.junction_indices,self.junction_radius)}
+        offset=0
         for w in self.ways:
             ids=np.asarray(w["ids"]);p=self.xy[ids];h=self.y[ids];half=w["width_m"]/2
+            stations=np.r_[0.,np.cumsum(np.linalg.norm(np.diff(p,axis=0),axis=1))]
+            profile=SectionProfile(stations,h,[(stations[i],node_r[node],h[i]) for i,node in enumerate(ids) if node in node_r])
+            self.profiles.append(profile)
             d=np.diff(p,axis=0);d/=np.linalg.norm(d,axis=1)[:,None]
             normal=d[:,::-1]*np.array([-1,1])
             mit=np.vstack([normal[0],normal[:-1]+normal[1:],normal[-1]])
@@ -70,15 +77,60 @@ class Corridor:
             for i in range(1,len(mit)-1):
                 if lengths[i]<1e-6:mit[i]=normal[i-1]
                 else:mit[i]/=lengths[i]
-                factor=max(0.5,float(np.dot(mit[i],normal[i-1])))
-                mit[i]/=factor
+                mit[i]/=max(.5,float(np.dot(mit[i],normal[i-1])))
+            # Preserve the original miter at nodes; insert the exact perpendicular
+            # cross-section at bends and inside ramps. Both edges use one station Y.
+            extra=[(stations[i]+stations[i+1])/2 for i in range(len(d))
+                   if np.linalg.norm(mit[i]-normal[i])>.06 or np.linalg.norm(mit[i+1]-normal[i])>.06]
+            ss=sorted(set(profile.knots+extra))
+            ss=[v for i,v in enumerate(ss) if i==0 or v-ss[i-1]>1e-6]
             start=len(vertices)
-            vertices.extend(np.stack([p+half*mit,p-half*mit],axis=1).reshape(-1,2))
-            heights.extend(np.repeat(h,2))
-            for i in range(len(ids)-1):
+            for s in ss:
+                j=min(len(d)-1,max(0,int(np.searchsorted(stations,s,side="right")-1)))
+                u=float(np.clip((s-stations[j])/(stations[j+1]-stations[j]),0,1))
+                centre=p[j]+u*(p[j+1]-p[j])
+                if u<=.5:axis=(1-2*u)*mit[j]+2*u*normal[j]
+                else:axis=(2-2*u)*normal[j]+(2*u-1)*mit[j+1]
+                vertices.extend([centre+half*axis,centre-half*axis])
+                heights.extend([float(profile.at(s))]*2)
+            for i in range(len(ss)-1):
                 a=start+2*i;b=a+2
                 triangles.extend([(a,a+1,b),(b,a+1,b+1)])
+                j=min(len(d)-1,max(0,int(np.searchsorted(stations,(ss[i]+ss[i+1])/2)-1)))
+                self.strip_segment.extend([offset+j]*2)
+            self.segment_profile.extend([profile]*len(d))
+            self.segment_s0.extend(stations[:-1]);self.segment_s1.extend(stations[1:])
+            offset+=len(d)
         return np.asarray(vertices),np.asarray(heights),np.asarray(triangles,dtype=int)
+
+    def strip_breaklines(self):
+        import shapely as sh
+        # Interior diagonals/cross-sections of the same planar surface do not
+        # constrain geometry. Keep all outer edges and all real gradient breaks.
+        edge_faces={}
+        for i,tri in enumerate(self.strip_triangles):
+            for a,b in zip(tri,np.roll(tri,-1)):
+                edge_faces.setdefault(tuple(sorted((int(a),int(b)))),[]).append(i)
+        xyz=np.column_stack((self.strip_vertices,self.strip_heights))
+        tri=xyz[self.strip_triangles]
+        n=np.cross(tri[:,1]-tri[:,0],tri[:,2]-tri[:,0])
+        norm=np.linalg.norm(n,axis=1)
+        n=n/np.maximum(norm[:,None],1e-12)
+        keep=[];removed=0
+        for edge,ids in edge_faces.items():
+            if len(ids)==2 and min(norm[ids])>1e-8:
+                i,j=ids
+                a,b=tri[i,0],tri[j]
+                if np.max(np.abs((b-a)@n[i]))<=.001:
+                    removed+=1;continue
+            keep.append(edge)
+        self.redundant_strip_edges_removed=removed
+        return sh.linestrings(self.strip_vertices[np.asarray(keep,dtype=int)])
+
+    def ramp_at(self,segment,u=.5):
+        s=self.segment_s0[segment]+u*(self.segment_s1[segment]-self.segment_s0[segment])
+        profile=self.segment_profile[segment]
+        return profile.in_ramp(s) or any(a<=s<=b for a,b,_ in profile.cores)
 
     def install_strips(self):
         import shapely as sh
@@ -89,20 +141,35 @@ class Corridor:
         self.group_polys=np.asarray([polygon_union(self.platform_polys[g]) for g in self.groups],dtype=object)
         self.group_y=np.array([self.junction_y[g[0]] for g in self.groups])
         self.parallel_poly=None
+        self.parallel_profile=None
         if self.parallel:
             p=self.parallel
-            chosen=np.array([w in p["ways"] for w in self.way_ids]).repeat(2)
+            chosen=np.array([self.way_ids[k] in p["ways"] for k in self.strip_segment])
             union=polygon_union(self.strip_polys[chosen])
             # Close narrow gaps between the parallel carriageways, not the whole median.
             union=polygon_union([union,sh.buffer(sh.buffer(union,.6),-.6)])
             axis=p["axis"];normal=axis[::-1]*np.array([-1,1])
-            def section(lo,hi):
-                return sh.Polygon([axis*lo+normal*(-2000),axis*hi+normal*(-2000),axis*hi+normal*2000,axis*lo+normal*2000])
-            self.parallel_poly=polygonal(sh.intersection(union,section(p["lo"],p["hi"]),grid_size=.01))
+            # Use the full carriageway union, not a clipped polygon through
+            # individual transverse sections. Include both sets of node anchors.
+            self.parallel_poly=union
+            aa=np.asarray(p["ids"]);bb=np.asarray(p["other_ids"])
+            s=np.asarray(p["stations"]);t=np.asarray(p["other_stations"])
+            xy=np.r_[s,t[(t<s[0])|(t>s[-1])]]
+            yy=np.r_[self.y[aa],self.y[bb[(t<s[0])|(t>s[-1])]]]
+            order=np.argsort(xy);xy,yy=xy[order],yy[order]
+            anchors=[]
+            for i,r in zip(self.junction_indices,self.junction_radius):
+                if i in aa or i in bb:anchors.append((float(self.xy[i]@axis),float(r),float(self.y[i])))
+            # Bound projected radii between independent anchors as in the XY cores.
+            anchors.sort()
+            for j in range(1,len(anchors)):
+                sa,ra,ha=anchors[j-1];sb,rb,hb=anchors[j]
+                if abs(ha-hb)>1e-5 and sb-sa<ra+rb:
+                    anchors[j-1]=(sa,min(ra,.45*(sb-sa)),ha);anchors[j]=(sb,min(rb,.45*(sb-sa)),hb)
+            self.parallel_profile=SectionProfile(xy,yy,anchors)
             self.parallel_lines=[]
-            for s in sorted(set([p["lo"],p["hi"],*p["stations"]])):
-                if p["lo"]<=s<=p["hi"]:
-                    self.parallel_lines.append(sh.intersection(sh.LineString([axis*s-normal*2000,axis*s+normal*2000]),self.parallel_poly,grid_size=.01))
+            for s in self.parallel_profile.knots:
+                self.parallel_lines.append(sh.intersection(sh.LineString([axis*s-normal*2000,axis*s+normal*2000]),self.parallel_poly,grid_size=.01))
 
     def target(self,q,natural,platforms=True):
         out=np.asarray(natural,dtype=float).copy();weights=np.zeros(len(q))
@@ -116,7 +183,8 @@ class Corridor:
             j=np.lexsort((k,d,np.maximum(edge,0)))[0]
             blend=1-np.clip(edge[j]/BERM,0,1)
             blend=blend*blend*(3-2*blend)
-            height=self.y0[k[j]]+u[j]*(self.y1[k[j]]-self.y0[k[j]])
+            seg=k[j]
+            height=float(self.segment_profile[seg].at(self.segment_s0[seg]+u[j]*(self.segment_s1[seg]-self.segment_s0[seg]))) if platforms and hasattr(self,'strip_tree') else self.y0[seg]+u[j]*(self.y1[seg]-self.y0[seg])
             out[i]=natural[i]+blend*(height-natural[i]);weights[i]=blend
         # Blend toward the single common junction elevation inside its footprint.
         if self.junction_tree is not None and (not platforms or not hasattr(self,'group_polys')):
@@ -131,12 +199,10 @@ class Corridor:
             # Paved triangles take precedence over a nearby berm. Barycentric
             # interpolation uses the very same triangles supplied to the CDT.
             points=sh.points(q)
-            # Longitudinal station shared by both edges of each mitered cross-section.
-            centre_ref=q.copy();half_ref=np.zeros(len(q));strip_assigned=np.zeros(len(q),dtype=bool)
             pp,tt=self.strip_tree.query(points,predicate="intersects")
             choices={}
             for i,j in zip(pp,tt):
-                k=j//2
+                k=self.strip_segment[j]
                 u=float(np.clip(np.dot(q[i]-self.a[k],self.d[k])/self.length2[k],0,1))
                 d=float(np.linalg.norm(q[i]-self.a[k]-u*self.d[k]))
                 rank=(d,int(j))
@@ -149,43 +215,21 @@ class Corridor:
                 u=(v[0]*e[1]-v[1]*e[0])/det;w=(d[0]*v[1]-d[1]*v[0])/det
                 out[i]=(1-u-w)*self.strip_heights[ids[0]]+u*self.strip_heights[ids[1]]+w*self.strip_heights[ids[2]]
                 weights[i]=1
-                seg=j//2
-                fraction=float(np.clip(w if j%2==0 else 1-u,0,1))
-                centre_ref[i]=self.a[seg]+fraction*self.d[seg];half_ref[i]=self.half[seg]
-                strip_assigned[i]=True
             if self.parallel_poly is not None:
                 mask=sh.intersects(sh.buffer(self.parallel_poly,.012),points)
-                p=self.parallel
-                out[mask]=np.interp(q[mask]@p["axis"],p["stations"],self.y[p["ids"]])
+                out[mask]=self.parallel_profile.at(q[mask]@self.parallel["axis"])
                 weights[mask]=1
-                # The common cross-section uses the reference lane's centre projected on its axis.
-                station=q[mask]@p['axis'];normal=p['axis'][::-1]*np.array([-1,1])
-                a=np.interp(station,p['stations'],self.xy[p['ids']]@normal)
-                b=np.interp(station,p['other_stations'],self.xy[p['other_ids']]@normal)
-                lower=np.minimum(a-p['half_a'],b-p['half_b']);upper=np.maximum(a+p['half_a'],b+p['half_b'])
-                centre_ref[mask]=station[:,None]*p['axis']+((lower+upper)*.5)[:,None]*normal
-                half_ref[mask]=(upper-lower)*.5
-                strip_assigned[mask]=True
-            # Apply ramps AFTER assigning the road plane. Each merged core has a
-            # single LP height; C1 smoothstep over six metres on the road.
-            # Outside the pavement the natural berm remains 2.5m.
-            road=weights>=1-1e-9
-            centres=sh.points(centre_ref)
-            total=np.zeros(len(q));summed=np.zeros(len(q));maxw=np.zeros(len(q))
+            # Paved sections already contain the full longitudinal ramp, not
+            # independently blended radial weights. Platform disks are flat;
+            # only the unpaved berm blends out from their edges.
+            paved=weights>=1-1e-9
             for poly,h in zip(self.group_polys,self.group_y):
                 dist=sh.distance(poly,points)
-                # Start the 6m ramp only once the full cross-section clears the core.
-                along=np.maximum(0,sh.distance(poly,centres)-half_ref)
-                dist=np.where(strip_assigned,along,dist)
-                reach=np.where(road,RAMP,BERM)
-                v=1-np.clip(dist/reach,0,1);v=v*v*(3-2*v)
-                dominance=v/np.maximum(1-v,1e-9)
-                total+=dominance;summed+=dominance*h;maxw=np.maximum(maxw,v)
-            mask=total>0
-            out[mask]=(1-maxw[mask])*out[mask]+maxw[mask]*summed[mask]/total[mask]
-            weights=np.maximum(weights,maxw)
-            # No averaging with a different ramp inside a core.
-            for poly,h in zip(self.group_polys,self.group_y):
+                blend=(1-np.clip(dist/BERM,0,1))
+                blend=blend*blend*(3-2*blend)
+                mask=(~paved)&(blend>weights)
+                out[mask]=natural[mask]+blend[mask]*(h-natural[mask])
+                weights[mask]=blend[mask]
                 mask=sh.intersects(sh.buffer(poly,.012),points)
                 out[mask]=h;weights[mask]=1
         return out,weights
@@ -283,14 +327,9 @@ def deform(t,corridor):
     # Add node anchors explicitly, and intermediate ramp contours clipped to pavement.
     for p,r in zip(corridor.junction_xy,corridor.junction_radius):
         for d in (np.array([1.,0.]),np.array([0.,1.])):internal.append(sh.LineString([p-d*r*.5,p,p+d*r*.5]))
-    for poly in corridor.group_polys:
-        # Include inner and outer stations in the paved transition; original strip
-        # boundaries already sample cross sections at about 3m.
-        for d in (1.5,3.,4.5,6.,9.):
-            internal.append(sh.intersection(sh.boundary(sh.buffer(poly,d,quad_segs=3)),paved,grid_size=.01))
-    # No redundant axis or cross-section vertices in flat platforms. Strip
-    # triangle boundaries preserve longitudinal planes, with no extra midpoints.
-    strips=lines_only(sh.difference(lines_only(sh.boundary(corridor.strip_polys)),platform_union,grid_size=.01))
+    # Explicit full-width ramp cross-sections replace the redundant radial
+    # contours. Only non-coplanar interior edges are constraints.
+    strips=lines_only(sh.difference(corridor.strip_breaklines(),platform_union,grid_size=.01))
     if corridor.parallel_poly is not None:
         strips=lines_only(sh.difference(strips,corridor.parallel_poly,grid_size=.01))
         internal.append(sh.boundary(corridor.parallel_poly))
@@ -329,6 +368,7 @@ def deform(t,corridor):
     return validate_tin(out),{**proof,"added_vertices":len(cm)-kept,"removed_original_vertices":len(original)-kept,
         "vertices":len(cm),"vertices_changed":int(np.count_nonzero(np.abs(y-heights)>1e-6)),
         "max_vertex_shift_m":float(np.max(np.abs(y-heights))),"unchanged_outside_vertex_count":int(np.count_nonzero(weights==0)),
+        "redundant_strip_edges_removed":corridor.redundant_strip_edges_removed,
         "platform_count":len(corridor.junction_xy),"paved_area_m2":float(paved.area),"berm_envelope_area_m2":float(outer.area)}
 
 def check_surface(t,original,corridor,legacy=False):
@@ -352,7 +392,7 @@ def check_surface(t,original,corridor,legacy=False):
         if not legacy and len(corridor.group_polys):
             import shapely as sh
             platform_edge_distance=float(min(sh.distance(poly,sh.Point(*p)) for poly in corridor.group_polys))
-        in_ramp=platform_edge_distance is not None and 0<platform_edge_distance<=RAMP+half
+        in_ramp=not legacy and corridor.ramp_at(i) and platform_edge_distance is not None and platform_edge_distance>0
         inside_core=platform_edge_distance==0
         target=float(corridor.target(np.array([p]),np.array([old(*p)]))[0][0])
         target_errors.append(abs(s(*p)-target))
