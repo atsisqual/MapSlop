@@ -35,7 +35,40 @@ def road_width(t):
     lanes=lanes or (1 if t["highway"].endswith("_link") else defaults/(2 if one and defaults>1 else 1))
     return width or max(lanes,1)*3.3+(0 if kind=="service" else 1)
 
-def network(osm):
+def clip_ways(e,bounds):
+    """Clip full OSM ways to the pilot rectangle, preserving real node IDs inside."""
+    if bounds is None:return [e]
+    x0,z0,x1,z1=bounds
+    g=e["geometry"];n=e["nodes"]
+    pieces=[];nodes=[];geom=[]
+    def flush():
+        nonlocal nodes,geom
+        if len(nodes)>=2:pieces.append({**e,"nodes":nodes,"geometry":geom})
+        nodes=[];geom=[]
+    for i in range(len(g)-1):
+        a,b=g[i],g[i+1]
+        p=np.array(to_world(a["lon"],a["lat"]));q=np.array(to_world(b["lon"],b["lat"]))
+        d=q-p;lo=0.;hi=1.
+        for k,(mn,mx) in enumerate(((x0,x1),(z0,z1))):
+            if abs(d[k])<1e-12:
+                if not mn<=p[k]<=mx:lo,hi=1.,0.
+            else:
+                u,v=sorted(((mn-p[k])/d[k],(mx-p[k])/d[k]))
+                lo=max(lo,u);hi=min(hi,v)
+        if hi-lo<1e-9:flush();continue
+        def endpoint(t,node):
+            if abs(t)<1e-9:return n[i],a
+            if abs(t-1)<1e-9:return n[i+1],b
+            return f"clip/{e['id']}/{i}/{node}",{k:a[k]+t*(b[k]-a[k]) for k in ("lon","lat")}
+        na,ga=endpoint(lo,"start");nb,gb=endpoint(hi,"end")
+        if nodes and nodes[-1]!=na:flush()
+        if not nodes:nodes.append(na);geom.append(ga)
+        nodes.append(nb);geom.append(gb)
+        if hi<1-1e-9:flush()
+    flush()
+    return pieces
+
+def network(osm,bounds=None):
     roads=[e for e in osm["elements"] if eligible(e)]
     excluded=[]; valid=[]
     for e in roads:
@@ -45,7 +78,7 @@ def network(osm):
             continue
         if len(e.get("nodes",[]))!=len(e.get("geometry",[])) or len(e["nodes"])<2:
             raise ValueError("Missing geometry/node identities")
-        valid.append(e)
+        valid.extend(clip_ways(e,bounds))
     counts=Counter(n for e in valid for n in set(e["nodes"]))
     # Endpoints and nodes shared between distinct ways get exact common variables.
     shared={n for n,c in counts.items() if c>1}
