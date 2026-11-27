@@ -9,7 +9,19 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  workflow-lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install pinned actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+      - name: Validate all GitHub Actions workflows
+        run: $(go env GOPATH)/bin/actionlint -shellcheck= -pyflakes=
   build-and-browser:
+    needs: workflow-lint
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
