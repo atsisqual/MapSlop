@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   terrain:
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/agent/dgt-terrain-grid' || github.ref == 'refs/heads/agent/tin-monotonic-refinement' || github.ref == 'refs/heads/agent/terrain-manifest-contract'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/agent/dgt-terrain-grid' || github.ref == 'refs/heads/agent/tin-monotonic-refinement' || github.ref == 'refs/heads/agent/terrain-manifest-contract' || github.ref == 'refs/heads/agent/tin-compact-binary'
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     env:
@@ -90,6 +90,10 @@ jobs:
           set -euo pipefail
           test -s /tmp/dgt-terrain/manifest.json
           .venv/bin/python tools/summarize-terrain-validation.py --terrain /tmp/dgt-terrain --browser /tmp/dgt-browser --output /tmp/dgt-terrain/validation.json
+      - name: Require selected TIN under one decimal MB gzip
+        if: success()
+        run: |
+          jq -e '.pass == true and .recommended_default_kind == "tin" and any(.results[]; .kind == "tin" and .pass == true and .compression_pass == true and .gzip_bytes < 1000000)' /tmp/dgt-terrain/validation.json
       - name: Preserve one private evidence draft per branch
         if: always() && inputs.archive
         run: |
@@ -100,6 +104,7 @@ jobs:
             refs/heads/agent/dgt-terrain-grid) tag=geodata-dgt-terrain-agent-dgt-terrain-grid ;;
             refs/heads/agent/tin-monotonic-refinement) tag=geodata-dgt-terrain-agent-tin-monotonic-refinement ;;
             refs/heads/agent/terrain-manifest-contract) tag=geodata-dgt-terrain-agent-terrain-manifest-contract ;;
+            refs/heads/agent/tin-compact-binary) tag=geodata-dgt-terrain-agent-tin-compact-binary ;;
             *) exit 1 ;;
           esac
           mkdir -p /tmp/dgt-evidence
