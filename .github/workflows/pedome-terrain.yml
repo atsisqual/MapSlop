@@ -1,0 +1,52 @@
+name: Pedome real terrain fallback
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/pedome-terrain.yml'
+permissions:
+  contents: read
+jobs:
+  terrain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch pinned upstream
+        run: |
+          git init /tmp/nairobi
+          git -C /tmp/nairobi remote add origin https://github.com/briankariuki/slop-nairobi.git
+          git -C /tmp/nairobi fetch --depth=1 origin 64b8599ae7dd7ba56ffbe68f19cc1423a9e7f903
+          git -C /tmp/nairobi checkout --detach FETCH_HEAD
+      - name: Fetch Copernicus GLO-30 window and build real terrain
+        run: python tools/prepare-pedome.py /tmp/nairobi /tmp/pedome-terrain --osm-json data/pedome/pedome-osm.json
+      - name: Verify non-flat elevation and preserve provenance
+        run: |
+          python - <<'PY'
+          import json, pathlib, math
+          p=pathlib.Path('/tmp/pedome-terrain')
+          d=json.loads((p/'tools/data/dem_glo30.json').read_text())
+          g=json.loads((p/'js/nairobi-geodata.js').read_text().split('export const GEO = ',1)[1].strip().removesuffix(';'))
+          vals=d['values']
+          assert d['nx']*d['ny']==len(vals) and all(math.isfinite(v) for v in vals)
+          assert max(vals)-min(vals)>5, 'Non-flat elevation required'
+          assert g['frame']['flatTerrain'] is False
+          assert 'Copernicus GLO-30' in d['source']
+          report={'source':d['source'],'samples':len(vals),'min_metres':min(vals),'max_metres':max(vals),'resolution_degrees':[d['dx'],d['dy']],'bbox':g['frame'],'attribution':'Produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018, provided under COPERNICUS by the European Union and ESA; all rights reserved. GLO-30 is a DSM, not a survey-grade DTM.'}
+          (p/'terrain-report.json').write_text(json.dumps(report,indent=2,ensure_ascii=False))
+          print(json.dumps(report,indent=2))
+          PY
+      - name: Archive verified terrain data and report
+        uses: actions/upload-artifact@v4
+        with:
+          name: pedome-copernicus-terrain
+          path: |
+            /tmp/pedome-terrain/tools/data/dem_glo30.json
+            /tmp/pedome-terrain/terrain-report.json
+            /tmp/pedome-terrain/build-report.json
