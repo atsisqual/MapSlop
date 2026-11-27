@@ -1,0 +1,70 @@
+name: Archive reconstruction toolchain
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/reconstruction-archive.yml'
+permissions:
+  contents: write
+jobs:
+  archive:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve exact uploaded snapshots from GitHub and verify
+        run: |
+          mkdir -p /tmp/reconstruction
+          python - <<'PY'
+          import json, pathlib, hashlib, subprocess, zipfile
+          p=pathlib.Path('/tmp/reconstruction')
+          src=json.load(open('data/reconstruction-sources.json'))
+          result=[]
+          def download(url,dest):
+              subprocess.run(['curl','-fL','--retry','3','--max-time','300','-o',str(dest),url],check=True)
+          def digest(f):
+              with f.open('rb') as h:return hashlib.file_digest(h,'sha256').hexdigest()
+          for e in src['archives']:
+              f=p/e['name']
+              download('https://github.com/'+e['repo']+'/archive/refs/heads/'+e['branch']+'.zip',f)
+              actual=digest(f)
+              exact=actual==e['sha256']
+              if not exact:
+                  f.unlink()
+                  f=p/(e['repo'].split('/')[-1]+'-'+e['commit']+'.zip')
+                  download('https://github.com/'+e['repo']+'/archive/'+e['commit']+'.zip',f)
+                  actual=digest(f)
+              with zipfile.ZipFile(f) as z:
+                  assert z.comment.decode()==e['commit'], 'Wrong source commit'
+              result.append({**e,'archive_name':f.name,'archive_bytes':f.stat().st_size,'archive_sha256':actual,'exact_user_zip':exact})
+              print(e['repo'],e['commit'],'byte-identical' if exact else 'same commit, different ZIP packaging',flush=True)
+          e=src['binary'];f=p/e['name']
+          download('https://github.com/'+e['repo']+'/releases/download/'+e['tag']+'/'+e['name'],f)
+          assert digest(f)==e['sha256'] and f.stat().st_size==e['bytes']
+          result.append({**e,'archive_name':f.name,'archive_bytes':f.stat().st_size,'archive_sha256':digest(f),'exact_user_zip':True})
+          (p/'manifest.json').write_text(json.dumps(result,indent=2))
+          PY
+      - name: Archive source snapshots and binary
+        run: |
+          set -euo pipefail
+          tag=reconstruction-toolchain-20261127
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Geographic reconstruction toolchain" --notes "Exact source commits identified from user ZIP comments. Byte equality checked where possible; otherwise immutable commit archive, separately hashed. Original licenses preserved. Roofer Linux v1.0.0 binary matches official release and supplied upload. Separate tools, not linked into MapSlop runtime."
+          gh release upload "$tag" /tmp/reconstruction/* --repo "$GITHUB_REPOSITORY"
+      - name: Smoke test official Roofer executable
+        run: |
+          mkdir -p /tmp/roofer
+          tar -xzf /tmp/reconstruction/roofer-linux-x86_64-v1.0.0.tar.gz -C /tmp/roofer
+          exe="$(find /tmp/roofer -type f -name roofer -print -quit)"
+          test -n "$exe"
+          chmod +x "$exe"
+          "$exe" --help > /tmp/reconstruction/roofer-help.txt
+          cat /tmp/reconstruction/roofer-help.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reconstruction-verification
+          path: |
+            /tmp/reconstruction/manifest.json
+            /tmp/reconstruction/roofer-help.txt
