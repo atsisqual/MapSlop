@@ -29,4 +29,4 @@ Ver [catálogo](data-catalog.md), [STATUS](STATUS.md), [evidência histórica](r
 
 ## P1 — terreno DGT
 
-O workflow manual `pedome-dgt-terrain.yml` (apenas main) lê os quatro MDT arquivados, converte e testa num browser local do runner; por omissão preserva resultados numa nova release em rascunho, nunca Pages. Não tem segredos DGT nem redistribui artefactos publicamente. Ver [pipeline](terrain-dgt.md). O CI usa apenas terreno sintético.
+O workflow manual `pedome-dgt-terrain.yml` (main ou branch agent/dgt-terrain-grid autorizado) lê os quatro MDT arquivados, converte e testa num browser local do runner; por omissão preserva resultados numa única release em rascunho por branch, nunca Pages. Não tem segredos DGT nem redistribui artefactos publicamente. Ver [pipeline](terrain-dgt.md). O CI usa apenas terreno sintético.

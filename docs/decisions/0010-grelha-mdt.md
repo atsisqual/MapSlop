@@ -15,3 +15,7 @@ Conversão offline com rasterio, amostragem bilinear no CRS de origem e grelhas 
 
 ## Consequências
 LOD estático não é seleção dinâmica; malha fina aumenta vértices, memória e custo de render. Verificar limites em dispositivo real. Produtos DGT só em rascunho enquanto licenças e autorização estiverem pendentes. Testes de raster sintético são apenas testes do código; dados reais carecem de workflow manual e evidências. Ver [pipeline](../terrain-dgt.md).
+
+## Revisão pré-merge
+
+Comparar 2 m e 5 m com os mesmos quatro TIFF, 100 pontos e tolerância de 1 m. Registar MAE, RMSE, máximo, vértices, bytes/hash, distância e contacto. Limite de contacto 0,5 m, amostrado por frame contra MDT e superfície de colisão. Se 2 m ultrapassar 150 000 vértices, usar 5 m como padrão desde que ambos passem; 2 m mantém-se opção. Um rascunho de derivados por branch. Teste Android físico com FPS e memória pendente. Sem merge até dados reais passarem.

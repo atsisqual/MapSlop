@@ -104,7 +104,7 @@ def compare(t,mosaic,affine,crs,bounds=None):
     ref=sample(mosaic,affine,crs,x,z).ravel()
     actual=np.array([t["base"]+height_at(t,float(a),float(b)) for a,b in zip(x.ravel(),z.ravel())])
     err=np.abs(actual-ref)
-    return {"points":int(err.size),"max_abs_m":float(err.max()),"rmse_m":float(np.sqrt(np.mean(err**2))),
+    return {"points":int(err.size),"max_abs_m":float(err.max()),"mean_abs_m":float(err.mean()),"rmse_m":float(np.sqrt(np.mean(err**2))),
             "within_1m":int(np.count_nonzero(err<=1.0)),
             "point_errors":[{"x":round(float(a),3),"z":round(float(b),3),"abs_error_m":round(float(c),5)}
                             for a,b,c in zip(x.ravel(),z.ravel(),err)]}
@@ -163,7 +163,7 @@ def main():
         write_json(args.output/"manifest.json",report)
         print(json.dumps({"source_count":len(metadata),"source_crs":crs.to_string(),"coverage_pixels":coverage["pixels_checked"],
             "invalid_pixels":coverage["invalid_pixels"],"products":[{k:v for k,v in x.items() if k!="error"} |
-            {"points":x["error"]["points"],"max_abs_m":x["error"]["max_abs_m"],"rmse_m":x["error"]["rmse_m"]} for x in products],
+            {"points":x["error"]["points"],"max_abs_m":x["error"]["max_abs_m"],"mean_abs_m":x["error"]["mean_abs_m"],"rmse_m":x["error"]["rmse_m"]} for x in products],
             "primary_pass":report["primary_pass"]}))
         return 0 if report["primary_pass"] else 1
 

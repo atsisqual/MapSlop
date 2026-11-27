@@ -8,21 +8,21 @@ Implementação inicial em revisão. Nenhum MDT original foi lido nesta sessão;
 
 Entradas: quatro TIFF originais MDT 0,5 m v02, nomes e SHA-256 exatos no [inventário](research/release-assets-20261127.json), rascunho geodata-dgt-pedome-20261127. O script verifica bytes/hash, banda, CRS métrico comum, pixel 0,5 m norte acima, alinhamento e nodata. O envelope projetado do piloto tem de estar integralmente coberto sem pixels inválidos. Não se presume datum vertical sem metadados suficientes.
 
-A grelha amostra o MDT por interpolação bilinear nos centros dos pixels, no referencial métrico do motor (mesmas constantes WGS84 do Nairobi; origem igreja). Alturas relativas à elevação na origem. Produtos estáticos 2, 5 e 10 m (1 m opcional); não há streaming/LOD dinâmico. O motor interpola os mesmos triângulos usados na malha, não a superfície bilinear original. O comparador verifica 100 pontos interiores determinísticos fora dos nós da grelha contra amostras bilineares do original. Aceitação do produto primário: erro máximo nesses pontos ≤1 m (não certifica todos os pontos nem a precisão de levantamento). Se falhar a 2 m, experimentar 1 m manualmente e registar resultado, não relaxar tolerância. O manifesto identifica resolução, CRS, cobertura, hashes, parâmetros, 100 erros por produto e dependências.
+A grelha amostra o MDT por interpolação bilinear nos centros dos pixels, no referencial métrico do motor (mesmas constantes WGS84 do Nairobi; origem igreja). Alturas relativas à elevação na origem. Produtos estáticos 2, 5 e 10 m (1 m opcional); não há streaming/LOD dinâmico. O motor interpola os mesmos triângulos usados na malha, não a superfície bilinear original. O comparador verifica 100 pontos interiores determinísticos fora dos nós da grelha contra amostras bilineares do original. Aceitação do produto primário: erro máximo nesses pontos ≤1 m (não certifica todos os pontos nem a precisão de levantamento). Ambas as grelhas 2 m e 5 m devem passar a tolerância de 1 m; se falhar, não integrar sem corrigir. Se 2 m exceder 150 000 vértices, escolher 5 m por omissão após confirmar ambos os resultados. O manifesto identifica resolução, CRS, cobertura, hashes, parâmetros, 100 erros por produto e dependências.
 
 O adaptador aceita `--terrain-json`, substitui a grelha gerada pelo Nairobi sem aplicar o filtro DSM do Copernicus. Render, ruas e colisões reutilizam o módulo terrain.js. `--flat` e `--dem-json` continuam como antes. O produto de teste sintético é explicitamente identificado no HUD.
 
 ## Execução em cloud
 
-Depois de integrar o PR: Actions → **Pedome DGT terrain private validation** → Run workflow (main). Ou:
+O workflow aceita main ou o branch autorizado do PR #15. GitHub exige que o workflow manual exista na branch predefinida para o registo; antes do merge, pode ser necessário um PR independente mínimo de bootstrap. Não contornar esta regra por push automático. Uma execução testa ambas as resoluções:
 ```sh
-gh workflow run pedome-dgt-terrain.yml --ref main -f primary_cell=2 -f archive=true
+gh workflow run pedome-dgt-terrain.yml --ref agent/dgt-terrain-grid -f archive=true
 ```
-Só execução manual em main com acesso autorizado ao rascunho. Não utiliza segredos DGT nem publica Pages; não envia imagens ou grelhas para artefactos públicos. Se archive=true, guarda grelhas, manifesto e relatório de browser (quando disponíveis) numa **nova release em rascunho** com checksums; o rascunho pode conter resultados de falha, não é prova de validação. Não publicar sem autorização.
+Só execução manual nos branches autorizados com acesso autorizado ao rascunho. Não utiliza segredos DGT nem publica Pages; não envia imagens ou grelhas para artefactos públicos. Se archive=true, guarda grelhas, manifesto e relatório de browser (quando disponíveis) numa **única release em rascunho por branch**, substituindo assets experimentais com checksums; o rascunho pode conter resultados de falha, não é prova de validação. Não publicar sem autorização.
 
 ## Testes
 
-CI de PR, sem dados DGT nem segredos: cinco testes unitários em raster sintético EPSG:3763, verificação dos hashes de entrada, resolução, nodata, grelha e interpolação; build não plano sintético e Chromium conduzindo e verificando proximidade do veículo ao terreno, além do P0 existente. Testes reais a executar via workflow manual. O teste de contacto aceita diferença até 1,5 m entre posição do veículo e a superfície amostrada (sanity check, não prova ausência de todos os problemas de colisão/ruas).
+CI de PR, sem dados DGT nem segredos: cinco testes unitários em raster sintético EPSG:3763, verificação dos hashes de entrada, resolução, nodata, grelha e interpolação; build não plano sintético e Chromium conduzindo e verificando proximidade do veículo ao terreno, além do P0 existente. Testes reais a executar via workflow manual. O teste de contacto aceita diferença até 0,5 m entre posição do veículo e MDT e superfície de colisão, amostrados por frame (sanity check, não prova ausência de todos os problemas de colisão/ruas).
 
 ## Próximos passos
 
