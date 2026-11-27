@@ -27,7 +27,7 @@ jobs:
         run: |
           make setup
           .venv/bin/python -m pip install -r requirements-roads.txt
-          .venv/bin/python -m unittest discover -s tests -p 'test_road_profiles.py' -v
+          .venv/bin/python -m unittest discover -s tests -p 'test_road*.py' -v
       - name: Retrieve fixed original terrain and MDT
         run: |
           set -euo pipefail
