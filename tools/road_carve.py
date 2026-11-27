@@ -10,7 +10,7 @@ class Corridor:
             ids=w["ids"]
             pairs.extend(zip(ids,ids[1:]))
             widths.extend([w["width_m"]/2]*(len(ids)-1))
-            self.way_ids.extend([w["way"]]*(len(ids)-1));self.way_names.extend([w.get("name")]*(len(ids)-1))
+            self.way_ids.extend([w.get("way")]*(len(ids)-1));self.way_names.extend([w.get("name")]*(len(ids)-1))
         pairs=np.asarray(pairs,dtype=int)
         self.a=xy[pairs[:,0]];self.b=xy[pairs[:,1]]
         self.d=self.b-self.a
@@ -134,7 +134,6 @@ def deform(t,corridor):
     old_lines=sh.linestrings(original[old_edges])
     sh.prepare(outer)
     hit=sh.intersects(outer,old_lines)
-    outside_lines=old_lines[~hit]
     clipped=sh.difference(old_lines[hit],outer,grid_size=0.01)
     # Node all potentially crossing lines using a centimetre precision model.
     internal=[sh.boundary(paved),sh.boundary(outer),sh.boundary(domain)]
