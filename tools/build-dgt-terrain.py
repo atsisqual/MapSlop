@@ -222,12 +222,13 @@ def main():
             tin_failure=f'{type(exc).__name__}: {exc}'
             print('TIN candidate failed:',tin_failure,file=sys.stderr)
         primary=next(x for x in products if x.get("cell_m")==args.primary_cell)
-        report={"schema":1,"source_release":RELEASE,"source_attribution":"Direção-Geral do Território (DGT)",
+        report={"schema":2,"source_release":RELEASE,"source_attribution":"Direção-Geral do Território (DGT)",
                 "license_status":"MDT STAC proprietary conflicts with institutional open-data policy; do not publish",
                 "bbox_s_w_n_e":list(BBOX),"origin_lat_lon":list(ORIGIN),"frame":"x east, z south, y up, metres",
                 "source_crs":crs.to_string(),"source_crs_wkt":crs.to_wkt(),"source_resolution_m":0.5,
                 "coverage":coverage,"inputs":metadata,"products":products,"tin_failure":tin_failure,
-                "primary_cell_m":args.primary_cell,"primary_pass":primary["error"]["max_abs_m"]<=0.5 and primary["roads"]["max_abs_m"]<=0.5,
+                "grid_candidate_cell_m":args.primary_cell,"grid_candidate_precision_pass":primary["error"]["max_abs_m"]<=0.5 and primary["roads"]["max_abs_m"]<=0.5,
+                "validation_status":"pending","final_pass":None,"default":None,
                 "command":"python tools/build-dgt-terrain.py --input "+str(args.input)+" --output "+str(args.output)+" --primary-cell "+str(args.primary_cell),
                 "script_sha256":digest(Path(__file__)),
                 "frame_sha256":digest(Path(__file__).with_name("terrain_grid.py")),
@@ -238,7 +239,7 @@ def main():
         print(json.dumps({"source_count":len(metadata),"source_crs":crs.to_string(),"coverage_pixels":coverage["pixels_checked"],
             "invalid_pixels":coverage["invalid_pixels"],"products":[{k:v for k,v in x.items() if k!="error"} |
             {"points":x["error"]["points"],"max_abs_m":x["error"]["max_abs_m"],"mean_abs_m":x["error"]["mean_abs_m"],"rmse_m":x["error"]["rmse_m"]} for x in products],
-            "primary_pass":report["primary_pass"]}))
+            "grid_candidate_precision_pass":report["grid_candidate_precision_pass"],"validation_status":"pending","final_pass":None}))
         return 0  # aggregate validation decides acceptance; generation alone is not a pass
 
 if __name__=="__main__":

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Aggregate private validation metrics, pick near terrain without requiring distant LODs to pass."""
 import argparse
+import hashlib
+import shutil
 import json
 import os
 from pathlib import Path
@@ -72,15 +74,50 @@ def summarize(manifest,browser_dir):
             "recommended_default_cell_m":near["cell_m"] if passed else None,
             "pass":passed}
 
+def finalize_manifest(manifest, report, terrain_dir):
+    """Verify selected bytes, materialize alias, and align manifest with final gate."""
+    if manifest.get("schema") != 2:
+        raise ValueError("Expected conversion manifest schema 2")
+    alias=terrain_dir/"terrain-default.bin"
+    alias.unlink(missing_ok=True)
+    # Clean legacy misnamed binary alias, not an original dataset.
+    (terrain_dir/"terrain-default.json").unlink(missing_ok=True)
+    selected=None
+    if report["pass"]:
+        filename=report["recommended_default_file"]
+        if filename not in ("terrain-tin.bin","terrain-2m.bin"):
+            raise ValueError("Unexpected selected terrain filename")
+        row=next((r for r in report["results"] if r["file"]==filename and r["pass"]),None)
+        if row is None:
+            raise ValueError("Missing passing selected candidate")
+        source=terrain_dir/filename
+        with source.open("rb") as f:
+            digest=hashlib.file_digest(f,"sha256").hexdigest()
+        if digest!=row["sha256"] or source.stat().st_size!=row["raw_bytes"]:
+            raise ValueError("Selected terrain hash/size mismatch")
+        shutil.copyfile(source,alias)
+        selected={"file":filename,"alias":alias.name,"kind":row["kind"],
+                  "cell_m":row["cell_m"],"sha256":digest,"bytes":row["raw_bytes"]}
+    return {**manifest,"validation_status":"passed" if report["pass"] else "failed",
+            "final_pass":report["pass"],"default":selected,
+            "validation_run_id":report["run_id"],"validation_commit":report["tested_commit"]}
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--terrain",type=Path,required=True)
     ap.add_argument("--browser",type=Path,required=True)
     ap.add_argument("--output",type=Path,required=True)
     a=ap.parse_args()
-    report=summarize(json.loads((a.terrain/"manifest.json").read_text()),a.browser)
+    manifest_path=a.terrain/"manifest.json"
+    manifest=json.loads(manifest_path.read_text())
+    report=summarize(manifest,a.browser)
+    final=finalize_manifest(manifest,report,a.terrain)
+    tmp=manifest_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(final,indent=2,ensure_ascii=False,allow_nan=False)+"\n")
+    tmp.replace(manifest_path)
     a.output.write_text(json.dumps(report,indent=2,allow_nan=False)+"\n")
     print(json.dumps(report,allow_nan=False))
+    print(json.dumps({k:final[k] for k in ("grid_candidate_precision_pass","validation_status","final_pass","default")},allow_nan=False))
     return 0 if report["pass"] else 1
 
 if __name__=="__main__":

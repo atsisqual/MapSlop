@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   terrain:
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/agent/dgt-terrain-grid' || github.ref == 'refs/heads/agent/tin-monotonic-refinement'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/agent/dgt-terrain-grid' || github.ref == 'refs/heads/agent/tin-monotonic-refinement' || github.ref == 'refs/heads/agent/terrain-manifest-contract'
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     env:
@@ -90,13 +90,6 @@ jobs:
           set -euo pipefail
           test -s /tmp/dgt-terrain/manifest.json
           .venv/bin/python tools/summarize-terrain-validation.py --terrain /tmp/dgt-terrain --browser /tmp/dgt-browser --output /tmp/dgt-terrain/validation.json
-      - name: Create the selected near-product alias
-        if: success()
-        run: |
-          set -euo pipefail
-          selected="$(jq -r '.recommended_default_file' /tmp/dgt-terrain/validation.json)"
-          case "$selected" in terrain-tin.bin|terrain-2m.bin) ;; *) exit 1 ;; esac
-          cp "/tmp/dgt-terrain/$selected" /tmp/dgt-terrain/terrain-default.json
       - name: Preserve one private evidence draft per branch
         if: always() && inputs.archive
         run: |
@@ -106,6 +99,7 @@ jobs:
             refs/heads/main) tag=geodata-dgt-terrain-main ;;
             refs/heads/agent/dgt-terrain-grid) tag=geodata-dgt-terrain-agent-dgt-terrain-grid ;;
             refs/heads/agent/tin-monotonic-refinement) tag=geodata-dgt-terrain-agent-tin-monotonic-refinement ;;
+            refs/heads/agent/terrain-manifest-contract) tag=geodata-dgt-terrain-agent-terrain-manifest-contract ;;
             *) exit 1 ;;
           esac
           mkdir -p /tmp/dgt-evidence
