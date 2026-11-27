@@ -102,3 +102,10 @@ def build_tin(mosaic,affine,crs,sample,source="DGT MDT 0.5 m",bounds=None):
         x,z=np.meshgrid(x0+np.arange(nx)*0.5,z0+np.arange(j,min(j+64,nz))*0.5)
         a[j:j+64]=sample(mosaic,affine,crs,x,z)-base
     return from_raster(a,x0,z0,base,source,bounds)
+
+def synthetic_tin():
+    import numpy as np
+    x0,z0,nx,nz=grid_shape(0.5)
+    x,z=np.meshgrid(x0+np.arange(nx)*0.5,z0+np.arange(nz)*0.5)
+    h=0.035*x+0.025*z+0.3*np.sin(x/45)*np.cos(z/35)
+    return from_raster(h,x0,z0,100,"SYNTHETIC TEST TERRAIN")

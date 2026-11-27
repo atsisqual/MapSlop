@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Aggregate acceptance metrics without publishing source grids."""
+"""Aggregate private validation metrics, pick near terrain without requiring distant LODs to pass."""
 import argparse
 import json
 import os
@@ -7,33 +7,71 @@ from pathlib import Path
 
 def summarize(manifest,browser_dir):
     rows=[]
-    for cell in (2,5):
-        p=next(x for x in manifest["products"] if x["cell_m"]==cell)
-        f=browser_dir/str(cell)/"browser-report.json"
+    for p in manifest["products"]:
+        kind=p.get("kind","grid")
+        cell=p.get("cell_m")
+        label="tin" if kind=="tin" else str(cell)
+        f=browser_dir/label/"browser-report.json"
         b=json.loads(f.read_text()) if f.is_file() else {}
         t=b.get("terrain",{})
         e=p["error"]
-        row={"cell_m":cell,"vertices":p["vertices"],"json_bytes":p["bytes"],"sha256":p["sha256"],
-             "points":e["points"],"max_abs_m":e["max_abs_m"],"mean_abs_m":e["mean_abs_m"],"rmse_m":e["rmse_m"],
-             "distance_m":b.get("distance"),"contact_m":t.get("contact"),"contact_samples":t.get("contactSamples"),
-             "contact_max_m":t.get("contactDuringDrive",{}).get("max"),
-             "contact_mean_m":t.get("contactDuringDrive",{}).get("mean"),
-             "surface_contact_max_m":t.get("collisionSurfaceDuringDrive",{}).get("max"),
-             "browser_success":b.get("success",False),"multi_touch":b.get("multiTouch",False),"touch_release":b.get("touchRelease",False)}
-        row["pass"]=bool(e["points"]==100 and e["max_abs_m"]<=1 and row["browser_success"]
-                         and t.get("cell")==cell and t.get("source")=="DGT MDT 0.5 m"
-                         and row["distance_m"] is not None and row["distance_m"]>2
-                         and row["contact_samples"] is not None and row["contact_samples"]>=3
-                         and row["contact_max_m"] is not None and row["contact_max_m"]<=0.5
-                         and row["surface_contact_max_m"] is not None and row["surface_contact_max_m"]<=0.5
-                         and row["multi_touch"] and row["touch_release"])
+        road=p["roads"]
+        drive=b.get("longDrive",{})
+        row={"kind":kind,"cell_m":cell,"file":p["file"],"vertices":p["vertices"],"triangles":p["triangles"],
+             "json_bytes":p["bytes"],"sha256":p["sha256"],"points":e["points"],
+             "max_abs_m":e["max_abs_m"],"mean_abs_m":e["mean_abs_m"],"rmse_m":e["rmse_m"],
+             "road_points":road["points"],"road_ways":road["ways"],"road_max_abs_m":road["max_abs_m"],
+             "road_mean_abs_m":road["mean_abs_m"],"road_rmse_m":road["rmse_m"],
+             "library_error_m":p.get("library_error_m"),"target_error_m":p.get("target_error_m"),
+             "distance_m":drive.get("distance_m"),"progress_m":drive.get("progress_m"),
+             "road_name":drive.get("route",{}).get("name"),"road_way":drive.get("route",{}).get("way"),
+             "road_grade_20m":drive.get("road_grade_20m"),"driven_heading_range_degrees":drive.get("driven_heading_range_degrees"),
+             "contact_samples":drive.get("sample_count"),"contact_max_m":drive.get("contact_max_m"),
+             "contact_mean_m":drive.get("contact_mean_m"),"surface_contact_max_m":drive.get("surface_contact_max_m"),
+             "max_cross_track_m":drive.get("max_cross_track_m"),"collisions":drive.get("collisions"),
+             "browser_success":b.get("success",False),"long_drive_success":drive.get("success",False),
+             "multi_touch":b.get("multiTouch",False),"touch_release":b.get("touchRelease",False),
+             "failure":b.get("error") or drive.get("reason")}
+        if kind=="grid" and cell in (5,10):
+            row["role"]="distant_lod"
+            # LOD distance / thresholds still to tune on actual mobile hardware.
+            row["rmse_budget_m"]=0.35 if cell==5 else 0.60
+            row["pass"]=e["points"]==100 and e["rmse_m"]<=row["rmse_budget_m"]
+        else:
+            row["role"]="near_candidate"
+            drive_ok=bool(row["browser_success"] and row["long_drive_success"]
+                and t.get("kind")==kind and (kind=="tin" or t.get("cell")==cell)
+                and t.get("source")=="DGT MDT 0.5 m" and row["multi_touch"] and row["touch_release"]
+                and row["distance_m"] is not None and row["distance_m"]>=100
+                and row["progress_m"] is not None and row["progress_m"]>=100
+                and row["contact_samples"] is not None and row["contact_samples"]>=100
+                and row["contact_max_m"] is not None and row["contact_max_m"]<=0.5
+                and row["surface_contact_max_m"] is not None and row["surface_contact_max_m"]<=0.5
+                and row["road_grade_20m"] is not None and row["road_grade_20m"]>=0.02
+                and row["driven_heading_range_degrees"] is not None and row["driven_heading_range_degrees"]>=15
+                and row["collisions"]==0)
+            if kind=="tin":
+                row["precision_pass"]=bool(e["points"]==100 and e["max_abs_m"]<=0.5
+                    and road["points"]>0 and road["max_abs_m"]<=0.5
+                    and p["vertices"]<150000 and p["library_error_m"]<=0.5)
+            else:
+                # User-approved fallback: preserve 2 m cost and measured road error.
+                row["precision_pass"]=bool(cell==2 and e["points"]==100 and e["max_abs_m"]<=1.0)
+            row["pass"]=row["precision_pass"] and drive_ok
         rows.append(row)
-    passed=all(r["pass"] for r in rows) and manifest["coverage"]["invalid_pixels"]==0
-    return {"schema":1,"tested_commit":os.getenv("GITHUB_SHA"),"branch":os.getenv("GITHUB_REF_NAME"),
+    near=next((r for r in rows if r["kind"]=="tin" and r["pass"]),None)
+    if near is None:
+        near=next((r for r in rows if r["kind"]=="grid" and r["cell_m"]==2 and r["pass"]),None)
+    passed=near is not None and manifest["coverage"]["invalid_pixels"]==0
+    return {"schema":2,"tested_commit":os.getenv("GITHUB_SHA"),"branch":os.getenv("GITHUB_REF_NAME"),
             "run_id":os.getenv("GITHUB_RUN_ID"),"source_release":manifest["source_release"],
             "source_crs":manifest["source_crs"],"coverage_pixels":manifest["coverage"]["pixels_checked"],
-            "invalid_pixels":manifest["coverage"]["invalid_pixels"],"inputs":[{k:a[k] for k in ("name","bytes","sha256")} for a in manifest["inputs"]],
-            "results":rows,"recommended_default_cell_m":(5 if rows[0]["vertices"]>150000 else 2) if passed else None,
+            "invalid_pixels":manifest["coverage"]["invalid_pixels"],
+            "inputs":[{k:a[k] for k in ("name","bytes","sha256")} for a in manifest["inputs"]],
+            "tin_failure":manifest.get("tin_failure"),"results":rows,
+            "recommended_default_file":near["file"] if passed else None,
+            "recommended_default_kind":near["kind"] if passed else None,
+            "recommended_default_cell_m":near["cell_m"] if passed else None,
             "pass":passed}
 
 def main():

@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
+import {driveTerrainRoute} from './terrain-drive.mjs';
 const target=process.env.MAPSLOP_TEST_URL || 'http://127.0.0.1:8080/?webgl';
 const origin=new URL(target).origin+'/';
 const results=process.env.MAPSLOP_RESULTS || '/tmp/pedome-results';
@@ -48,8 +49,9 @@ try {
       recorder.stop();
       const points=recorder.samples;
       const summarize=key=>({max:points.reduce((m,p)=>Math.max(m,p[key]),0),mean:points.reduce((s,p)=>s+p[key],0)/points.length});
-      return {source:t.source,cell:t.cell,flat:window.mapslop.GEO.frame.flatTerrain,
-        spread:t.heights.reduce((r,v)=>[Math.min(r[0],v),Math.max(r[1],v)],[Infinity,-Infinity]),
+      const values=t.kind==='tin'?t.vertices.filter((v,i)=>i%3===1):t.heights;
+      return {source:t.source,kind:t.kind||'grid',cell:t.cell,flat:window.mapslop.GEO.frame.flatTerrain,
+        spread:values.reduce((r,v)=>[Math.min(r[0],v),Math.max(r[1],v)],[Infinity,-Infinity]),
         contact:[before,after].map(s=>Math.abs(s.y-heightAt(s.x,s.z))),contactSamples:points.length,contactDuringDrive:summarize('terrain'),collisionSurfaceDuringDrive:summarize('surface')};
     },{before:report.before,after:report.after});
     report.terrain=terrain;
@@ -91,6 +93,18 @@ try {
   report.location=await page.locator('#location').textContent();
   await page.screenshot({path:path.join(results,'pedome-mobile.png'),timeout:60000});
   if(errors.length||consoleLog.some(m=>m.type==='error'||/GL_INVALID_OPERATION|GL_INVALID_FRAMEBUFFER_OPERATION|shader error/i.test(m.text)))throw Error('HUD validation failed');
+  if(process.env.MAPSLOP_LONG_DRIVE==='1'){
+    let reference=null;
+    const ref=process.env.MAPSLOP_ROUTE_REFERENCE;
+    if(ref&&fs.existsSync(ref)){
+      const prev=JSON.parse(fs.readFileSync(ref,'utf8'));
+      if(prev.longDrive?.success)reference=prev.longDrive.route;
+    }
+    report.longDrive=await page.evaluate(driveTerrainRoute,{reference});
+    await page.screenshot({path:path.join(results,'long-drive-end.png'),timeout:60000});
+    if(!report.longDrive.success)throw Error('100 m sloped curve drive failed: '+report.longDrive.reason);
+  }
+  if(errors.length||consoleLog.some(m=>m.type==='error'||/GL_INVALID_OPERATION|GL_INVALID_FRAMEBUFFER_OPERATION|shader error/i.test(m.text)))throw Error('Post-drive rendering error');
   report.success=true;
 } catch(e) {
   report.success=false; report.error=e.message;

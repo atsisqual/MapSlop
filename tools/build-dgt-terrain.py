@@ -197,20 +197,25 @@ def main():
             products.append({"kind":"grid","file":file.name,"sha256":digest(file),"bytes":file.stat().st_size,
                 "cell_m":cell,"nx":t["nx"],"nz":t["nz"],"vertices":t["nx"]*t["nz"],
                 "triangles":2*(t["nx"]-1)*(t["nz"]-1),"error":error,"roads":compare_roads(t,points,ways,reference)})
-        t=build_tin(mosaic,affine,crs,sample)
-        sampler=TinSampler(t)
-        f=args.output/"terrain-tin.json"
-        write_json(f,t)
-        products.append({"kind":"tin","file":f.name,"sha256":digest(f),"bytes":f.stat().st_size,
-            "vertices":len(t["vertices"])//3,"triangles":len(t["triangles"])//3,
-            "algorithm":t["algorithm"],"target_error_m":t["target_error_m"],"library_error_m":t["library_error_m"],
-            "error":compare(t,mosaic,affine,crs,sampler=sampler),"roads":compare_roads(t,points,ways,reference,sampler)})
+        tin_failure=None
+        try:
+            t=build_tin(mosaic,affine,crs,sample)
+            sampler=TinSampler(t)
+            f=args.output/"terrain-tin.json"
+            write_json(f,t)
+            products.append({"kind":"tin","file":f.name,"sha256":digest(f),"bytes":f.stat().st_size,
+                "vertices":len(t["vertices"])//3,"triangles":len(t["triangles"])//3,
+                "algorithm":t["algorithm"],"target_error_m":t["target_error_m"],"library_error_m":t["library_error_m"],
+                "error":compare(t,mosaic,affine,crs,sampler=sampler),"roads":compare_roads(t,points,ways,reference,sampler)})
+        except Exception as exc:
+            tin_failure=f'{type(exc).__name__}: {exc}'
+            print('TIN candidate failed:',tin_failure,file=sys.stderr)
         primary=next(x for x in products if x.get("cell_m")==args.primary_cell)
         report={"schema":1,"source_release":RELEASE,"source_attribution":"Direção-Geral do Território (DGT)",
                 "license_status":"MDT STAC proprietary conflicts with institutional open-data policy; do not publish",
                 "bbox_s_w_n_e":list(BBOX),"origin_lat_lon":list(ORIGIN),"frame":"x east, z south, y up, metres",
                 "source_crs":crs.to_string(),"source_crs_wkt":crs.to_wkt(),"source_resolution_m":0.5,
-                "coverage":coverage,"inputs":metadata,"products":products,
+                "coverage":coverage,"inputs":metadata,"products":products,"tin_failure":tin_failure,
                 "primary_cell_m":args.primary_cell,"primary_pass":primary["error"]["max_abs_m"]<=1.0,
                 "command":"python tools/build-dgt-terrain.py --input "+str(args.input)+" --output "+str(args.output)+" --primary-cell "+str(args.primary_cell),
                 "script_sha256":digest(Path(__file__)),

@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       archive:
-        description: Preserve both resolutions in one unpublished draft per branch
+        description: Preserve TIN and grid comparison in one unpublished draft per branch
         type: boolean
         default: true
   workflow_call:
@@ -53,17 +53,19 @@ jobs:
       - name: Require conversion manifest
         run: test -s /tmp/dgt-terrain/manifest.json
       - run: npx playwright install --with-deps chromium
-      - name: Build and drive both resolutions privately
+      - name: Build and drive near candidates privately
         continue-on-error: true
         run: |
           set -uo pipefail
           mkdir -p outputs /tmp/dgt-browser
           failed=0
-          for cell in 2 5; do
+          for cell in 2 tin; do
             out="outputs/dgt-preview-$cell"
             result="/tmp/dgt-browser/$cell"
             mkdir -p "$result"
-            if ! .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi "$out" --osm-json data/pedome/pedome-osm.json --terrain-json "/tmp/dgt-terrain/terrain-$cell"'m.json' --three-vendor .cache/mapslop/three-vendor >"$result/build.log" 2>&1; then
+            file="/tmp/dgt-terrain/terrain-$cell"; if [ "$cell" != tin ]; then file="${file}m"; fi; file="${file}.json"
+            if [ ! -s "$file" ]; then echo "Candidate $cell unavailable"; failed=1; continue; fi
+            if ! .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi "$out" --osm-json data/pedome/pedome-osm.json --terrain-json "$file" --three-vendor .cache/mapslop/three-vendor >"$result/build.log" 2>&1; then
               echo "Build failed at $cell m; logs preserved privately"
               failed=1
               continue
@@ -74,7 +76,7 @@ jobs:
             ready=false
             for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then ready=true; break; fi; sleep 1; done
             if [ "$ready" = true ]; then
-              MAPSLOP_TEST_URL=http://127.0.0.1:8080/?webgl MAPSLOP_RESULTS="$result" MAPSLOP_EXPECT_TERRAIN='DGT MDT 0.5 m' node tests/browser-smoke.mjs >"$result/run.log" 2>&1 || failed=1
+              MAPSLOP_TEST_URL=http://127.0.0.1:8080/?webgl MAPSLOP_RESULTS="$result" MAPSLOP_EXPECT_TERRAIN='DGT MDT 0.5 m' MAPSLOP_LONG_DRIVE=1 MAPSLOP_ROUTE_REFERENCE=/tmp/dgt-browser/2/browser-report.json node tests/browser-smoke.mjs >"$result/run.log" 2>&1 || failed=1
             else
               failed=1
             fi
@@ -82,12 +84,19 @@ jobs:
             wait "$server" 2>/dev/null || true
           done
           exit "$failed"
-      - name: Aggregate evidence and require both resolutions to pass
+      - name: Aggregate evidence and select a passing near candidate
         if: always()
         run: |
           set -euo pipefail
           test -s /tmp/dgt-terrain/manifest.json
           .venv/bin/python tools/summarize-terrain-validation.py --terrain /tmp/dgt-terrain --browser /tmp/dgt-browser --output /tmp/dgt-terrain/validation.json
+      - name: Create the selected near-product alias
+        if: success()
+        run: |
+          set -euo pipefail
+          selected="$(jq -r '.recommended_default_file' /tmp/dgt-terrain/validation.json)"
+          case "$selected" in terrain-tin.json|terrain-2m.json) ;; *) exit 1 ;; esac
+          cp "/tmp/dgt-terrain/$selected" /tmp/dgt-terrain/terrain-default.json
       - name: Preserve one private evidence draft per branch
         if: always() && inputs.archive
         run: |
@@ -100,7 +109,7 @@ jobs:
           esac
           mkdir -p /tmp/dgt-evidence
           cp /tmp/dgt-terrain/*.json /tmp/dgt-evidence/
-          for cell in 2 5; do
+          for cell in 2 tin; do
             for f in build-report.json browser-report.json build.log run.log; do
               if [ -f "/tmp/dgt-browser/$cell/$f" ]; then cp "/tmp/dgt-browser/$cell/$f" "/tmp/dgt-evidence/$cell-m-$f"; fi
             done
@@ -112,7 +121,7 @@ jobs:
             gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > /tmp/dgt-old-assets
             while IFS= read -r asset; do
               case "$asset" in
-                terrain-1m.json|terrain-2m.json|terrain-5m.json|terrain-10m.json|manifest.json|validation.json|SHA256SUMS.txt|2-m-build-report.json|5-m-build-report.json|2-m-browser-report.json|5-m-browser-report.json|2-m-build.log|5-m-build.log|2-m-run.log|5-m-run.log) ;;
+                terrain-1m.json|terrain-2m.json|terrain-5m.json|terrain-10m.json|terrain-tin.json|terrain-default.json|manifest.json|validation.json|SHA256SUMS.txt|2-m-build-report.json|5-m-build-report.json|tin-m-build-report.json|2-m-browser-report.json|5-m-browser-report.json|tin-m-browser-report.json|2-m-build.log|5-m-build.log|tin-m-build.log|2-m-run.log|5-m-run.log|tin-m-run.log) ;;
                 *) echo "Unexpected evidence asset; refuse update"; exit 1 ;;
               esac
             done < /tmp/dgt-old-assets
