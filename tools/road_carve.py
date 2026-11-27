@@ -136,9 +136,11 @@ class Corridor:
                 weights[mask]=1
                 # The common cross-section uses the reference lane's centre projected on its axis.
                 station=q[mask]@p['axis'];normal=p['axis'][::-1]*np.array([-1,1])
-                ref_xz=self.xy[p['ids']]
-                centre_ref[mask]=station[:,None]*p['axis']+np.interp(station,p['stations'],ref_xz@normal)[:,None]*normal
-                half_ref[mask]=np.linalg.norm(q[mask]-centre_ref[mask],axis=1)+.02
+                a=np.interp(station,p['stations'],self.xy[p['ids']]@normal)
+                b=np.interp(station,p['other_stations'],self.xy[p['other_ids']]@normal)
+                lower=np.minimum(a-p['half_a'],b-p['half_b']);upper=np.maximum(a+p['half_a'],b+p['half_b'])
+                centre_ref[mask]=station[:,None]*p['axis']+((lower+upper)*.5)[:,None]*normal
+                half_ref[mask]=(upper-lower)*.5
                 strip_assigned[mask]=True
             # Apply ramps AFTER assigning the road plane. Each merged core has a
             # single LP height; C1 smoothstep over six metres on the road.
@@ -316,12 +318,18 @@ def check_surface(t,original,corridor,legacy=False):
     mask=(centre[:,0]>x0+15)&(centre[:,0]<x1-15)&(centre[:,1]>z0+15)&(centre[:,1]<z1-15)
     # Exclude intersections/overlapping roads from straight transverse check; report how many.
     candidates=np.flatnonzero(mask)
-    slopes=[];profile_error=[];all_slopes=[];centre_rows=[];target_errors=[]
+    slopes=[];profile_error=[];all_slopes=[];centre_rows=[];target_errors=[];raw_profile_errors=[];ramp_slopes=[]
     from terrain_grid import ORIGIN,KX,KY
     for i in candidates:
         p=centre[i];half=corridor.half[i]
         junction_distance=float(corridor.junction_tree.query(p)[0]) if corridor.junction_tree is not None else None
         near_junction=junction_distance is not None and junction_distance<2*half
+        platform_edge_distance=None
+        if not legacy and len(corridor.group_polys):
+            import shapely as sh
+            platform_edge_distance=float(min(sh.distance(poly,sh.Point(*p)) for poly in corridor.group_polys))
+        in_ramp=platform_edge_distance is not None and 0<platform_edge_distance<=RAMP+half
+        inside_core=platform_edge_distance==0
         target=float(corridor.target(np.array([p]),np.array([old(*p)]))[0][0])
         target_errors.append(abs(s(*p)-target))
         left=p-normal[i]*half*0.8;right=p+normal[i]*half*0.8
@@ -333,13 +341,14 @@ def check_surface(t,original,corridor,legacy=False):
             u=float(np.clip(np.dot(p-corridor.a[k],corridor.d[k])/corridor.length2[k],0,1))
             dist=float(np.linalg.norm(p-corridor.a[k]-u*corridor.d[k]))
             if dist<=half+corridor.half[k]:competitors.append({"way":corridor.way_ids[k],"station":corridor.segment_stations[k],"distance_m":dist,"same_way":corridor.way_ids[k]==corridor.way_ids[i],"angle_degrees":float(np.degrees(np.arccos(np.clip(np.dot(corridor.d[k],corridor.d[i])/np.sqrt(corridor.length2[k]*corridor.length2[i]),-1,1))))})
-        row={"overlapping_segments":sorted(competitors,key=lambda x:x['distance_m'])[:6],"way":corridor.way_ids[i],"name":corridor.way_names[i],"x_m":float(p[0]),"z_m":float(p[1]),"lat":ORIGIN[0]-float(p[1])/KY,"lon":ORIGIN[1]+float(p[0])/KX,"crossfall_degrees":angle,"junction_distance_m":junction_distance,"near_junction":bool(near_junction)}
+        row={"overlapping_segments":sorted(competitors,key=lambda x:x['distance_m'])[:6],"way":corridor.way_ids[i],"name":corridor.way_names[i],"x_m":float(p[0]),"z_m":float(p[1]),"lat":ORIGIN[0]-float(p[1])/KY,"lon":ORIGIN[1]+float(p[0])/KX,"crossfall_degrees":angle,"junction_distance_m":junction_distance,"near_junction":bool(near_junction),"platform_edge_distance_m":platform_edge_distance,"in_ramp":bool(in_ramp),"inside_platform":bool(inside_core)}
         all_slopes.append(row)
+        delta=abs(s(*p)-(corridor.y0[i]+corridor.y1[i])/2)
+        raw_profile_errors.append(delta)
+        if in_ramp and not near_junction:ramp_slopes.append(row)
         if near_junction:continue
         slopes.append(row)
-        delta=abs(s(*p)-(corridor.y0[i]+corridor.y1[i])/2)
-        # Keep original longitudinal delta in row; gate the ramp-adjusted surface target.
-        profile_error.append(abs(s(*p)-target))
+        if not in_ramp:profile_error.append(delta)
         centre_rows.append({**row,"centre_profile_delta_m":float(delta),"target_delta_m":float(abs(s(*p)-corridor.target(np.array([p]),np.array([old(*p)]))[0][0]))})
     # Check a deterministic set away from the corridor, where a retriangulation may still change the surface.
     xx,zz=np.meshgrid(np.linspace(x0,x1,101),np.linspace(z0,z1,101))
@@ -372,7 +381,9 @@ def check_surface(t,original,corridor,legacy=False):
             "transverse_samples":len(slopes),"max_crossfall_degrees":max((r["crossfall_degrees"] for r in slopes),default=None),
             "worst_10_crossfall":sorted(slopes,key=lambda r:-r["crossfall_degrees"])[:10],
             "all_crossfall_samples":len(all_slopes),"worst_10_all_crossfall":sorted(all_slopes,key=lambda r:-r["crossfall_degrees"])[:10],
-            "max_centre_mesh_profile_delta_m":max(profile_error,default=None),
+            "max_centre_mesh_profile_delta_m":max(raw_profile_errors,default=None),
+            "max_centre_mesh_profile_delta_away_from_ramps_m":max(profile_error,default=None),
+            "ramp_transverse_samples":len(ramp_slopes),"max_ramp_crossfall_degrees":max((r["crossfall_degrees"] for r in ramp_slopes),default=None),
             "max_centre_mesh_target_delta_m":max(target_errors,default=None),
             "worst_10_centre_delta":sorted(centre_rows,key=lambda r:-r["centre_profile_delta_m"])[:10],
             "outside_samples":len(outside),"outside_max_change_m":float(delta.max(initial=0))}
