@@ -59,6 +59,7 @@ def fetch(s,url,path,ext):
 def main():
     p=argparse.ArgumentParser();p.add_argument("--output",type=Path,required=True)
     p.add_argument("--collection",action="append",choices=COLLECTIONS)
+    p.add_argument("--historical-orthos",action="store_true",help="Enumerate earlier orthophoto collections from the official catalogue")
     a=p.parse_args();a.output.mkdir(parents=True,exist_ok=True)
     result={"bbox":BBOX,"attribution":"Direção-Geral do Território (DGT)","license_policy_sources":[LICENSE_SOURCE,ORTHO_SOURCE],"items":[],"errors":[]}
     def save():
@@ -66,7 +67,23 @@ def main():
     with requests.Session() as s:
         s.headers["User-Agent"]="MapSlop DGT data importer/0.2"
         dgt.login(s)
-        for c in a.collection or COLLECTIONS:
+        selected=a.collection or COLLECTIONS
+        if a.historical_orthos:
+            response=s.get(dgt.API+"/collections",timeout=60)
+            response.raise_for_status()
+            body=response.json()
+            catalog=body.get("data",body).get("collections",[])
+            selected=[]
+            for c in catalog:
+                ident=c.get("id","")
+                label=ident+" "+str(c.get("title",""))
+                if re.fullmatch(r"[A-Za-z0-9_.-]+",ident) and re.search(r"orto",label,re.I) and re.search(r"1995|2004|2006|2007|2010|2012|2015|2018|2021",label) and "2025" not in ident:
+                    selected.append(ident)
+            selected=sorted(set(selected))
+            print("Historical orthophoto collections:",selected,flush=True)
+            if not selected:raise ValueError("Historical collections not found")
+            result["selected_collections"]=selected
+        for c in selected:
             try:
                 features=search(s,c); print("Collection:",c,len(features),"items",flush=True)
                 seen=set()
