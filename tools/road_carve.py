@@ -56,9 +56,9 @@ class Corridor:
     def install_strips(self):
         import shapely as sh
         self.strip_polys=sh.polygons(self.strip_vertices[self.strip_triangles])
-        self.strip_tree=sh.STRtree(self.strip_polys)
+        self.strip_tree=sh.STRtree(sh.buffer(self.strip_polys,0.012))
         self.platform_polys=sh.buffer(sh.points(self.junction_xy),self.junction_radius,quad_segs=4)
-        self.platform_tree=sh.STRtree(self.platform_polys)
+        self.platform_tree=sh.STRtree(sh.buffer(self.platform_polys,0.012))
 
     def target(self,q,natural,platforms=True):
         out=np.asarray(natural,dtype=float).copy();weights=np.zeros(len(q))
@@ -88,20 +88,29 @@ class Corridor:
             # interpolation uses the very same triangles supplied to the CDT.
             points=sh.points(q)
             pp,tt=self.strip_tree.query(points,predicate="intersects")
-            assigned=set()
+            choices={}
             for i,j in zip(pp,tt):
-                if i in assigned:continue
+                k=j//2
+                u=float(np.clip(np.dot(q[i]-self.a[k],self.d[k])/self.length2[k],0,1))
+                d=float(np.linalg.norm(q[i]-self.a[k]-u*self.d[k]))
+                rank=(d,int(j))
+                if i not in choices or rank<choices[i][0]:choices[i]=(rank,j)
+            for i,(_,j) in choices.items():
                 ids=self.strip_triangles[j];a,b,c=self.strip_vertices[ids]
                 d=b-a;e=c-a;v=q[i]-a
                 det=d[0]*e[1]-d[1]*e[0]
                 if abs(det)<1e-12:continue
                 u=(v[0]*e[1]-v[1]*e[0])/det;w=(d[0]*v[1]-d[1]*v[0])/det
                 out[i]=(1-u-w)*self.strip_heights[ids[0]]+u*self.strip_heights[ids[1]]+w*self.strip_heights[ids[2]]
-                weights[i]=1;assigned.add(i)
+                weights[i]=1
             # Explicit platform polygons win over strips. A shared vertex is flat
             # inside a junction; transition uses the existing outer berm only.
             pp,jj=self.platform_tree.query(points,predicate="intersects")
+            chosen={}
             for i,j in zip(pp,jj):
+                rank=(float(np.linalg.norm(q[i]-self.junction_xy[j])),int(j))
+                if i not in chosen or rank<chosen[i][0]:chosen[i]=(rank,j)
+            for i,(_,j) in chosen.items():
                 out[i]=self.junction_y[j];weights[i]=1
         return out,weights
 
@@ -252,7 +261,13 @@ def check_surface(t,original,corridor,legacy=False):
         left=p-normal[i]*half*0.8;right=p+normal[i]*half*0.8
         yl=s(*left);yr=s(*right)
         angle=abs(float(np.degrees(np.arctan2(yr-yl,1.6*half))))
-        row={"way":corridor.way_ids[i],"name":corridor.way_names[i],"x_m":float(p[0]),"z_m":float(p[1]),"lat":ORIGIN[0]-float(p[1])/KY,"lon":ORIGIN[1]+float(p[0])/KX,"crossfall_degrees":angle,"junction_distance_m":junction_distance,"near_junction":bool(near_junction)}
+        competitors=[]
+        for k in corridor.tree.query_ball_point(p,corridor.search):
+            if k==i:continue
+            u=float(np.clip(np.dot(p-corridor.a[k],corridor.d[k])/corridor.length2[k],0,1))
+            dist=float(np.linalg.norm(p-corridor.a[k]-u*corridor.d[k]))
+            if dist<=half+corridor.half[k]:competitors.append({"way":corridor.way_ids[k],"station":corridor.segment_stations[k],"distance_m":dist,"same_way":corridor.way_ids[k]==corridor.way_ids[i],"angle_degrees":float(np.degrees(np.arccos(np.clip(np.dot(corridor.d[k],corridor.d[i])/np.sqrt(corridor.length2[k]*corridor.length2[i]),-1,1))))})
+        row={"overlapping_segments":sorted(competitors,key=lambda x:x['distance_m'])[:6],"way":corridor.way_ids[i],"name":corridor.way_names[i],"x_m":float(p[0]),"z_m":float(p[1]),"lat":ORIGIN[0]-float(p[1])/KY,"lon":ORIGIN[1]+float(p[0])/KX,"crossfall_degrees":angle,"junction_distance_m":junction_distance,"near_junction":bool(near_junction)}
         all_slopes.append(row)
         if near_junction:continue
         slopes.append(row)
