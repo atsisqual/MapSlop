@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/pages.yml'
       - 'tools/prepare-pedome.py'
+      - 'tools/pedome-ui.js'
       - 'data/pedome/pedome-osm.json'
 permissions:
   contents: read
@@ -160,6 +161,27 @@ jobs:
             report.distance=Math.hypot(report.after.x-report.before.x,report.after.z-report.before.z);
             await page.screenshot({path:'/tmp/pedome-results/pedome-driving.png',timeout:60000});
             if(report.before.mode!=='car'||!report.before.canvas||report.before.roads!==179||report.before.buildings!==527||!Number.isFinite(report.distance)||report.distance<1||errors.length||consoleLog.some(m=>m.type==='error'||/GL_INVALID_OPERATION|GL_INVALID_FRAMEBUFFER_OPERATION|shader error/i.test(m.text))||failed.some(r=>!r.url.endsWith('/favicon.ico')))throw Error('Browser driving validation failed');
+            // Verify mobile-sized layout, map position, pointer input and release.
+            await page.setViewportSize({width:823,height:384});
+            await page.locator('#reset-car').click();
+            await page.waitForFunction(()=>Math.abs(window.mapslop.controllers.getActiveEntity().speed)<0.1);
+            const forward=page.locator('[data-drive="forward"]');
+            const bounds=await forward.boundingBox();
+            if(!bounds||!(await page.locator('#hud-map canvas').isVisible())||await page.locator('#drive-ui button').count()!==4)throw Error('Missing mobile HUD');
+            await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2);
+            await page.mouse.down();
+            try {
+              await page.waitForFunction(()=>window.mapslop.controllers.getActiveEntity().speed>1,{},{timeout:60000});
+              if(await forward.getAttribute('aria-pressed')!=='true')throw Error('Pointer not registered');
+              report.pointerSpeed=await page.evaluate(()=>window.mapslop.controllers.getActiveEntity().speed);
+            } finally {await page.mouse.up();}
+            if(await forward.getAttribute('aria-pressed')!=='false')throw Error('Pointer release failed');
+            await page.locator('#map-toggle').click();
+            if(await page.locator('#map-toggle').getAttribute('aria-expanded')!=='true')throw Error('Map expansion failed');
+            await page.locator('#map-toggle').click();
+            report.location=await page.locator('#location').textContent();
+            await page.screenshot({path:'/tmp/pedome-results/pedome-mobile.png',timeout:60000});
+            if(errors.length||consoleLog.some(m=>m.type==='error'||/GL_INVALID_OPERATION|GL_INVALID_FRAMEBUFFER_OPERATION|shader error/i.test(m.text)))throw Error('HUD validation failed');
             report.success=true;
           } catch(e) {
             report.success=false; report.error=e.message;
