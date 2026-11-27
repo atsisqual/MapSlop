@@ -92,6 +92,14 @@ def from_raster(heights,x0,z0,base,source,bounds=None):
            target_error_m=INTERNAL_ERROR,library_error_m=float(mesh.error))
     return validate_tin(t,bounds)
 
+def accepts_refinement(road_max, raster_max, previous):
+    """Keep road error monotonic; ties may not worsen raster error."""
+    if not math.isfinite(road_max) or not math.isfinite(raster_max):
+        return False
+    return previous is None or (road_max < previous[0] or
+                                (road_max == previous[0] and raster_max <= previous[1]))
+
+
 def refine_roads(t,heights,road_points,road_reference,road_centres,sample_absolute,bounds=None,exact_base=None):
     """Select Delatin vertices, then retriangulate using SciPy/Qhull.
     Fine pass is a candidate pool; retain only vertices <=6 m from OSM axes.
@@ -125,7 +133,11 @@ def refine_roads(t,heights,road_points,road_reference,road_centres,sample_absolu
     y=(sample_absolute(xy[:,0],xy[:,1])-base).astype(np.float32).astype(np.float64)
     corridor_count=len(xy)-base_count
     rounds=[]
-    for iteration in range(5):
+    best=None
+    pending_q=pending_h=None
+    accepted_count=0
+    # At most five accepted meshes and ten evaluations, including retries.
+    for iteration in range(10):
         tri=Delaunay(xy)
         def interpolate(q):
             idx=tri.find_simplex(q,tol=1e-9)
@@ -152,11 +164,30 @@ def refine_roads(t,heights,road_points,road_reference,road_centres,sample_absolu
             if len(ids):
                 ids=ids[np.argsort(-err[ids],kind="stable")[:2000]]
                 worst_xy.append(q[ids]);worst_error.append(err[ids])
+        road_max=float(re.max())
+        previous=None if best is None else (best[4],best[3])
+        accepted=accepts_refinement(road_max,raster_max,previous)
+        reason=("initial" if best is None else "nonincreasing_road_error") if accepted else "road_error_increased_or_raster_tie_worsened"
         rounds.append({"iteration":iteration,"vertices":len(xy),"raster_max_abs_m":raster_max,
-                       "road_max_abs_m":float(re.max())})
-        if raster_max<=0.5 and float(re.max())<=0.5:
+                       "road_max_abs_m":road_max,"accepted":accepted,"reason":reason})
+        if not accepted:
+            if best is None:
+                raise ValueError("Invalid initial refined TIN")
+            # Restore the last measured, accepted mesh. Never return a rejected mesh.
+            xy,y,tri,raster_max,_=best
+            if iteration==9 or pending_q is None or len(pending_q)<=1:
+                break
+            # Try a smaller prefix of the same residual-ranked insertion batch.
+            n=max(1,len(pending_q)//2)
+            pending_q,pending_h=pending_q[:n],pending_h[:n]
+            xy=np.concatenate((xy,pending_q))
+            y=np.concatenate((y,pending_h))
+            continue
+        best=(xy,y,tri,raster_max,road_max)
+        accepted_count+=1
+        if raster_max<=0.5 and road_max<=0.5:
             break
-        if iteration==4 or len(xy)>=VERTEX_LIMIT:
+        if iteration==9 or accepted_count>=5 or len(xy)>=VERTEX_LIMIT:
             break
         # Insert actual MDT road probes and high-residual raster nodes, within budget.
         ri=np.flatnonzero(re>0.38)
@@ -173,7 +204,11 @@ def refine_roads(t,heights,road_points,road_reference,road_centres,sample_absolu
         if not len(q):
             break
         h=(sample_absolute(q[:,0],q[:,1])-base).astype(np.float32).astype(np.float64)
+        pending_q,pending_h=q,h
         xy=np.concatenate((xy,q));y=np.concatenate((y,h))
+    if best is None:
+        raise ValueError("No accepted refined TIN")
+    xy,y,tri,raster_max,_=best
     f=np.asarray(tri.simplices,dtype=np.int64).copy()
     v=np.column_stack((xy[:,0],y,xy[:,1]))
     va,vb,vc=v[f[:,0]],v[f[:,1]],v[f[:,2]]
@@ -185,7 +220,7 @@ def refine_roads(t,heights,road_points,road_reference,road_centres,sample_absolu
         "refinement":{"base_vertices":base_count,"base_delatin_error_m":t["library_error_m"],
             "fine_pool_vertices":len(fp),"fine_pool_error_m":float(fine.error),
             "fine_target_m":0.15,"corridor_radius_m":6.0,"corridor_added_vertices":corridor_count,
-            "rounds":rounds,"vertex_limit":VERTEX_LIMIT,"road_target_m":0.5,"raster_samples":int(a.size)}}
+            "rounds":rounds,"accepted_rounds":accepted_count,"rejected_rounds":len(rounds)-accepted_count,"vertex_limit":VERTEX_LIMIT,"road_target_m":0.5,"raster_samples":int(a.size)}}
     return validate_tin(result,bounds)
 
 def build_tin(mosaic,affine,crs,sample,source="DGT MDT 0.5 m",bounds=None,road_points=None,road_reference=None,road_centres=None):
