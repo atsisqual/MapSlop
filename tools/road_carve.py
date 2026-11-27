@@ -5,10 +5,11 @@ from road_profiles import BERM
 
 class Corridor:
     def __init__(self,xy,y,ways,shared_indices=()):
-        pairs=[];widths=[];self.way_ids=[];self.way_names=[]
+        pairs=[];widths=[];self.way_ids=[];self.way_names=[];self.segment_stations=[];self.ways=ways;self.xy=xy;self.y=y
         for w in ways:
             ids=w["ids"]
             pairs.extend(zip(ids,ids[1:]))
+            self.segment_stations.extend(range(len(ids)-1))
             widths.extend([w["width_m"]/2]*(len(ids)-1))
             self.way_ids.extend([w.get("way")]*(len(ids)-1));self.way_names.extend([w.get("name")]*(len(ids)-1))
         pairs=np.asarray(pairs,dtype=int)
@@ -28,6 +29,36 @@ class Corridor:
                 radii[i]=max(radii.get(i,0),w["width_m"]/2)
         self.junction_radius=np.array([radii[i] for i in shared_indices])
         self.junction_tree=cKDTree(self.junction_xy) if len(self.junction_xy) else None
+        # Use explicit non-overlapping, mitered station strips to define road heights.
+        self.strip_vertices,self.strip_heights,self.strip_triangles=self.make_strips()
+
+    def make_strips(self):
+        vertices=[];heights=[];triangles=[]
+        for w in self.ways:
+            ids=np.asarray(w["ids"]);p=self.xy[ids];h=self.y[ids];half=w["width_m"]/2
+            d=np.diff(p,axis=0);d/=np.linalg.norm(d,axis=1)[:,None]
+            normal=d[:,::-1]*np.array([-1,1])
+            mit=np.vstack([normal[0],normal[:-1]+normal[1:],normal[-1]])
+            lengths=np.linalg.norm(mit,axis=1)
+            for i in range(1,len(mit)-1):
+                if lengths[i]<1e-6:mit[i]=normal[i-1]
+                else:mit[i]/=lengths[i]
+                factor=max(0.5,float(np.dot(mit[i],normal[i-1])))
+                mit[i]/=factor
+            start=len(vertices)
+            vertices.extend(np.stack([p+half*mit,p-half*mit],axis=1).reshape(-1,2))
+            heights.extend(np.repeat(h,2))
+            for i in range(len(ids)-1):
+                a=start+2*i;b=a+2
+                triangles.extend([(a,a+1,b),(b,a+1,b+1)])
+        return np.asarray(vertices),np.asarray(heights),np.asarray(triangles,dtype=int)
+
+    def install_strips(self):
+        import shapely as sh
+        self.strip_polys=sh.polygons(self.strip_vertices[self.strip_triangles])
+        self.strip_tree=sh.STRtree(self.strip_polys)
+        self.platform_polys=sh.buffer(sh.points(self.junction_xy),self.junction_radius,quad_segs=4)
+        self.platform_tree=sh.STRtree(self.platform_polys)
 
     def target(self,q,natural,platforms=True):
         out=np.asarray(natural,dtype=float).copy();weights=np.zeros(len(q))
@@ -51,6 +82,27 @@ class Corridor:
             v=v*v*(3-2*v)
             out=out*(1-v)+self.junction_y[idx]*v
             weights=np.maximum(weights,v)
+        if platforms and hasattr(self,"strip_tree"):
+            import shapely as sh
+            # Paved triangles take precedence over a nearby berm. Barycentric
+            # interpolation uses the very same triangles supplied to the CDT.
+            points=sh.points(q)
+            pp,tt=self.strip_tree.query(points,predicate="intersects")
+            assigned=set()
+            for i,j in zip(pp,tt):
+                if i in assigned:continue
+                ids=self.strip_triangles[j];a,b,c=self.strip_vertices[ids]
+                d=b-a;e=c-a;v=q[i]-a
+                det=d[0]*e[1]-d[1]*e[0]
+                if abs(det)<1e-12:continue
+                u=(v[0]*e[1]-v[1]*e[0])/det;w=(d[0]*v[1]-d[1]*v[0])/det
+                out[i]=(1-u-w)*self.strip_heights[ids[0]]+u*self.strip_heights[ids[1]]+w*self.strip_heights[ids[2]]
+                weights[i]=1;assigned.add(i)
+            # Explicit platform polygons win over strips. A shared vertex is flat
+            # inside a junction; transition uses the existing outer berm only.
+            pp,jj=self.platform_tree.query(points,predicate="intersects")
+            for i,j in zip(pp,jj):
+                out[i]=self.junction_y[j];weights[i]=1
         return out,weights
 
     def cross_points(self):
@@ -119,8 +171,10 @@ def deform(t,corridor):
         segments=sh.buffer(axes,corridor.half+extra,quad_segs=3)
         platforms=sh.buffer(sh.points(corridor.junction_xy),corridor.junction_radius+extra,quad_segs=4)
         return sh.intersection(sh.union_all(np.concatenate([segments,platforms]),grid_size=0.01),domain,grid_size=0.01)
-    paved=envelope(0);outer=envelope(BERM)
-    platform_shapes=sh.buffer(sh.points(corridor.junction_xy),corridor.junction_radius,quad_segs=4)
+    corridor.install_strips()
+    platform_shapes=corridor.platform_polys
+    paved=sh.intersection(sh.union_all(np.concatenate([corridor.strip_polys,platform_shapes]),grid_size=0.01),domain,grid_size=0.01)
+    outer=sh.intersection(sh.union_all([envelope(BERM),sh.buffer(paved,BERM,quad_segs=3)],grid_size=0.01),domain,grid_size=0.01)
     # Split at stations with transverse lines; no additional midpoint fan or duplicate original interior samples.
     normal=corridor.d[:,::-1]*np.array([-1,1]);normal/=np.sqrt(corridor.length2)[:,None]
     cross=[]
@@ -137,8 +191,12 @@ def deform(t,corridor):
     clipped=sh.difference(old_lines[hit],outer,grid_size=0.01)
     # Node all potentially crossing lines using a centimetre precision model.
     internal=[sh.boundary(paved),sh.boundary(outer),sh.boundary(domain)]
-    internal.extend(sh.boundary(platform_shapes))
-    internal.extend(axes);internal.extend(cross)
+    platform_union=sh.union_all(platform_shapes,grid_size=0.01)
+    internal.append(sh.boundary(platform_union))
+    # No redundant axis or cross-section vertices in flat platforms. Strip
+    # triangle boundaries preserve longitudinal planes, with no extra midpoints.
+    strips=sh.difference(sh.boundary(corridor.strip_polys),platform_union,grid_size=0.01)
+    internal.extend(strips)
     inside=sh.intersection(np.asarray(internal,dtype=object),domain,grid_size=0.01)
     noded=sh.union_all(np.concatenate([inside,clipped,old_lines[~hit]]),grid_size=0.01)
     points=[];edge_pairs=[]
@@ -177,6 +235,7 @@ def deform(t,corridor):
 def check_surface(t,original,corridor,legacy=False):
     from terrain_tin import TinSampler
     s=TinSampler(t);old=TinSampler(original)
+    if not legacy and not hasattr(corridor,'strip_tree'):corridor.install_strips()
     d=corridor.d
     normal=d[:,::-1]*np.array([-1,1]);normal/=np.sqrt(corridor.length2)[:,None]
     centre=(corridor.a+corridor.b)/2
@@ -184,7 +243,7 @@ def check_surface(t,original,corridor,legacy=False):
     mask=(centre[:,0]>x0+15)&(centre[:,0]<x1-15)&(centre[:,1]>z0+15)&(centre[:,1]<z1-15)
     # Exclude intersections/overlapping roads from straight transverse check; report how many.
     candidates=np.flatnonzero(mask)
-    slopes=[];profile_error=[];all_slopes=[]
+    slopes=[];profile_error=[];all_slopes=[];centre_rows=[]
     from terrain_grid import ORIGIN,KX,KY
     for i in candidates:
         p=centre[i];half=corridor.half[i]
@@ -197,7 +256,9 @@ def check_surface(t,original,corridor,legacy=False):
         all_slopes.append(row)
         if near_junction:continue
         slopes.append(row)
-        profile_error.append(abs(s(*p)-(corridor.y0[i]+corridor.y1[i])/2))
+        delta=abs(s(*p)-(corridor.y0[i]+corridor.y1[i])/2)
+        profile_error.append(delta)
+        centre_rows.append({**row,"centre_profile_delta_m":float(delta),"target_delta_m":float(abs(s(*p)-corridor.target(np.array([p]),np.array([old(*p)]))[0][0]))})
     # Check a deterministic set away from the corridor, where a retriangulation may still change the surface.
     xx,zz=np.meshgrid(np.linspace(x0,x1,101),np.linspace(z0,z1,101))
     q=np.column_stack([xx.ravel(),zz.ravel()])
@@ -230,4 +291,5 @@ def check_surface(t,original,corridor,legacy=False):
             "worst_10_crossfall":sorted(slopes,key=lambda r:-r["crossfall_degrees"])[:10],
             "all_crossfall_samples":len(all_slopes),"worst_10_all_crossfall":sorted(all_slopes,key=lambda r:-r["crossfall_degrees"])[:10],
             "max_centre_mesh_profile_delta_m":max(profile_error,default=None),
+            "worst_10_centre_delta":sorted(centre_rows,key=lambda r:-r["centre_profile_delta_m"])[:10],
             "outside_samples":len(outside),"outside_max_change_m":float(delta.max(initial=0))}
