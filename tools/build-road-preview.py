@@ -111,7 +111,8 @@ def main():
         surface["dense_mesh_over_1m_samples"]=[{**probe(i),"mesh_deviation_m":float(mesh_err[i])} for i in np.flatnonzero(mesh_err>MAX_DEVIATION+1e-7)]
         report.update(carve=carve,storage=storage,surface=surface,
             surface_pass=surface["transverse_samples"]>0 and surface["max_crossfall_degrees"]<=1
-            and surface["max_centre_mesh_profile_delta_m"]<=0.1 and surface["max_centre_mesh_target_delta_m"]<=0.1 and surface["max_junction_mesh_delta_m"]<=0.02 and surface["outside_max_change_m"]<=0.1
+            and surface["max_centre_mesh_profile_delta_away_from_ramps_m"] is not None and surface["max_centre_mesh_profile_delta_away_from_ramps_m"]<=0.1 and surface["max_centre_mesh_target_delta_m"]<=0.1
+            and surface["ramp_transverse_samples"]>0 and surface["max_ramp_crossfall_degrees"]<=1 and surface["max_junction_mesh_delta_m"]<=0.02 and surface["outside_max_change_m"]<=0.1
             and surface["junction_platform_crossfall_samples"]>0 and surface["max_junction_platform_crossfall_degrees"]<=1
             and surface["near_berm_outside_max_change_m"]<=0.1
             and surface["dense_mesh_max_mdt_deviation_m"]<=1.0 and surface["dense_mesh_max_way_mean_mdt_deviation_m"]<=0.5
