@@ -5,6 +5,7 @@ No QGIS or embedded credentials required. No login bypass.
 """
 import argparse
 import getpass
+import os
 import hashlib
 import json
 import re
@@ -52,8 +53,15 @@ def login(session):
     target = urljoin(page.url, form.action)
     if urlsplit(target).scheme != "https" or urlsplit(target).netloc != urlsplit(AUTH).netloc:
         raise RuntimeError("Destino de autenticação inesperado.")
-    user = input("Email/utilizador DGT: ")
-    pwd = getpass.getpass("Palavra-passe DGT (não será gravada): ")
+    user = os.environ.get("DGT_USERNAME")
+    pwd = os.environ.get("DGT_PASSWORD")
+    if bool(user) != bool(pwd):
+        raise RuntimeError("Configurar ambos os segredos DGT.")
+    if not user:
+        if not __import__("sys").stdin.isatty():
+            raise RuntimeError("Segredos DGT em falta no ambiente.")
+        user = input("Email/utilizador DGT: ")
+        pwd = getpass.getpass("Palavra-passe DGT (não será gravada): ")
     result = session.post(target, data={**form.hidden,"username":user,"password":pwd},
         headers={"Origin":AUTH,"Referer":page.url}, timeout=45)
     result.raise_for_status()
