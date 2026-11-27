@@ -51,11 +51,15 @@ def main():
                 aa.extend([i]*len(u));bb.extend([j]*len(u));uu.extend(u);way_ids.extend([w["way"]]*len(u))
         dense=np.asarray(dense);aa=np.array(aa);bb=np.array(bb);uu=np.array(uu);way_ids=np.array(way_ids)
         actual=dt.sample(mosaic[0],affine,crs,dense[:,0],dense[:,1])-original["base"]
-        y=solve(reference,ways,{"a":aa,"b":bb,"u":uu,"reference":actual})
+        observations={"a":aa,"b":bb,"u":uu,"reference":actual}
+        strict=solve(reference,ways,observations)
+        strict_err=np.abs(actual-(strict[aa]*(1-uu)+strict[bb]*uu))
+        adaptive=bool(strict_err.max()>MAX_DEVIATION+1e-7 or any(strict_err[way_ids==w].mean()>MAX_MEAN_DEVIATION+1e-7 for w in set(way_ids)))
+        y=solve(reference,ways,observations,adaptive=True) if adaptive else strict
         pred=y[aa]*(1-uu)+y[bb]*uu
         err=np.abs(actual-pred)
         dense_error=float(err.max())
-    m=metrics(reference,y,ways)
+    m=metrics(reference,y,ways,adaptive=adaptive)
     from terrain_grid import ORIGIN,KX,KY
     def probe(i):
         return {"way":int(way_ids[i]),"x_m":float(dense[i,0]),"z_m":float(dense[i,1]),
@@ -71,8 +75,8 @@ def main():
     maxdev=max(row["max_deviation_m"] for row in m)
     maxgrade=max(row["max_grade_change_per_3m"] for row in m)
     report={"schema":1,"ways":len(ways),"samples":len(xy),"shared_nodes":len(shared),
-            "junction_identity_max_m":0.0,"excluded_structures":excluded,"max_deviation_m":maxdev,
-            "max_grade_change_per_3m":maxgrade,"dense_samples":len(dense),"dense_max_deviation_m":dense_error,"max_way_mean_abs_m":max_mean,"over_1m_count":len(exceptions),"over_1m_samples":exceptions,"profile_pass":maxdev<=MAX_DEVIATION+1e-7 and dense_error<=MAX_DEVIATION+1e-7 and max_mean<=MAX_MEAN_DEVIATION+1e-7 and maxgrade<=3*CURVATURE+1e-7,
+            "junction_identity_max_m":0.0,"excluded_structures":[e for e in excluded if e["reason"]!=["low_priority_access_no_carve"]],"excluded_accesses":[e for e in excluded if e["reason"]==["low_priority_access_no_carve"]],"strict_dense_max_deviation_m":float(strict_err.max()),"adaptive_enabled":adaptive,"adaptive_station_count":sum(len(w["adaptive_stations"]) for w in m),"max_deviation_m":maxdev,
+            "max_grade_change_per_3m":maxgrade,"dense_samples":len(dense),"dense_max_deviation_m":dense_error,"max_way_mean_abs_m":max_mean,"over_1m_count":len(exceptions),"over_1m_samples":exceptions,"profile_pass":maxdev<=MAX_DEVIATION+1e-7 and dense_error<=MAX_DEVIATION+1e-7 and max_mean<=MAX_MEAN_DEVIATION+1e-7 and all(row["grade_limit_pass"] for row in m),
             "way_metrics":m}
     write(a.output/"road-profiles.json",{"schema":1,"xy":xy.tolist(),"height_m":y.tolist(),"mdt_m":reference.tolist(),
         "ways":ways,"junction_nodes":{str(n):nodes[n] for n in shared if n in nodes},"excluded_structures":excluded})
@@ -83,7 +87,9 @@ def main():
     if a.previous_carve and a.previous_carve.exists():
         if dt.digest(a.previous_carve)!="adb2429526dda22c7186a1c1655930970a9eabbc93524a5e969fca79a3e85e73":
             raise ValueError("Previous carve hash mismatch")
-        previous=check_surface(decode(a.previous_carve.read_bytes()),original,corr,legacy=True)
+        old_xy,old_ways,old_nodes,old_shared,_=network(osm,(x0,z0,x1,z1),legacy=True)
+        old_corr=Corridor(old_xy,np.zeros(len(old_xy)),old_ways,[old_nodes[n] for n in sorted(old_shared) if n in old_nodes])
+        previous=check_surface(decode(a.previous_carve.read_bytes()),original,old_corr,legacy=True)
         report["previous_run_46067363364_crossfall"]={k:v for k,v in previous.items() if "crossfall" in k or k=="transverse_samples"}
         write(a.output/"road-validation.json",report)
         print(json.dumps({"previous_run_46067363364_crossfall":report["previous_run_46067363364_crossfall"]}),flush=True)
