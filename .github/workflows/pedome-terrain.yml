@@ -56,7 +56,7 @@ jobs:
             /tmp/pedome-terrain/build-report.json
 
   dgt:
-    if: inputs.mode == 'dgt' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/agent/dgt-terrain-grid' || github.ref == 'refs/heads/agent/tin-monotonic-refinement' || github.ref == 'refs/heads/agent/terrain-manifest-contract')
+    if: inputs.mode == 'dgt' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/agent/dgt-terrain-grid' || github.ref == 'refs/heads/agent/tin-monotonic-refinement' || github.ref == 'refs/heads/agent/terrain-manifest-contract' || github.ref == 'refs/heads/agent/tin-compact-binary')
     permissions:
       contents: write
     uses: ./.github/workflows/pedome-dgt-terrain.yml
