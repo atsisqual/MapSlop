@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - '.github/workflows/dgt-authenticated.yml'
+      - 'tools/download-dgt-pedome.py'
 permissions:
   contents: read
 jobs:
