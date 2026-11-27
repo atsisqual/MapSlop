@@ -10,6 +10,10 @@ def annotate(root):
     p=json.loads(profiles.read_text());xy=np.array(p['xy']);ys=np.array(p['height_m'])
     nodes={int(i):int(n) for i,n in p['junction_nodes'].items()}
     radii={i:max(w['width_m']/2 for w in p['ways'] if i in w['ids']) for i in nodes.values()}
+    for group in p.get('platform_group_details',[]):
+        for i,r in zip(group['node_indices'],group['radius_m']):radii[int(i)]=float(r)
+    ramp_byway={}
+    for row in p.get('ramp_sections',[]):ramp_byway.setdefault(row['way'],[]).append(row)
     byway={}
     for w in p['ways']:byway.setdefault(w['way'],[]).append(w)
     for mode in ('baseline','regression','carved'):
@@ -31,6 +35,16 @@ def annotate(root):
                     dist,k,t,w,a,b=best
                     peak.update(way_station_m=w['s'][k]+t*(w['s'][k+1]-w['s'][k]),way_segment_index=k,
                                 distance_to_axis_m=dist,reference_profile_y_m=float(ys[a]+t*(ys[b]-ys[a])))
+                if best and mode=='carved':
+                    stations=ramp_byway.get(peak['way'],[])
+                    matching=[row for row in stations if np.linalg.norm(np.asarray(row['start_xz'])-xy[w['ids'][0]])<.01]
+                    ramp_list=[r for row in matching for r in row['ramps']]
+                    if ramp_list:
+                        s=peak['way_station_m']
+                        nearest_ramp=min(ramp_list,key=lambda r: min(abs(s-r['start_m']),abs(s-r['end_m'])))
+                        a,b=nearest_ramp['start_m'],nearest_ramp['end_m']
+                        peak['nearest_ramp']=nearest_ramp
+                        peak['ramp_signed_distance_m']=-min(s-a,b-s) if a<=s<=b else min(abs(s-a),abs(s-b))
                 if nodes:
                     nearest=min(nodes,key=lambda n:np.linalg.norm(q-xy[nodes[n]]))
                     idx=nodes[nearest];dist=float(np.linalg.norm(q-xy[idx]))
@@ -42,5 +56,5 @@ def annotate(root):
                                 platform_height_m=float(ys[edgeidx]))
                 peak['collision_surface_minus_tin_m']=peak['ground']-peak['terrain']
         path.write_text(json.dumps(r,indent=2,allow_nan=False)+'\n')
-        print('DRIVE_PEAKS',mode,json.dumps({k:v[k].get('peaks',[])[:3] for k in ('surface_raw','surface_window_0_2s','terrain_raw','terrain_window_0_2s') if k in v},allow_nan=False),flush=True)
+        print('DRIVE_PEAKS',mode,json.dumps({k:v[k].get('peaks',[])[:10] for k in ('surface_raw','surface_window_0_2s','terrain_raw','terrain_window_0_2s') if k in v},allow_nan=False),flush=True)
 if __name__=='__main__':annotate(Path(sys.argv[1]))
