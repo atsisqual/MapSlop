@@ -1,0 +1,196 @@
+name: Publish MapSlop preview to GitHub Pages
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/pages.yml'
+      - 'tools/prepare-pedome.py'
+      - 'data/pedome/pedome-osm.json'
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: mapslop-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch exact upstream and Three.js revisions
+        run: |
+          git init /tmp/nairobi
+          git -C /tmp/nairobi remote add origin https://github.com/briankariuki/slop-nairobi.git
+          git -C /tmp/nairobi fetch --depth=1 origin 64b8599ae7dd7ba56ffbe68f19cc1423a9e7f903
+          git -C /tmp/nairobi checkout --detach FETCH_HEAD
+          git init /tmp/three
+          git -C /tmp/three remote add origin https://github.com/mrdoob/three.js.git
+          git -C /tmp/three sparse-checkout set build examples/jsm
+          git -C /tmp/three fetch --depth=1 --filter=blob:none origin f17eb5d689094a3fbd4cd0d64d54729a48036ce0
+          git -C /tmp/three checkout --detach FETCH_HEAD
+          mkdir -p /tmp/three-vendor
+          cp -r /tmp/three/build /tmp/three/examples /tmp/three/LICENSE /tmp/three-vendor/
+      - name: Build actual Pedome map without external map services
+        run: python tools/prepare-pedome.py /tmp/nairobi /tmp/pedome --osm-json data/pedome/pedome-osm.json --flat --three-vendor /tmp/three-vendor
+      - name: Stage only runtime and public OSM source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/site/MapSlop
+          python - <<'PY'
+          import pathlib, re, shutil
+          src=pathlib.Path('/tmp/pedome')
+          dst=pathlib.Path('/tmp/site/MapSlop')
+          pending=['index.html','js/pedome.js']
+          seen=set()
+          # Copy ES module dependencies, not the upstream development tools, tests or capture data.
+          aliases={'three':'vendor/three/build/three.webgpu.js','three/webgpu':'vendor/three/build/three.webgpu.js','three/tsl':'vendor/three/build/three.tsl.js'}
+          while pending:
+              rel=pending.pop()
+              if rel in seen: continue
+              seen.add(rel)
+              f=src/rel
+              if not f.is_file(): raise RuntimeError('Missing runtime dependency: '+rel)
+              out=dst/rel
+              out.parent.mkdir(parents=True,exist_ok=True)
+              shutil.copy2(f,out)
+              if not rel.endswith('.js'): continue
+              for name in re.findall(r"""(?:\bfrom\s*|\bimport\s*\(?\s*)['"]([^'"]+)['"]""",f.read_text(encoding='utf-8')):
+                  if name.startswith('.'):
+                      target=(f.parent/name).resolve()
+                      if target.is_relative_to(src): pending.append(str(target.relative_to(src)))
+                  elif name in aliases: pending.append(aliases[name])
+                  elif name.startswith('three/addons/'): pending.append('vendor/three/examples/jsm/'+name[len('three/addons/'):])
+          shutil.copy2(src/'vendor/three/LICENSE',dst/'THREE-LICENSE.txt')
+          shutil.copy2(src/'UPSTREAM-README.md',dst/'UPSTREAM-README.md')
+          shutil.copy2('data/pedome/pedome-osm.json',dst/'pedome-osm.json')
+          shutil.copy2('data/pedome/README.md',dst/'OSM-DATA.md')
+          shutil.copy2(src/'build-report.json',dst/'build-report.json')
+          (dst/'.nojekyll').touch()
+          print('Staged',len(seen),'runtime files')
+          PY
+          cat > /tmp/site/MapSlop/LICENSE-CODE.txt <<'EOF'
+          MapSlop preview — adapted from Slop Cities Nairobi by its contributors
+          (https://github.com/briankariuki/slop-nairobi/tree/64b8599ae7dd7ba56ffbe68f19cc1423a9e7f903).
+          Upstream README declares code MIT; parts adapted from Slop New York.
+          MIT License
+
+          Copyright (c) 2026 Mr.doob (Slop New York)
+          Copyright (c) Slop Cities Nairobi contributors (Nairobi adaptations)
+
+          Permission is hereby granted, free of charge, to any person obtaining a copy
+          of this software and associated documentation files (the "Software"), to deal
+          in the Software without restriction, including without limitation the rights
+          to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+          copies of the Software, and to permit persons to whom the Software is
+          furnished to do so, subject to the following conditions:
+
+          The above copyright notice and this permission notice shall be included in all
+          copies or substantial portions of the Software.
+
+          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+          IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+          FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+          AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+          LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+          OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+          SOFTWARE.
+          EOF
+          cat > /tmp/site/MapSlop/ATTRIBUTION.html <<'EOF'
+          <!doctype html><html lang="pt"><meta charset="utf-8"><title>MapSlop — Créditos</title>
+          <h1>MapSlop — prévia experimental de Pedome</h1>
+          <p>Dados geográficos © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>, <a href="https://opendatacommons.org/licenses/odbl/1-0/">ODbL 1.0</a>. <a href="pedome-osm.json">Dados de origem</a> e <a href="js/nairobi-geodata.js">base derivada</a>. <a href="OSM-DATA.md">Proveniência</a>.</p>
+          <p>Código adaptado de Slop Cities Nairobi (MIT declarado no README upstream) e Slop New York. <a href="LICENSE-CODE.txt">Licença</a> · <a href="UPSTREAM-README.md">README upstream</a> · <a href="THREE-LICENSE.txt">Three.js MIT</a> · <a href="https://github.com/atsisqual/MapSlop">Projeto e código de adaptação</a>.</p>
+          <p>Relevo plano provisório; alturas de edifícios maioritariamente estimadas. Sem rasters DGT, assets capturados de PortoSlop ou Nairobi, ou credenciais.</p>
+          <p><a href="./?webgl">Voltar ao jogo</a></p></html>
+          EOF
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/site/MapSlop/index.html')
+          s=p.read_text()
+          s=s.replace(' · Copernicus (quando usado)', ' · <a href="./ATTRIBUTION.html">Créditos e dados</a>')
+          p.write_text(s)
+          PY
+      - name: Install Playwright and Chromium
+        run: |
+          mkdir -p /tmp/pedome-browser
+          cd /tmp/pedome-browser
+          npm install --no-audit --no-fund --save-exact playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Render and drive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/pedome-results
+          python -m http.server 8080 --bind 127.0.0.1 --directory /tmp/site > /tmp/pedome-results/http.log 2>&1 &
+          server=$!
+          trap 'kill "$server" || true' EXIT
+          for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/MapSlop/ >/dev/null; then break; fi; sleep 1; done
+          cd /tmp/pedome-browser
+          cat > smoke.mjs <<'JS'
+          import { chromium } from 'playwright';
+          import fs from 'node:fs';
+          const browser=await chromium.launch({headless:true,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+          const page=await browser.newPage({viewport:{width:1280,height:720}});
+          const errors=[], consoleLog=[], failed=[];
+          page.on('pageerror',e=>errors.push(e.message));
+          page.on('console',m=>consoleLog.push({type:m.type(),text:m.text()}));
+          page.on('requestfailed',r=>failed.push({url:r.url(),error:r.failure()?.errorText}));
+          page.on('response',r=>{if(r.status()>=400)failed.push({url:r.url(),status:r.status()})});
+          // All runtime assets should be local; fail unexpected external requests rather than depending on CDN.
+          await page.route('**/*',r=>r.request().url().startsWith('http://127.0.0.1:8080/')?r.continue():r.abort());
+          let report={errors,consoleLog,failed};
+          try {
+            await page.goto('http://127.0.0.1:8080/MapSlop/?webgl',{waitUntil:'load',timeout:90000});
+            await page.waitForFunction(()=>window.mapslop?.ready===true,{},{timeout:120000});
+            const state=()=>page.evaluate(()=>{const e=window.mapslop.controllers.getActiveEntity();return {mode:window.mapslop.controllers.activeMode,x:e.position.x,y:e.position.y,z:e.position.z,speed:e.speed,heading:e.heading,status:document.querySelector('#status').textContent,canvas:!!document.querySelector('canvas'),roads:window.mapslop.GEO.roads.length,buildings:window.mapslop.GEO.buildings.length}});
+            report.before=await state();
+            await page.screenshot({path:'/tmp/pedome-results/pedome-start.png',timeout:60000});
+            await page.keyboard.down('w');
+            try { await page.waitForFunction(()=>Math.abs(window.mapslop.controllers.getActiveEntity().speed)>1,{},{timeout:60000}); await page.waitForFunction(({x,z})=>{const p=window.mapslop.controllers.getActiveEntity().position;return Math.hypot(p.x-x,p.z-z)>2;},report.before,{timeout:90000}); } finally { await page.keyboard.up('w'); }
+            report.after=await state();
+            report.distance=Math.hypot(report.after.x-report.before.x,report.after.z-report.before.z);
+            await page.screenshot({path:'/tmp/pedome-results/pedome-driving.png',timeout:60000});
+            if(report.before.mode!=='car'||!report.before.canvas||report.before.roads!==179||report.before.buildings!==527||!Number.isFinite(report.distance)||report.distance<1||errors.length||consoleLog.some(m=>m.type==='error'||/GL_INVALID_OPERATION|GL_INVALID_FRAMEBUFFER_OPERATION|shader error/i.test(m.text))||failed.some(r=>!r.url.endsWith('/favicon.ico')))throw Error('Browser driving validation failed');
+            report.success=true;
+          } catch(e) {
+            report.success=false; report.error=e.message;
+            report.status=await page.locator('#status').textContent({timeout:5000}).catch(()=>null);
+            await page.screenshot({path:'/tmp/pedome-results/failure.png',timeout:30000}).catch(()=>{});
+            throw e;
+          } finally {
+            fs.writeFileSync('/tmp/pedome-results/browser-report.json',JSON.stringify(report,null,2));
+            console.log(JSON.stringify(report,null,2));
+            await browser.close();
+          }
+          JS
+          node smoke.mjs
+      - name: Upload diagnostics and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pedome-browser-evidence
+          path: /tmp/pedome-results/
+          if-no-files-found: warn
+      - name: Upload tested static site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: /tmp/site/MapSlop
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
