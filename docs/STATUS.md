@@ -110,5 +110,24 @@ Tamanhos e SHA-256 calculados sobre ficheiros montados em 2026-11-27 (Python has
 
 - CI inicial no commit `b96f9c9d8bdc5da011164e246a755536fe3f3544`, run 46051557178/job 140683868394: success. `make setup`, unittest 11/11, check-repo 73 links/10 workflows/116 digests/4 hashes; quatro execuções npm test 67/67; Chromium plano 2,177635 m, sintético 5 m 2,195771 m, contacto início/fim 0,03 m, multitoque e release true. Valores sintéticos, não DGT.
 - Revisão: dispatch permite branch agent/dgt-terrain-grid e main; uma execução compara 2/5 m; um rascunho por branch, substituição segura dos assets, MAE/máximo/RMSE, contagem/tamanho/hash e contacto por frame limitado a 0,5 m. Cinco releases existentes são originais/toolchain; nenhum rascunho experimental existia, nada eliminado.
-- Bloqueio: conector não disponibiliza workflow_dispatch e o workflow novo ainda não está registado em main. Contorno legítimo sem merge: workflow manual já registado pedome-terrain.yml no branch do PR, mode=dgt, chama o novo workflow via workflow_call. Conector não tem ação para iniciar a execução. Comando: gh workflow run pedome-terrain.yml --ref agent/dgt-terrain-grid -f mode=dgt. PR #15 fica aberto até ambas as resoluções passarem. Padrão pendente dos resultados reais (5 m se 2 m >150k vértices).
+- Bloqueio: conector não disponibiliza workflow_dispatch e o workflow novo ainda não está registado em main. Contorno legítimo sem merge: workflow manual já registado pedome-terrain.yml no branch do PR, mode=dgt, chama o novo workflow via workflow_call. Conector não tem ação para iniciar a execução. Comando: gh workflow run pedome-terrain.yml --ref agent/dgt-terrain-grid -f mode=dgt. PR #15 ficou aberto aguardando os resultados; regra histórica de ambas as resoluções foi substituída na revisão TIN abaixo.
 - Tarefa adicional: teste manual num Android físico, 5 minutos com aceleração, viragem, travagem e reset. Registar modelo/OS/browser/resolução, mediana e percentil baixo FPS, pico de memória e método (ou indisponibilidade), falhas e comparação 2/5 m. Não executado. Não publicar derivados DGT para testar sem autorização.
+
+
+### Resultados reais — run 46053111254 (27-11-2026)
+
+O run manual em `b95df198c277fdf9509f94f58f63592854766d7a` terminou failure pela regra antiga, não por falha de condução. Quatro TIFF originais conferidos pelo pipeline (bytes e SHA-256), EPSG:3763, 4 040 084 pixels do envelope, 0 inválidos. Rascunho `geodata-dgt-terrain-agent-dgt-terrain-grid`. [Evidência preservada](research/dgt-terrain-grid-evidence-20261127.json): JSON emitido nos logs e metadados dos assets (tamanhos/digests); conector não permite descarregar bytes de asset de release, não alegar rehash do validation.json.
+
+| Produto | Vértices | Triângulos | JSON bytes | Máx. 100 pts (m) | MAE (m) | RMSE (m) | Condução (m) | Contacto máximo (m) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Grelha 2 m | 252 506 | 503 004 | 1 812 236 | 0,430891 | 0,041068 | 0,085677 | 2,025589 | 0,03 |
+| Grelha 5 m | 41 006 | 81 204 | 294 403 | 1,192319 | 0,109483 | 0,220535 | 2,101722 | 0,03 |
+| Grelha 10 m | 10 404 | 20 402 | 74 841 | 1,820113 | 0,226085 | 0,385827 | não testada | não testado |
+
+2/5 m: 35 amostras em cada, diferença máxima superfície de colisão 0 m, browser/multitoque/release true. Hash completo de cada saída e de validation.json no JSON histórico (a release experimental será atualizada, mas esta evidência não será substituída).
+
+### PR #15 — revisão TIN e condução longa
+
+- TIN offline pydelatin 0.4.0, MIT, código upstream tag v0.4.0 commit e281368a62429a47686c1e21786678cc5213fcb1; dependência fixada, não implementar algoritmo. Reamostragem do MDT original para coordenadas locais a 0,5 m, erro interno 0,25 m, cap 149 999; validação por 100 pontos e vias OSM amostradas de 0,5 m em 0,5 m, centro e ±1,5 m. TIN usa as próprias faces no terreno, altura/colli­sões e corte de estradas/passeios. Critério TIN máximo ≤0,5 m em ambos os conjuntos e <150k vértices. Se falhar, manter 2 m com custo e erros registados no ADR; 5/10 m como LOD distante por RMSE, sem gate global.
+- Teste longo: percurso ≥100 m com curva e declive numa via OSM, comandos analógicos e física/colli­sões reais em Chromium (passos fixos 1/60 s, sem teleport durante o percurso, não benchmark FPS). Contacto por passo ≤0,5 m, curva medida ≥15°, declive ≥2%/20 m, zero colisões reportadas. O workflow testa 2 m e TIN e emite validation.json schema 2 e alias terrain-default.json só se um candidato próximo passar. Mantém um rascunho de evidência por branch; os dados originais e o Pages público não são alterados.
+- [Pipeline](terrain-dgt.md) e [ADR 0010](decisions/0010-grelha-mdt.md) atualizados. CI sintético e teste real da nova revisão pendentes neste registo. Voltar a lançar pedome-terrain.yml no branch agent/dgt-terrain-grid com mode=dgt após CI. Não fazer merge até análise dos novos resultados e registo persistente. Teste Android real/FPS/memória permanece aberto.
