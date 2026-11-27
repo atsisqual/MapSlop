@@ -1,0 +1,127 @@
+name: Pedome private road profile validation
+on:
+  workflow_call:
+permissions:
+  contents: write
+concurrency:
+  group: road-preview-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  roads:
+    if: github.ref == 'refs/heads/agent/smooth-road-profiles' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Setup
+        run: |
+          make setup
+          .venv/bin/python -m pip install -r requirements-terrain.txt
+          .venv/bin/python -m unittest discover -s tests -p 'test_road_profiles.py' -v
+      - name: Retrieve fixed original terrain and MDT
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/road-input
+          tag=geodata-dgt-pedome-20261127
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          for tile in 178494 178495 179494 179495; do
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/road-input --pattern "MDT-50cm-$tile-07-2025_v02.tif"
+          done
+          tag=geodata-dgt-terrain-agent-tin-compact-binary
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/road-input --pattern terrain-tin.bin
+      - name: Generate profile and candidate common mesh
+        run: .venv/bin/python tools/build-road-preview.py --input /tmp/road-input --terrain /tmp/road-input/terrain-tin.bin --output /tmp/road-results
+      - name: Compare real browser physics before and after
+        run: |
+          set -euo pipefail
+          npx playwright install --with-deps chromium
+          root=/tmp/road-results
+          for mode in baseline carved; do
+            file=/tmp/road-input/terrain-tin.bin
+            if [ "$mode" = carved ]; then file="$root/terrain-road-preview.bin"; fi
+            test -s "$file"
+            out="outputs/road-$mode"
+            .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi "$out" --osm-json data/pedome/pedome-osm.json --terrain-bin "$file" --three-vendor .cache/mapslop/three-vendor
+            mkdir -p "$root/$mode"
+            make serve OUT="$out" PORT=8080 > "$root/$mode/http.log" 2>&1 &
+            server=$!
+            trap 'kill "$server" 2>/dev/null || true' EXIT
+            for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
+            MAPSLOP_TEST_URL=http://127.0.0.1:8080/?webgl MAPSLOP_RESULTS="$root/$mode" MAPSLOP_EXPECT_TERRAIN='DGT MDT 0.5 m' MAPSLOP_LONG_DRIVE=1 MAPSLOP_ROUTE_REFERENCE="$root/baseline/browser-report.json" node tests/browser-smoke.mjs
+            kill "$server"
+            wait "$server" 2>/dev/null || true
+            trap - EXIT
+          done
+      - name: Enforce road acceptance and compare baseline
+        if: always()
+        run: |
+          set -euo pipefail
+          .venv/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('/tmp/road-results')
+          p=root/'road-validation.json'
+          r=json.loads(p.read_text())
+          def load(mode):
+              f=root/mode/'browser-report.json'
+              return json.loads(f.read_text()) if f.is_file() else {}
+          base,carved=load('baseline'),load('carved')
+          b=base.get('longDrive',{})
+          c=carved.get('longDrive',{})
+          v=c.get('vertical_metrics',{})
+          acc=v.get('surface_window_0_2s',{}).get('max_m_s2')
+          roll=v.get('straight_roll_max_degrees')
+          r['baseline_drive']=b
+          r['carved_drive']=c
+          r['drive_pass']=bool(base.get('success') and carved.get('success') and b.get('success') and c.get('success')
+              and b.get('route',{}).get('name')=='Rua das Bouças' and b.get('route')==c.get('route')
+              and c.get('distance_m',0)>=104 and acc is not None and acc<=2
+              and roll is not None and roll<=1 and v.get('straight_roll_samples',0)>=30)
+          r['pass']=bool(r['pass'] and r['drive_pass'])
+          p.write_text(json.dumps(r,indent=2,allow_nan=False)+'\n')
+          print(json.dumps({k:v for k,v in r.items() if k not in ('way_metrics','baseline_drive','carved_drive')}))
+          print(json.dumps({'baseline_vertical':b.get('vertical_metrics'),'carved_vertical':v,'route':c.get('route',{}).get('name')}))
+          if not r['pass']:raise SystemExit('Road acceptance not met')
+          PY
+      - name: Preserve derivatives and evidence in an unpublished draft
+        if: always()
+        run: |
+          set -euo pipefail
+          root=/tmp/road-results
+          if [ ! -s "$root/road-validation.json" ]; then exit 0; fi
+          case "$GITHUB_REF" in
+            refs/heads/main) tag=geodata-dgt-roads-main ;;
+            refs/heads/agent/smooth-road-profiles) tag=geodata-dgt-roads-agent-smooth-road-profiles ;;
+            *) exit 1 ;;
+          esac
+          cd "$root"
+          files=(road-validation.json road-profiles.json)
+          for mode in baseline carved; do
+            if [ -f "$mode/browser-report.json" ]; then cp "$mode/browser-report.json" "$mode-browser-report.json"; files+=("$mode-browser-report.json"); fi
+          done
+          if [ -f terrain-road-preview.bin ]; then files+=(terrain-road-preview.bin); fi
+          sha256sum "${files[@]}" > SHA256SUMS.txt
+          files+=(SHA256SUMS.txt)
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' > /tmp/road-draft 2>/dev/null; then
+            test "$(cat /tmp/road-draft)" = true
+            while IFS= read -r old; do
+              case "$old" in road-validation.json|road-profiles.json|terrain-road-preview.bin|baseline-browser-report.json|carved-browser-report.json|SHA256SUMS.txt) ;;
+                *) echo "Unexpected asset"; exit 1 ;; esac
+              if [ ! -f "$old" ]; then gh release delete-asset "$tag" "$old" --repo "$GITHUB_REPOSITORY" --yes; fi
+            done < <(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Private road profile experiment" --notes "Experimental DGT derivatives; never publish without approval."
+          fi
+          gh release upload "$tag" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
