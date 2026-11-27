@@ -167,7 +167,15 @@ export async function driveTerrainRoute({reference=null,minGrade=0.02,targetSpee
       const sample=(d)=>{const x=p.x_m+si*d,z=p.z_m+co*d;return {x,z,tin_y:heightAt(x,z),collision_y:c.getGroundHeight(x,z,'car',g),pavement_lift:pavementLift(x,z)};};
       const probes={};for(const [label,seconds] of [['raw',1/60],['window_0_2s',.1]]){const l=sample(-targetSpeed*seconds),m=sample(0),r=sample(targetSpeed*seconds);probes[label]={left:l,centre:m,right:r,tin_acceleration_m_s2:Math.abs(r.tin_y-2*m.tin_y+l.tin_y)/seconds**2,collision_acceleration_m_s2:Math.abs(r.collision_y-2*m.collision_y+l.collision_y)/seconds**2};}
       const closest=vertical.reduce((best,v)=>!best||Math.abs(v.station_m-p.station_m)<Math.abs(best.station_m-p.station_m)?v:best,null);
-      fixed.push({...p,way:route.way,target_speed_m_s:targetSpeed,probes,closest_drive_sample:closest});
+      const temporal={};const index=vertical.indexOf(closest);
+      if(closest&&Math.abs(closest.station_m-p.station_m)<=.5){
+        for(const [label,k] of [['raw',1],['window_0_2s',6]])if(index>=k&&index+k<vertical.length){
+          temporal[label]={station_error_m:Math.abs(closest.station_m-p.station_m),speed_m_s:closest.speed,
+            surface_acceleration_m_s2:Math.abs(vertical[index+k].ground-2*closest.ground+vertical[index-k].ground)/(k*dt)**2,
+            terrain_acceleration_m_s2:Math.abs(vertical[index+k].terrain-2*closest.terrain+vertical[index-k].terrain)/(k*dt)**2};
+        }
+      }
+      fixed.push({...p,way:route.way,target_speed_m_s:targetSpeed,probes,closest_drive_sample:closest,temporal_measurements:temporal});
     }}
     const sections=[];const track=e.wheels[1].steerPivot.position.x-e.wheels[0].steerPivot.position.x;
     for(let s=2;s<=102;s+=1){const p=at(a,s),h=heading(at(a,s-1),at(a,s+1));const curvature=Math.abs(angle(heading(at(a,s-2),p),heading(p,at(a,s+2))))*180/Math.PI;
