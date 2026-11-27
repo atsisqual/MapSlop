@@ -1,0 +1,50 @@
+name: Archive Portugal geographic source
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/archive-portugal.yml'
+permissions:
+  contents: write
+concurrency:
+  group: archive-portugal-261126
+  cancel-in-progress: false
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Retrieve and verify the exact uploaded snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          file=portugal-261126.osm.pbf
+          expected=983c1ffcc59535d53b674ae0caeac3e4d25f28d93a7a635f2a9a531c4445bc91
+          for url in "https://download.geofabrik.de/europe/portugal-261126.osm.pbf" "https://download.geofabrik.de/europe/portugal-latest.osm.pbf"; do
+            if curl --fail --location --connect-timeout 15 --max-time 240 --output "$file" "$url" && [ "$(stat -c%s "$file")" = 429648916 ] && echo "$expected  $file" | sha256sum --check; then
+              echo "Verified exact original snapshot."
+              exit 0
+            fi
+            rm -f "$file"
+          done
+          echo "::error::Exact source not available. Do not substitute a different snapshot."
+          exit 1
+      - name: Preserve verified source in an unpublished draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          tag=geodata-portugal-20261126
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' > /tmp/mapslop-draft-status; then
+            test "$(cat /tmp/mapslop-draft-status)" = true
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Portugal — OSM snapshot 2026-11-26" --notes "Geographic source archive. © OpenStreetMap contributors, ODbL 1.0. https://www.openstreetmap.org/copyright . Exact uploaded snapshot verified by SHA-256 983c1ffcc59535d53b674ae0caeac3e4d25f28d93a7a635f2a9a531c4445bc91 . Not a game release."
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -Fxq portugal-261126.osm.pbf; then
+            echo "Existing asset preserved; no overwrite."
+          else
+            gh release upload "$tag" portugal-261126.osm.pbf --repo "$GITHUB_REPOSITORY"
+          fi
