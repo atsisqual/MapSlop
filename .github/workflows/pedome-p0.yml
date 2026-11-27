@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'tools/prepare-pedome.py'
+      - 'data/pedome/pedome-osm.json'
       - '.github/workflows/pedome-p0.yml'
 permissions:
   contents: read
@@ -27,8 +28,10 @@ jobs:
           git -C /tmp/nairobi checkout --detach FETCH_HEAD
       - name: Build fixture and verify controllers and road geometry
         run: python tools/prepare-pedome.py /tmp/nairobi /tmp/mapslop-fixture --fixture
-      - name: Build real Pedome
-        run: python tools/prepare-pedome.py /tmp/nairobi /tmp/mapslop-pedome
+      - name: Build real Pedome from versioned OSM snapshot (flat terrain)
+        run: |
+          python tools/prepare-pedome.py /tmp/nairobi /tmp/mapslop-pedome --osm-json data/pedome/pedome-osm.json --flat
+          python -c 'import json; d=json.load(open("/tmp/mapslop-pedome/build-report.json")); assert not d["fixture"] and d["flat"] and d["roads"]==179 and d["buildings"]==527, d'
       - name: Upload report only (source licensing inventory still pending)
         if: always()
         uses: actions/upload-artifact@v4
