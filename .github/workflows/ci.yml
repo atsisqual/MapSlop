@@ -37,7 +37,7 @@ jobs:
       - name: Reproducible setup
         run: |
           make setup
-          .venv/bin/python -m pip install -r requirements-roads.txt
+          .venv/bin/python -m pip install -r requirements-buildings.txt -r requirements-roads.txt
       - name: Offline repository and data workflow tests
         run: |
           .venv/bin/python -m pip check
@@ -47,6 +47,8 @@ jobs:
           node --check tools/pedome-ui.js
           node --check tools/import-osm.mjs
           node --check tests/browser-smoke.mjs
+          node --check tests/terrain-drive.mjs
+          node --check tests/road-drive-diagnostics.mjs
       - name: Fixture and real Pedome builds
         run: |
           .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi outputs/fixture --fixture --three-vendor .cache/mapslop/three-vendor

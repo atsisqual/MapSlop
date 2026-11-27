@@ -36,7 +36,7 @@ def flat_dem():
     s,w,n,e=BBOX; step=.00025; nx=math.ceil((e-w+.02)/step); ny=math.ceil((n-s+.02)/step)
     return dict(source='SYNTHETIC FLAT TEST TERRAIN',west=w-.01,north=n+.01,dx=step,dy=-step,nx=nx,ny=ny,values=[0]*(nx*ny))
 def main():
-    p=argparse.ArgumentParser(); p.add_argument('upstream',type=P); p.add_argument('output',type=P); p.add_argument('--osm-json',type=P); p.add_argument('--dem-json',type=P); p.add_argument('--terrain-json',type=P,help='Legacy precomputed JSON terrain'); p.add_argument('--terrain-bin',type=P,help='MSLTERR1 binary terrain'); p.add_argument('--building-preview',action='store_true',help='Private height preview, preserve centimetres'); p.add_argument('--flat',action='store_true'); p.add_argument('--fixture',action='store_true'); p.add_argument('--three-vendor',type=P,help='Optional local Three.js tree (experimental version compatibility)'); a=p.parse_args()
+    p=argparse.ArgumentParser(); p.add_argument('upstream',type=P); p.add_argument('output',type=P); p.add_argument('--osm-json',type=P); p.add_argument('--dem-json',type=P); p.add_argument('--terrain-json',type=P,help='Legacy precomputed JSON terrain'); p.add_argument('--terrain-bin',type=P,help='MSLTERR1 binary terrain'); p.add_argument('--building-preview',action='store_true',help='Private height preview, preserve centimetres'); p.add_argument('--roof-preview',type=P,help='Private semantic roof preview JSON'); p.add_argument('--flat',action='store_true'); p.add_argument('--fixture',action='store_true'); p.add_argument('--three-vendor',type=P,help='Optional local Three.js tree (experimental version compatibility)'); a=p.parse_args()
     if a.output.exists(): p.error('output must not exist; no existing files overwritten')
     if a.fixture and a.osm_json: p.error('fixture and osm-json are mutually exclusive')
     if (a.terrain_json or a.terrain_bin) and (a.dem_json or a.flat or a.fixture or (a.terrain_json and a.terrain_bin)): p.error('terrain input is exclusive with other terrain modes')
@@ -123,6 +123,18 @@ export const tin = T.kind === 'tin' ? makeTin(T) : null;""")
   }""")
         patch(f,'function segmentBreaks(ax, az, bx, bz) {','function segmentBreaks(ax, az, bx, bz) {\n  if(tin) return tin.segmentBreaks(ax,az,bx,bz);')
 
+    if a.roof_preview:
+        if not a.building_preview or not a.terrain_bin or not terrain or terrain.get('kind')!='tin':
+            p.error('--roof-preview requires --building-preview and verified TIN')
+        geo['roofPreview']=json.loads(a.roof_preview.read_text())
+        source_tags={str(e['id']):e.get('tags',{}) for e in data['elements'] if e.get('type')=='way'}
+        for b in geo['buildings']:
+            t=source_tags.get(str(b['id']),{})
+            b['roofOnly']=t.get('building')=='roof' or t.get('building:part')=='roof'
+            b['explicitMinH']='min_height' in t or 'building:min_level' in t
+        shutil.copy2(P(__file__).resolve().parent/'pedome-buildings-detail.mjs',out/'js/pedome-buildings-detail.mjs')
+        f=out/'js/buildings.js'
+        patch(f,'export function footings() {',"import { detailBases } from './pedome-buildings-detail.mjs';\nexport function footings() {\n  if(detailBases.size) return detailBases;")
     geo['frame']['testFixture']=a.fixture; geo['frame']['flatTerrain']=bool(a.flat or a.fixture); geo['frame']['demSource']=terrain['source'] if terrain else dem.get('source','unknown');
     if a.terrain_bin:
         shutil.copy2(a.terrain_bin,out/'js/terrain.bin')
@@ -171,6 +183,10 @@ try {
  let last=performance.now(); renderer.setAnimationLoop(now=>{const dt=Math.max(0,Math.min(.05,(now-last)/1000));last=now;gamepad.update(dt);controllers.update(dt,now/1000); cameras.update(dt,now/1000);renderer.render(scene,camera);ui.update(now);status.textContent=(GEO.frame.testFixture?'TESTE FICTÍCIO — ':GEO.frame.flatTerrain?'PEDOME — relevo plano — ':GEO.frame.demSource==='SYNTHETIC TEST TERRAIN'?'PEDOME — terreno de teste — ':'PEDOME — ')+Math.round(Math.abs(controllers.getActiveEntity().speed)*3.6)+' km/h'; window.mapslop.ready=true;});
 } catch(e){status.textContent='Erro: '+e.message; console.error(e);throw e;}
 ''',encoding='utf-8')
+    if a.roof_preview:
+        f=out/'js/pedome.js'
+        patch(f,"import { buildBuildings } from './buildings.js';","import { buildDetailedBuildings as buildBuildings } from './pedome-buildings-detail.mjs';")
+        patch(f,'scene.add(await buildBuildings());','const buildingGroup=await buildBuildings(); scene.add(buildingGroup); window.buildingDetailReport=buildingGroup.userData.buildingDetailReport;')
     html=(out/'index.html').read_text(); imp=re.search(r'<script type="importmap">.*?</script>',html,re.S).group()
     if a.three_vendor:
         shutil.copytree(a.three_vendor,out/'vendor/three')
