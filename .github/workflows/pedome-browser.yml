@@ -71,11 +71,11 @@ jobs:
             report.before=await state();
             await page.screenshot({path:'/tmp/pedome-results/pedome-start.png',timeout:60000});
             await page.keyboard.down('w');
-            try { await page.waitForFunction(()=>Math.abs(window.mapslop.controllers.getActiveEntity().speed)>1,{},{timeout:60000}); await page.waitForTimeout(1800); } finally { await page.keyboard.up('w'); }
+            try { await page.waitForFunction(()=>Math.abs(window.mapslop.controllers.getActiveEntity().speed)>1,{},{timeout:60000}); await page.waitForFunction(({x,z})=>{const p=window.mapslop.controllers.getActiveEntity().position;return Math.hypot(p.x-x,p.z-z)>2;},report.before,{timeout:90000}); } finally { await page.keyboard.up('w'); }
             report.after=await state();
             report.distance=Math.hypot(report.after.x-report.before.x,report.after.z-report.before.z);
             await page.screenshot({path:'/tmp/pedome-results/pedome-driving.png',timeout:60000});
-            if(report.before.mode!=='car'||!report.before.canvas||report.before.roads!==179||report.before.buildings!==527||!Number.isFinite(report.distance)||report.distance<1||errors.length||consoleLog.some(m=>m.type==='error')||failed.some(r=>!r.url.endsWith('/favicon.ico')))throw Error('Browser driving validation failed');
+            if(report.before.mode!=='car'||!report.before.canvas||report.before.roads!==179||report.before.buildings!==527||!Number.isFinite(report.distance)||report.distance<1||errors.length||consoleLog.some(m=>m.type==='error'||/GL_INVALID_OPERATION|GL_INVALID_FRAMEBUFFER_OPERATION|shader error/i.test(m.text))||failed.some(r=>!r.url.endsWith('/favicon.ico')))throw Error('Browser driving validation failed');
             report.success=true;
           } catch(e) {
             report.success=false; report.error=e.message;
