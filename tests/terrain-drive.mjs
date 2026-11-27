@@ -82,6 +82,33 @@ export async function driveTerrainRoute({reference=null,minGrade=0.02,targetSpee
   }
   function attempt(route){
     const a=route.points,m=metrics(a);
+    // Geometry-only speed schedule shared by all terrains. 20 km/h replay
+    // intentionally unchanged. For 50 km/h, anticipate curvature and braking.
+    const fast=targetSpeed>10, lateralLimit=4, braking=2.0, ds=.5;
+    const speedPlan=[];
+    if(fast){
+      for(let s=0;s<=a.at(-1)[2];s+=ds){
+        let k=0;
+        // Estimate curvature on the 2m route polyline, not terrain/height.
+        for(const offset of [-1,0,1]){
+          const l=at(a,s+offset-2),p=at(a,s+offset),r=at(a,s+offset+2);
+          const ab=distance(l,p),bc=distance(p,r),ac=distance(l,r);
+          if(Math.min(ab,bc,ac)>.01){
+            const cross=Math.abs((p[0]-l[0])*(r[1]-l[1])-(p[1]-l[1])*(r[0]-l[0]));
+            k=Math.max(k,2*cross/(ab*bc*ac));
+          }
+        }
+        // 3.5 m/s² planning margin leaves headroom for tracking error.
+        const v=Math.min(targetSpeed,Math.sqrt(3.5/Math.max(k,1e-8)));
+        speedPlan.push({station_m:s,curvature_per_m:k,speed_limit_m_s:v,command_m_s:v});
+      }
+      for(let i=speedPlan.length-2;i>=0;i--)speedPlan[i].command_m_s=Math.min(speedPlan[i].command_m_s,Math.sqrt(speedPlan[i+1].command_m_s**2+2*braking*ds));
+    }
+    const speedAt=s=>{
+      if(!fast)return targetSpeed;
+      const j=Math.min(speedPlan.length-1,Math.max(0,Math.floor((s+2)/ds)));
+      return speedPlan[j].command_m_s;
+    };
     const h0=heading(a[0],a[2]);
     c.teleportActiveTo(a[0][0],a[0][1],h0);
     if(distance(a[0],[e.position.x,e.position.z])>1.5)
@@ -90,7 +117,7 @@ export async function driveTerrainRoute({reference=null,minGrade=0.02,targetSpee
     let last=[e.position.x,e.position.z],prevHeading=e.heading,headingAccum=0,hmin=0,hmax=0;
     let minY=Infinity,maxY=-Infinity,collisions=0,reason='Timeout';
     const trace=[],vertical=[],rollStraight=[],bodyRoll=[],wheelDelta=[],wheelRows=[],dt=1/60;
-    let maxSpeed=0;
+    let maxSpeed=0,maxLateral=0;const lateral=[];
     c.setCollisionListener(()=>collisions++);
     try {
       for(let i=0;i<60*55;i++){
@@ -99,13 +126,14 @@ export async function driveTerrainRoute({reference=null,minGrade=0.02,targetSpee
         if(!Number.isFinite(q.d)){reason='Lost route';break;}
         progress=Math.max(progress,q.s);maxCross=Math.max(maxCross,q.d);
         if(q.d>route.width/2-0.35){reason='Left road corridor';break;}
-        const look=clamp(4+Math.max(0,e.speed)*0.38,4,targetSpeed>10?12:7);
+        const look=clamp(4+Math.max(0,e.speed)*0.38,4,fast?10:7);
         const target=at(a,progress+look);
         const delta=angle(Math.atan2(target[0]-p.x,target[1]-p.z),e.heading);
         const steer=clamp(Math.atan2(2*2.76*Math.sin(delta),look)/0.60,-1,1);
         c.setTouchInput('left',Math.max(0,steer));c.setTouchInput('right',Math.max(0,-steer));
-        c.setTouchInput('forward',clamp((targetSpeed-e.speed)/1.8,0,1));
-        c.setTouchInput('backward',clamp((e.speed-targetSpeed-0.4)/1.8,0,1));
+        const command=fast?Math.min(speedAt(progress),Math.sqrt(lateralLimit/Math.max(1e-8,Math.abs(2*Math.sin(delta)/look)))):targetSpeed;
+        c.setTouchInput('forward',clamp((command-e.speed)/1.8,0,1));
+        c.setTouchInput('backward',clamp((e.speed-command-(fast?.05:.4))/(fast?.8:1.8),0,1));
         c.update(dt,(i+1)*dt);
         const pos=e.position;
         maxSpeed=Math.max(maxSpeed,e.speed);
@@ -134,7 +162,10 @@ export async function driveTerrainRoute({reference=null,minGrade=0.02,targetSpee
               wheelRows.push({station_m:station,x_m:pos.x,z_m:pos.z,way:route.way,axle,track_m:track,roll_degrees:deg,tin_roll_degrees:Math.abs(Math.atan2(right.tin_y-left.tin_y,track)*180/Math.PI),heading_error_degrees:angle(e.heading,roadHeading)*180/Math.PI,junction_distance_m:Number.isFinite(near)?near:null,left,right});}
           }
         }
-        headingAccum+=angle(e.heading,prevHeading);prevHeading=e.heading;
+        const dh=angle(e.heading,prevHeading);
+        lateral.push({station_m:station,speed_m_s:e.speed,lateral_m_s2:Math.abs(e.speed*dh/dt),command_m_s:command});
+        maxLateral=Math.max(maxLateral,lateral.at(-1).lateral_m_s2);
+        headingAccum+=dh;prevHeading=e.heading;
         hmin=Math.min(hmin,headingAccum);hmax=Math.max(hmax,headingAccum);
         if(i%30===0)trace.push({distance_m:distanceM,progress_m:progress,ground_m:ge,surface_m:se,terrain_y_m:raw});
         if(ge>0.5||se>0.5){reason='Contact exceeded 0.5 m';break;}
@@ -162,7 +193,7 @@ export async function driveTerrainRoute({reference=null,minGrade=0.02,targetSpee
       chassis_dynamic_roll_max_degrees:bodyRoll.length?Math.max(...bodyRoll):null,roll_method:'left/right collision-surface height at actual axle offsets; front and rear, max'};
     const fixed=[];
     // Fixed XY from the rejected run (not the nearest frame of a new trajectory).
-    if(route.way===149303998){for(const p of [{station_m:76.92738517104854,x_m:-483.67362560494433,z_m:-339.8413845959361},{station_m:77.47715886521297,x_m:-483.250714238169,z_m:-340.19294436770883},{station_m:85.29582405445177,x_m:-477.3473805745985,z_m:-345.3174865973596}]){
+    if(route.way===149303998){for(const p of [{station_m:68.71881646904657,x_m:-490.1591126829761,z_m:-334.8091401815798},{station_m:91.14244392308373,x_m:-473.13358836863193,z_m:-349.37055477179007},{station_m:94.04050261577557,x_m:-471.0767967585179,z_m:-351.41299418885575},{station_m:76.92738517104854,x_m:-483.67362560494433,z_m:-339.8413845959361},{station_m:77.47715886521297,x_m:-483.250714238169,z_m:-340.19294436770883},{station_m:85.29582405445177,x_m:-477.3473805745985,z_m:-345.3174865973596}]){
       const h=heading(at(a,p.station_m-.5),at(a,p.station_m+.5)),si=Math.sin(h),co=Math.cos(h),g=heightAt(p.x_m,p.z_m);
       const sample=(d)=>{const x=p.x_m+si*d,z=p.z_m+co*d;return {x,z,tin_y:heightAt(x,z),collision_y:c.getGroundHeight(x,z,'car',g),pavement_lift:pavementLift(x,z)};};
       const probes={};for(const [label,seconds] of [['raw',1/60],['window_0_2s',.1]]){const l=sample(-targetSpeed*seconds),m=sample(0),r=sample(targetSpeed*seconds);probes[label]={left:l,centre:m,right:r,tin_acceleration_m_s2:Math.abs(r.tin_y-2*m.tin_y+l.tin_y)/seconds**2,collision_acceleration_m_s2:Math.abs(r.collision_y-2*m.collision_y+l.collision_y)/seconds**2};}
@@ -183,7 +214,12 @@ export async function driveTerrainRoute({reference=null,minGrade=0.02,targetSpee
       const y=heightAt(p[0],p[1]);const pair=[-1,1].map(sign=>{const x=p[0]+Math.cos(h)*sign*track/2,z=p[1]-Math.sin(h)*sign*track/2;return {x,z,tin_y:heightAt(x,z),collision_y:c.getGroundHeight(x,z,'car',y),pavement_lift:pavementLift(x,z)};});
       sections.push({station_m:s,x_m:p[0],z_m:p[1],way:route.way,curvature_degrees:curvature,track_m:track,left:pair[0],right:pair[1],tin_roll_degrees:Math.abs(Math.atan2(pair[1].tin_y-pair[0].tin_y,track)*180/Math.PI),collision_roll_degrees:Math.abs(Math.atan2(pair[1].collision_y-pair[0].collision_y,track)*180/Math.PI)});
     }
+    let maxLateralWindow=0;
+    for(let i=0;i+12<=lateral.length;i++)maxLateralWindow=Math.max(maxLateralWindow,lateral.slice(i,i+12).reduce((s,p)=>s+p.lateral_m_s2,0)/12);
     const result={route,reason,distance_m:distanceM,progress_m:progress,sample_count:samples,
+      speed_policy:fast?'curvature_braking_envelope_v1':'constant_5_5',lateral_target_limit_m_s2:fast?lateralLimit:null,
+      lateral_acceleration_max_m_s2:maxLateral,lateral_acceleration_window_0_2s_max_m_s2:maxLateralWindow,
+      speed_plan:fast?speedPlan:[],lateral_peaks:[...lateral].sort((a,b)=>b.lateral_m_s2-a.lateral_m_s2).slice(0,10),
       target_speed_m_s:targetSpeed,max_speed_m_s:maxSpeed,reached_target_speed:maxSpeed>=targetSpeed*.9,
       at_target_speed_samples:vertical.filter(v=>v.speed>=targetSpeed*.9).length,
       fixed_regression_probes:fixed,straight_cross_sections:sections,straight_wheel_worst:wheelRows.sort((a,b)=>b.roll_degrees-a.roll_degrees).slice(0,10),
