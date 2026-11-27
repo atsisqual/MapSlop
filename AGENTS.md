@@ -26,12 +26,12 @@ MapSlop: simulador 3D em browser de localidades reais (condução livre em 3.ª 
 
 ## Build local
 ```sh
-git clone https://github.com/briankariuki/slop-nairobi.git ../slop-nairobi
-git -C ../slop-nairobi checkout 64b8599ae7dd7ba56ffbe68f19cc1423a9e7f903
-python tools/prepare-pedome.py ../slop-nairobi ./pedome --osm-json data/pedome/pedome-osm.json --flat
-python -m http.server 8080 --bind 127.0.0.1 --directory ./pedome   # abrir http://localhost:8080/?webgl
+make setup
+make build
+make test
+make serve
 ```
-A pasta de saída não pode existir. `./pedome` não deve ser commitada.
+Abrir http://localhost:8080/?webgl. Python 3.12.10, Node 22.16.0/npm 10.9.2, Git, Make. Ver .devcontainer. A pasta de saída não pode existir e `./pedome` não deve ser commitada. Usar OUT=outputs/nome para novos builds, sem destruir ficheiros existentes. Dados DGT e ferramentas offline não são necessários para P0.
 
 ## Regras invioláveis
 1. Nunca commitar credenciais, cookies, URLs assinadas, HAR, ou atributos privados de cadastro.

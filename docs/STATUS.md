@@ -30,7 +30,7 @@
 - Inventário completo de assets upstream por concluir; licenças por coleção DGT inconsistentes (MDT STAC proprietary, MDS CC BY 4.0, ortofoto public; documentação institucional aberta). Confirmar direitos específicos antes de publicar; autorização do utilizador obrigatória.
 - Cadastro OGC zero resultados; Mapa de Construções LiDAR identificado, não descarregado; não prometer cobertura.
 - Não foram executados Roofer com Pedome, City4CFD nem pipeline de reconstrução. Não afirmar desempenho móvel nem qualidade geométrica.
-- Workflows antigos duplicados e acionados por push, ambiente incompleto e issues por criar. Subtree ainda só proposta futura; não executar nesta reorganização.
+- Workflows antigos duplicados e acionados por push (tarefa 7). Backlog em issues; ambiente P0 em preparação neste PR. Subtree ainda só proposta futura; não executar nesta reorganização.
 
 ## Próximos passos (por prioridade)
 
@@ -94,3 +94,5 @@ Tamanhos e SHA-256 calculados sobre ficheiros montados em 2026-11-27 (Python has
 - Tarefa 4: ROADMAP P0–P3 com critérios por testar e catálogo de dados, ligando hashes de todos os assets. SHA-256 dos 4 pequenos blobs calculado do conteúdo UTF-8 (autoteste abc, tamanho e comparação com sha256sum local do piloto). Corrigida contagem da toolchain. Links/fences verificados. Sem publicar releases.
 
 - Tarefa 5: três templates Markdown com frontmatter YAML simples e cinco issues correspondentes ao backlog; links e formatação verificados. Issues #6–#10 confirmadas abertas pela API; nenhuma encerrada.
+
+- Tarefa 6: ambiente P0 em PR (Makefile, requisitos fixados, setup upstream e devcontainer). Testes Make/Docker serão registados antes do merge. Sem GDAL/PDAL ainda (pipeline P1 por implementar).

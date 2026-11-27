@@ -10,18 +10,18 @@ P0 experimental: mapa piloto OSM, 179 registos de vias, 527 edifícios, conduç�
 
 ## Executar localmente
 
-Requisitos: Git, Python 3.10+, Node.js 22/npm. O motor externo é Slop Nairobi no commit fixado `64b8599ae7dd7ba56ffbe68f19cc1423a9e7f903`.
+Requisitos fixados: Python 3.12.10, Node.js 22.16.0/npm 10.9.2, Git e Make, em Linux/macOS/WSL ou [devcontainer](.devcontainer/devcontainer.json).
 
 ```sh
 git clone https://github.com/atsisqual/MapSlop.git
 cd MapSlop
-git clone https://github.com/briankariuki/slop-nairobi.git ../slop-nairobi
-git -C ../slop-nairobi checkout 64b8599ae7dd7ba56ffbe68f19cc1423a9e7f903
-python tools/prepare-pedome.py ../slop-nairobi ./pedome --osm-json data/pedome/pedome-osm.json --flat
-python -m http.server 8080 --bind 127.0.0.1 --directory ./pedome
+make setup
+make build
+make test
+make serve
 ```
 
-Abrir http://localhost:8080/?webgl. A pasta de saída não pode existir. O build executa testes upstream; sem `--three-vendor`, o browser usa o CDN Three.js. O workflow Pages fornece a versão fixada e local dos módulos.
+Abrir http://localhost:8080/?webgl. Setup instala as dependências e verifica os commits exatos de Nairobi e Three.js em .cache/mapslop; build usa OSM versionado e Three.js local, sem serviços de mapas. A pasta de saída não pode existir: para outro build, usar `make build OUT=outputs/pedome2`, e o mesmo OUT no test/serve. O build atual é plano. O devcontainer prepara o ambiente P0; GDAL/PDAL serão definidos quando o pipeline P1 for implementado.
 
 Controlo: WASD/setas, comando ou botões táteis; M amplia o mapa; R repõe o carro. A publicação é feita pelo GitHub Pages, sem servidor de jogo.
 
