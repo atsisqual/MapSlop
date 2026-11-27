@@ -120,6 +120,8 @@ def check_surface(t,original,corridor):
     _,w=corridor.target(q,baseline)
     outside=q[w==0];base=baseline[w==0]
     delta=np.abs(np.array([s(*p) for p in outside])-base)
-    return {"transverse_samples":len(slopes),"max_crossfall_degrees":max(slopes,default=None),
+    junction_errors=[abs(s(*p)-h) for p,h in zip(corridor.junction_xy,corridor.junction_y)]
+    return {"junction_samples":len(junction_errors),"max_junction_mesh_delta_m":max(junction_errors,default=0),
+            "transverse_samples":len(slopes),"max_crossfall_degrees":max(slopes,default=None),
             "max_centre_mesh_profile_delta_m":max(profile_error,default=None),
             "outside_samples":len(outside),"outside_max_change_m":float(delta.max(initial=0))}
