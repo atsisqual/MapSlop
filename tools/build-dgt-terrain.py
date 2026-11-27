@@ -211,7 +211,7 @@ def main():
         try:
             t=build_tin(mosaic,affine,crs,sample,road_points=points,road_reference=reference,road_centres=points[np.array([d['offset_m']==0 for d in details])])
             f=args.output/"terrain-tin.bin"
-            t,storage=save_binary(f,t)
+            t,storage=save_binary(f,t,compact=True)
             validate(t)
             sampler=TinSampler(t)
             products.append({"kind":"tin",**storage,
