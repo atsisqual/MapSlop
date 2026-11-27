@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 import numpy as np
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"tools"))
-from terrain_tin import from_raster, TinSampler, validate_tin, refine_roads
+from terrain_tin import from_raster, TinSampler, validate_tin, refine_roads, accepts_refinement
 from terrain_grid import grid_shape
 
 class TinTest(unittest.TestCase):
@@ -37,3 +37,29 @@ class TinTest(unittest.TestCase):
         self.assertLessEqual(result["raster_max_abs_m"],0.5)
         self.assertEqual(result["refinement"]["raster_samples"],nx*nz)
         self.assertGreaterEqual(result["refinement"]["corridor_added_vertices"],0)
+        rounds=result["refinement"]["rounds"]
+        accepted=[r for r in rounds if r["accepted"]]
+        self.assertTrue(accepted)
+        maxima=[r["road_max_abs_m"] for r in accepted]
+        self.assertEqual(maxima,sorted(maxima,reverse=True))
+        self.assertEqual(accepted[-1]["vertices"],len(result["vertices"])//3)
+        self.assertEqual(accepted[-1]["raster_max_abs_m"],result["raster_max_abs_m"])
+        self.assertEqual(len(accepted),result["refinement"]["accepted_rounds"])
+        self.assertEqual(len(rounds)-len(accepted),result["refinement"]["rejected_rounds"])
+
+    def test_reject_road_error_regression(self):
+        # Reproduce the maxima observed in run 46056885609, including a rejected proposal.
+        previous=None
+        decisions=[]
+        accepted=[]
+        for road,raster in [(0.586451,0.7),(0.424830,0.6),(0.662954,0.4),(0.350236,0.45)]:
+            ok=accepts_refinement(road,raster,previous)
+            decisions.append(ok)
+            if ok:
+                previous=(road,raster)
+                accepted.append(road)
+        self.assertEqual(decisions,[True,True,False,True])
+        self.assertEqual(accepted,sorted(accepted,reverse=True))
+        self.assertFalse(accepts_refinement(0.35,0.6,(0.35,0.5)))
+        self.assertTrue(accepts_refinement(0.35,0.4,(0.35,0.5)))
+        self.assertFalse(accepts_refinement(float("nan"),0.4,previous))
