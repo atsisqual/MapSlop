@@ -18,10 +18,11 @@ def summarize(manifest,browser_dir):
         road=p["roads"]
         drive=b.get("longDrive",{})
         row={"kind":kind,"cell_m":cell,"file":p["file"],"vertices":p["vertices"],"triangles":p["triangles"],
-             "json_bytes":p["bytes"],"sha256":p["sha256"],"points":e["points"],
+             "raw_bytes":p["bytes"],"gzip_bytes":p.get("gzip_bytes"),"gzip_sha256":p.get("gzip_sha256"),"json_bytes":p.get("json_bytes"),"json_gzip_bytes":p.get("json_gzip_bytes"),"sha256":p["sha256"],"points":e["points"],
              "max_abs_m":e["max_abs_m"],"mean_abs_m":e["mean_abs_m"],"rmse_m":e["rmse_m"],
              "road_points":road["points"],"road_ways":road["ways"],"road_max_abs_m":road["max_abs_m"],
-             "road_mean_abs_m":road["mean_abs_m"],"road_rmse_m":road["rmse_m"],
+             "road_mean_abs_m":road["mean_abs_m"],"road_rmse_m":road["rmse_m"],"road_worst_10":road.get("worst_10",[]),
+             "refinement":p.get("refinement"),"raster_max_abs_m":p.get("raster_max_abs_m"),
              "library_error_m":p.get("library_error_m"),"target_error_m":p.get("target_error_m"),
              "distance_m":drive.get("distance_m"),"progress_m":drive.get("progress_m"),
              "road_name":drive.get("route",{}).get("name"),"road_way":drive.get("route",{}).get("way"),
@@ -50,20 +51,17 @@ def summarize(manifest,browser_dir):
                 and row["road_grade_20m"] is not None and row["road_grade_20m"]>=0.02
                 and row["driven_heading_range_degrees"] is not None and row["driven_heading_range_degrees"]>=15
                 and row["collisions"]==0)
-            if kind=="tin":
-                row["precision_pass"]=bool(e["points"]==100 and e["max_abs_m"]<=0.5
-                    and road["points"]>0 and road["max_abs_m"]<=0.5
-                    and p["vertices"]<150000 and p["library_error_m"]<=0.5)
-            else:
-                # User-approved fallback: preserve 2 m cost and measured road error.
-                row["precision_pass"]=bool(cell==2 and e["points"]==100 and e["max_abs_m"]<=1.0)
+            common_precision=bool(e["points"]==100 and e["max_abs_m"]<=0.5
+                    and road["points"]>0 and road["max_abs_m"]<=0.5)
+            row["precision_pass"]=common_precision and (
+                (p["vertices"]<150000 and p["raster_max_abs_m"]<=0.5) if kind=="tin" else cell==2)
             row["pass"]=row["precision_pass"] and drive_ok
         rows.append(row)
     near=next((r for r in rows if r["kind"]=="tin" and r["pass"]),None)
     if near is None:
         near=next((r for r in rows if r["kind"]=="grid" and r["cell_m"]==2 and r["pass"]),None)
     passed=near is not None and manifest["coverage"]["invalid_pixels"]==0
-    return {"schema":2,"tested_commit":os.getenv("GITHUB_SHA"),"branch":os.getenv("GITHUB_REF_NAME"),
+    return {"schema":3,"tested_commit":os.getenv("GITHUB_SHA"),"branch":os.getenv("GITHUB_REF_NAME"),
             "run_id":os.getenv("GITHUB_RUN_ID"),"source_release":manifest["source_release"],
             "source_crs":manifest["source_crs"],"coverage_pixels":manifest["coverage"]["pixels_checked"],
             "invalid_pixels":manifest["coverage"]["invalid_pixels"],

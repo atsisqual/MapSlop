@@ -15,9 +15,9 @@ class SummaryTest(unittest.TestCase):
             products=[]
             for kind,cell,v,label in [("grid",2,252506,"2"),("grid",5,41006,"5"),("grid",10,10404,"10"),("tin",None,50000,"tin")]:
                 p={"kind":kind,"cell_m":cell,"file":"terrain-"+label+".json","vertices":v,"triangles":v*2,"bytes":10,"sha256":"a"*64,
-                    "error":{"points":100,"max_abs_m":0.4 if kind=="tin" else 0.9,"mean_abs_m":0.2,"rmse_m":0.3},
+                    "error":{"points":100,"max_abs_m":0.4 if kind=="tin" else 0.45,"mean_abs_m":0.2,"rmse_m":0.3},
                     "roads":{"points":1000,"ways":10,"max_abs_m":0.45,"mean_abs_m":0.1,"rmse_m":0.2}}
-                if kind=="tin":p.update(library_error_m=0.25,target_error_m=0.25)
+                if kind=="tin":p.update(library_error_m=0.25,target_error_m=0.25,raster_max_abs_m=0.3)
                 products.append(p)
                 q=path/label;q.mkdir()
                 b={"success":True,"multiTouch":True,"touchRelease":True,
@@ -37,6 +37,15 @@ class SummaryTest(unittest.TestCase):
             self.assertFalse(r["results"][1]["pass"])
             products[-1]["roads"]["max_abs_m"]=0.45
             products[-1]["vertices"]=150000
+            self.assertEqual(mod.summarize(manifest,path)["recommended_default_cell_m"],2)
+            # Explicit regression: 2 m fallback cannot bypass either maximum.
+            products[0]["roads"]["max_abs_m"]=1.41
+            self.assertFalse(mod.summarize(manifest,path)["pass"])
+            self.assertIsNone(mod.summarize(manifest,path)["recommended_default_file"])
+            products[0]["roads"]["max_abs_m"]=0.5
+            products[0]["error"]["max_abs_m"]=0.50001
+            self.assertFalse(mod.summarize(manifest,path)["pass"])
+            products[0]["error"]["max_abs_m"]=0.5
             self.assertEqual(mod.summarize(manifest,path)["recommended_default_cell_m"],2)
             (path/"2"/"browser-report.json").unlink()
             self.assertFalse(mod.summarize(manifest,path)["pass"])

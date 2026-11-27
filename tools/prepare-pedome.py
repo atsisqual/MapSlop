@@ -4,6 +4,7 @@ No PortoSlop code or data is used. Default downloads real OSM; fixture is testin
 """
 import argparse, json, math, pathlib, re, shutil, subprocess, urllib.request, urllib.parse
 from terrain_grid import validate as validate_terrain
+from terrain_binary import decode as decode_terrain
 P=pathlib.Path
 BBOX=(41.4105,-8.395,41.4195,-8.383)
 LAT,LON=41.41501,-8.38809 # church; OSM way 149406360
@@ -35,11 +36,11 @@ def flat_dem():
     s,w,n,e=BBOX; step=.00025; nx=math.ceil((e-w+.02)/step); ny=math.ceil((n-s+.02)/step)
     return dict(source='SYNTHETIC FLAT TEST TERRAIN',west=w-.01,north=n+.01,dx=step,dy=-step,nx=nx,ny=ny,values=[0]*(nx*ny))
 def main():
-    p=argparse.ArgumentParser(); p.add_argument('upstream',type=P); p.add_argument('output',type=P); p.add_argument('--osm-json',type=P); p.add_argument('--dem-json',type=P); p.add_argument('--terrain-json',type=P,help='Precomputed local metric terrain grid; no DSM filtering'); p.add_argument('--flat',action='store_true'); p.add_argument('--fixture',action='store_true'); p.add_argument('--three-vendor',type=P,help='Optional local Three.js tree (experimental version compatibility)'); a=p.parse_args()
+    p=argparse.ArgumentParser(); p.add_argument('upstream',type=P); p.add_argument('output',type=P); p.add_argument('--osm-json',type=P); p.add_argument('--dem-json',type=P); p.add_argument('--terrain-json',type=P,help='Legacy precomputed JSON terrain'); p.add_argument('--terrain-bin',type=P,help='MSLTERR1 binary terrain'); p.add_argument('--flat',action='store_true'); p.add_argument('--fixture',action='store_true'); p.add_argument('--three-vendor',type=P,help='Optional local Three.js tree (experimental version compatibility)'); a=p.parse_args()
     if a.output.exists(): p.error('output must not exist; no existing files overwritten')
     if a.fixture and a.osm_json: p.error('fixture and osm-json are mutually exclusive')
-    if a.terrain_json and (a.dem_json or a.flat or a.fixture): p.error('terrain-json is exclusive with dem-json, flat and fixture')
-    terrain=validate_terrain(json.loads(a.terrain_json.read_text(encoding='utf-8'))) if a.terrain_json else None
+    if (a.terrain_json or a.terrain_bin) and (a.dem_json or a.flat or a.fixture or (a.terrain_json and a.terrain_bin)): p.error('terrain input is exclusive with other terrain modes')
+    terrain=validate_terrain(decode_terrain(a.terrain_bin.read_bytes())) if a.terrain_bin else validate_terrain(json.loads(a.terrain_json.read_text(encoding='utf-8'))) if a.terrain_json else None
     src=a.upstream.resolve(); out=a.output.resolve()
     data=fixture() if a.fixture else json.loads(a.osm_json.read_text(encoding='utf-8-sig')) if a.osm_json else get_osm()
     els=data.get('elements');
@@ -97,7 +98,7 @@ export const tin = T.kind === 'tin' ? makeTin(T) : null;""")
     pos=new Float32Array(T.vertices);
     uv=new Float32Array(pos.length/3*2);
     for(let i=0;i<pos.length/3;i++) uv.set([(pos[3*i]-T.x0)/W,1-(pos[3*i+2]-T.z0)/H],2*i);
-    index=T.triangles;
+    index=Array.from(T.triangles);
   } else {
 """+old.replace('const pos =','pos =').replace('const uv =','uv =').replace('const index =','index =')+"""  }
 """+s[end:]
@@ -121,7 +122,13 @@ export const tin = T.kind === 'tin' ? makeTin(T) : null;""")
         patch(f,'function segmentBreaks(ax, az, bx, bz) {','function segmentBreaks(ax, az, bx, bz) {\n  if(tin) return tin.segmentBreaks(ax,az,bx,bz);')
 
     geo['frame']['testFixture']=a.fixture; geo['frame']['flatTerrain']=bool(a.flat or a.fixture); geo['frame']['demSource']=terrain['source'] if terrain else dem.get('source','unknown');
-    geo_path.write_text('// Geographic data © OpenStreetMap contributors, ODbL 1.0 (real mode). See upstream README for terrain attribution.\nexport const GEO = '+json.dumps(geo,ensure_ascii=False)+';\n',encoding='utf-8')
+    if a.terrain_bin:
+        shutil.copy2(a.terrain_bin,out/'js/terrain.bin')
+        shutil.copy2(P(__file__).resolve().parent/'terrain-binary.mjs',out/'js/terrain-binary.mjs')
+        exported={**geo,'terrain':None}
+        geo_path.write_text("import { loadTerrain } from './terrain-binary.mjs';\nexport const GEO = "+json.dumps(exported,ensure_ascii=False)+";\nGEO.terrain = await loadTerrain(new URL('./terrain.bin',import.meta.url));\n",encoding='utf-8')
+    else:
+        geo_path.write_text('// Geographic data © OpenStreetMap contributors, ODbL 1.0 (real mode). See upstream README for terrain attribution.\nexport const GEO = '+json.dumps(geo,ensure_ascii=False)+';\n',encoding='utf-8')
     (out/'js/nairobi-models.js').write_text('export const MODEL_HEIGHTS = {};\nexport const MODEL_BUILDINGS = [];\n')
     f=out/'js/controllers.js'; patch(f,'if (l.name !== name) continue;',"if (name && l.name !== name) continue;\n    if (l.tunnel || l.bridge || (l.layer || 0) !== 0 || !['residential','unclassified','tertiary','secondary','living_street'].includes(l.kind)) continue;")
     patch(f,'const len = Math.hypot(best.dx, best.dz);',"if (!best && name) return roadSpawn(null, x, z);\n  if (!best) throw new Error('No surface road for spawn');\n  const len = Math.hypot(best.dx, best.dz);")
