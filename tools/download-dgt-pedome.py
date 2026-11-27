@@ -71,13 +71,15 @@ def login(session):
     check.raise_for_status()
     if "json" not in check.headers.get("content-type",""):
         raise RuntimeError("Sessão não confirmada.")
-    print("Sessão DGT iniciada.")
+    print("Login regressou ao portal; pesquisa STAC respondeu. Cookies de sessão DGT presentes:", any(c.name in ("auth_session","connect.sid") and c.domain.endswith("dgterritorio.gov.pt") for c in session.cookies))
 
-def metadata(session, collection, item):
-    r = session.get(f"{API}/collections/{collection}/items/{item}",timeout=40)
-    r.raise_for_status()
-    body = r.json()
-    obj = body.get("data",body)
+def metadata(session, collection, item, searched=None):
+    obj = (searched or {}).get(item)
+    if obj is None:
+        r = session.get(f"{API}/collections/{collection}/items/{item}",timeout=40)
+        r.raise_for_status()
+        body = r.json()
+        obj = body.get("data",body)
     if obj.get("id") != item or obj.get("collection") != collection:
         raise ValueError("Metadados não correspondem ao item esperado.")
     asset = next((v for v in obj.get("assets",{}).values() if v.get("type","").startswith("image/tiff")),None)
@@ -104,7 +106,7 @@ def download(session,url,dest):
         with session.get(url,stream=True,timeout=(20,120)) as r:
             r.raise_for_status()
             if urlsplit(r.url).scheme != "https" or urlsplit(r.url).hostname not in ASSET_HOSTS:
-                raise RuntimeError("Download redirecionado para outro serviço; pode ser necessário login.")
+                raise RuntimeError("Destino não autorizado pelo cliente: "+str(urlsplit(r.url).hostname)+"; tipo: "+r.headers.get("Content-Type","").split(";")[0])
             chunks=r.iter_content(1024*1024)
             first=next(chunks,b"")
             if first[:4] not in (b"II*\x00",b"MM\x00*",b"II+\x00",b"MM\x00+"):
@@ -137,12 +139,25 @@ def main():
         s.headers["User-Agent"]="MapSlop DGT data importer/0.1"
         if a.login:
             login(s)
+        searched = {}
+        if a.login:
+            collections = a.collection or ["MDT-50cm","MDS-50cm","ORTOS-2025"]
+            for c in collections:
+                response = s.post(API+"/search",json={"bbox":[-8.395,41.4105,-8.383,41.4195],"limit":100,"collections":[c]},timeout=40)
+                response.raise_for_status()
+                payload = response.json()
+                data = payload.get("data",payload)
+                features = data.get("features",[])
+                print("STAC POST:",c,len(features),"items")
+                for feature in features:
+                    if feature.get("collection")==c and feature.get("id"):
+                        searched[feature["id"]]=feature
         for collection,item in ITEMS:
             if a.collection and collection not in a.collection:
                 continue
             entry={"id":item,"collection":collection}
             try:
-                obj,url,name=metadata(s,collection,item)
+                obj,url,name=metadata(s,collection,item,searched)
                 entry.update(bbox=obj["bbox"],version=obj.get("properties",{}).get("version"),filename=name)
                 if not a.metadata_only:
                     dest=a.output/name
