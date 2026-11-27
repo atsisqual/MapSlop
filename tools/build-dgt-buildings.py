@@ -148,7 +148,24 @@ def main():
              "fallback_count":len(rows)-len(candidates),"height_quantiles_m":np.percentile(
                  [r["height_m"] for r in candidates],[0,25,50,75,100]).tolist() if candidates else [],
              "sample_osm_ids":[r["osm_id"] for r in sample],"rows":rows}
+    # Preserve explicit OSM heights; for other buildings use measured candidates
+    # only in a private preview copy, never modify the canonical OSM source.
+    candidate_map={r["osm_id"]:r for r in candidates}
+    applied=[]
+    for e in osm["elements"]:
+        if e["type"]!="way" or e["id"] not in candidate_map or "building" not in e.get("tags",{}):
+            continue
+        row=candidate_map[e["id"]]
+        if e["tags"].get("height"):
+            row["preview_policy"]="preserve_explicit_osm_height"
+            continue
+        e["tags"]["height"]=str(row["height_m"])
+        row["preview_policy"]="raster_p90_candidate"
+        applied.append(e["id"])
+    summary["preview_applied_count"]=len(applied)
+    summary["preview_applied_osm_ids"]=applied
     a.output.mkdir(parents=True)
+    (a.output/"height-preview-osm.json").write_text(json.dumps(osm,allow_nan=False)+"\n")
     (a.output/"building-heights.json").write_text(json.dumps(summary,indent=2,allow_nan=False)+"\n")
     (a.output/"roofer-sample.geojson").write_text(json.dumps({"type":"FeatureCollection","features":[
         features[r["osm_id"]] for r in sample]},allow_nan=False)+"\n")
