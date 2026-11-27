@@ -10,6 +10,7 @@ from rasterio.merge import merge
 from terrain_binary import decode,save
 from road_profiles import network,solve,metrics,CURVATURE,MAX_DEVIATION,MAX_MEAN_DEVIATION
 from road_carve import Corridor,deform,check_surface
+from road_surface_policy import junction_groups,parallel_policy,RAMP
 
 spec=importlib.util.spec_from_file_location("dgt_terrain",Path(__file__).with_name("build-dgt-terrain.py"))
 dt=importlib.util.module_from_spec(spec);spec.loader.exec_module(dt)
@@ -33,6 +34,10 @@ def main():
     x1=x0+(original["nx"]-1)*original["cell"]
     z1=z0+(original["nz"]-1)*original["cell"]
     xy,ways,nodes,shared,excluded=network(osm,(x0,z0,x1,z1))
+    shared_indices=[nodes[n] for n in sorted(shared) if n in nodes]
+    groups,equalities=junction_groups(xy,ways,shared_indices)
+    parallel,parallel_eq=parallel_policy(xy,ways)
+    equalities+=parallel_eq
     with ExitStack() as stack:
         ds=[]
         for asset in dt.expected_assets():
@@ -52,10 +57,10 @@ def main():
         dense=np.asarray(dense);aa=np.array(aa);bb=np.array(bb);uu=np.array(uu);way_ids=np.array(way_ids)
         actual=dt.sample(mosaic[0],affine,crs,dense[:,0],dense[:,1])-original["base"]
         observations={"a":aa,"b":bb,"u":uu,"reference":actual}
-        strict=solve(reference,ways,observations)
+        strict=solve(reference,ways,observations,equalities=equalities)
         strict_err=np.abs(actual-(strict[aa]*(1-uu)+strict[bb]*uu))
         adaptive=bool(strict_err.max()>MAX_DEVIATION+1e-7 or any(strict_err[way_ids==w].mean()>MAX_MEAN_DEVIATION+1e-7 for w in set(way_ids)))
-        y=solve(reference,ways,observations,adaptive=True) if adaptive else strict
+        y=solve(reference,ways,observations,adaptive=True,equalities=equalities) if adaptive else strict
         pred=y[aa]*(1-uu)+y[bb]*uu
         err=np.abs(actual-pred)
         dense_error=float(err.max())
@@ -75,7 +80,7 @@ def main():
     maxdev=max(row["max_deviation_m"] for row in m)
     maxgrade=max(row["max_grade_change_per_3m"] for row in m)
     report={"schema":1,"ways":len(ways),"samples":len(xy),"shared_nodes":len(shared),
-            "junction_identity_max_m":0.0,"excluded_structures":[e for e in excluded if e["reason"]!=["low_priority_access_no_carve"]],"excluded_accesses":[e for e in excluded if e["reason"]==["low_priority_access_no_carve"]],"strict_dense_max_deviation_m":float(strict_err.max()),"adaptive_enabled":adaptive,"adaptive_station_count":sum(len(w["adaptive_stations"]) for w in m),"max_deviation_m":maxdev,
+            "junction_identity_max_m":max((abs(sum(y[i]*v for i,v in terms)) for terms in equalities),default=0.0),"platform_groups":len(groups),"ramp_length_m":RAMP,"parallel_ways":parallel["ways"] if parallel else [],"excluded_structures":[e for e in excluded if e["reason"]!=["low_priority_access_no_carve"]],"excluded_accesses":[e for e in excluded if e["reason"]==["low_priority_access_no_carve"]],"strict_dense_max_deviation_m":float(strict_err.max()),"adaptive_enabled":adaptive,"adaptive_station_count":sum(len(w["adaptive_stations"]) for w in m),"max_deviation_m":maxdev,
             "max_grade_change_per_3m":maxgrade,"dense_samples":len(dense),"dense_max_deviation_m":dense_error,"max_way_mean_abs_m":max_mean,"over_1m_count":len(exceptions),"over_1m_samples":exceptions,"profile_pass":maxdev<=MAX_DEVIATION+1e-7 and dense_error<=MAX_DEVIATION+1e-7 and max_mean<=MAX_MEAN_DEVIATION+1e-7 and all(row["grade_limit_pass"] for row in m),
             "way_metrics":m}
     write(a.output/"road-profiles.json",{"schema":1,"xy":xy.tolist(),"height_m":y.tolist(),"mdt_m":reference.tolist(),
@@ -83,7 +88,7 @@ def main():
     write(a.output/"road-validation.json",report)
     print(json.dumps({k:v for k,v in report.items() if k not in ("way_metrics","over_1m_samples")}),flush=True)
     # Keep candidate evidence even when the profile criteria fail; never approve it.
-    corr=Corridor(xy,y,ways,[nodes[n] for n in sorted(shared) if n in nodes])
+    corr=Corridor(xy,y,ways,shared_indices,groups=groups,parallel=parallel)
     if a.previous_carve and a.previous_carve.exists():
         if dt.digest(a.previous_carve)!="adb2429526dda22c7186a1c1655930970a9eabbc93524a5e969fca79a3e85e73":
             raise ValueError("Previous carve hash mismatch")
@@ -106,9 +111,10 @@ def main():
         surface["dense_mesh_over_1m_samples"]=[{**probe(i),"mesh_deviation_m":float(mesh_err[i])} for i in np.flatnonzero(mesh_err>MAX_DEVIATION+1e-7)]
         report.update(carve=carve,storage=storage,surface=surface,
             surface_pass=surface["transverse_samples"]>0 and surface["max_crossfall_degrees"]<=1
-            and surface["max_centre_mesh_profile_delta_m"]<=0.1 and surface["max_junction_mesh_delta_m"]<=0.02 and surface["outside_max_change_m"]<=0.1
+            and surface["max_centre_mesh_profile_delta_m"]<=0.1 and surface["max_centre_mesh_target_delta_m"]<=0.1 and surface["max_junction_mesh_delta_m"]<=0.02 and surface["outside_max_change_m"]<=0.1
             and surface["junction_platform_crossfall_samples"]>0 and surface["max_junction_platform_crossfall_degrees"]<=1
             and surface["near_berm_outside_max_change_m"]<=0.1
+            and surface["dense_mesh_max_mdt_deviation_m"]<=1.0 and surface["dense_mesh_max_way_mean_mdt_deviation_m"]<=0.5
             and storage["gzip_bytes"]<1000000 and carve["missing_mandatory_edges"]==0)
     except Exception as exc:
         report.update(surface_pass=False,carve_failure=f"{type(exc).__name__}: {exc}")
