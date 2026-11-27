@@ -36,3 +36,17 @@ class ProfileTests(unittest.TestCase):
         self.assertIn(nodes[11],ways[0]["ids"])
         self.assertIn(nodes[11],ways[1]["ids"])
         self.assertEqual(excluded[0]["way"],3)
+
+    def test_cdt_forces_diagonal(self):
+        from road_carve import constrained_mesh
+        p=np.array([[0,0],[100,0],[100,100],[0,100]],dtype=np.int64)
+        faces,proof=constrained_mesh(p,np.array([[1,3]]))
+        edges={tuple(sorted((int(a),int(b)))) for f in faces for a,b in zip(f,np.roll(f,-1))}
+        self.assertIn((1,3),edges)
+        self.assertEqual(proof["missing_mandatory_edges"],0)
+    def test_flat_junction_platform(self):
+        xy=np.array([[0.,0.],[3.,0.],[6.,0.],[3.,3.]])
+        y=np.array([0.,0.3,0.6,0.6])
+        c=Corridor(xy,y,[{"ids":[0,1,2],"width_m":6},{"ids":[1,3],"width_m":6}],[1])
+        out,_=c.target(np.array([[3.,0.],[3.,1.],[4.,0.],[2.,-1.]]),np.ones(4))
+        np.testing.assert_allclose(out,0.3)
