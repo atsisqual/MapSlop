@@ -118,7 +118,22 @@ jobs:
           p=Path('/tmp/site/MapSlop/index.html')
           s=p.read_text()
           s=s.replace(' · Copernicus (quando usado)', ' · <a href="./ATTRIBUTION.html">Créditos e dados</a>')
-          p.write_text(s)
+          # Give each release a new entry-point URL, including the HUD module.
+          import os
+          root=p.parent
+          version=os.environ['GITHUB_SHA'][:12]
+          main=root/'js/pedome.js'
+          hud=root/'js/pedome-ui.js'
+          hud_name='pedome-ui-'+version+'.js'
+          main_name='pedome-'+version+'.js'
+          (hud.parent/hud_name).write_text(hud.read_text(),encoding='utf-8')
+          (main.parent/main_name).write_text(main.read_text().replace('./pedome-ui.js','./'+hud_name),encoding='utf-8')
+          s=s.replace('./js/pedome.js','./js/'+main_name)
+          s=s.replace('</style>','</style><meta name="mapslop-build" content="'+version+'">')
+          s=s.replace('A construir mapa…','A construir mapa e comandos táteis…')
+          p.write_text(s,encoding='utf-8')
+          (root/'mobile.html').write_text(s,encoding='utf-8')
+          (root/'version.txt').write_text(version+'\n',encoding='utf-8')
           PY
       - name: Install Playwright and Chromium
         run: |
@@ -150,7 +165,7 @@ jobs:
           await page.route('**/*',r=>r.request().url().startsWith('http://127.0.0.1:8080/')?r.continue():r.abort());
           let report={errors,consoleLog,failed};
           try {
-            await page.goto('http://127.0.0.1:8080/MapSlop/?webgl',{waitUntil:'load',timeout:90000});
+            await page.goto('http://127.0.0.1:8080/MapSlop/mobile.html?webgl',{waitUntil:'load',timeout:90000});
             await page.waitForFunction(()=>window.mapslop?.ready===true,{},{timeout:120000});
             const state=()=>page.evaluate(()=>{const e=window.mapslop.controllers.getActiveEntity();return {mode:window.mapslop.controllers.activeMode,x:e.position.x,y:e.position.y,z:e.position.z,speed:e.speed,heading:e.heading,status:document.querySelector('#status').textContent,canvas:!!document.querySelector('canvas'),roads:window.mapslop.GEO.roads.length,buildings:window.mapslop.GEO.buildings.length}});
             report.before=await state();
@@ -228,3 +243,18 @@ jobs:
       - name: Deploy to Pages
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Check public mobile page is this exact deployed build
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://atsisqual.github.io/MapSlop"
+          version="${GITHUB_SHA:0:12}"
+          for i in {1..24}; do
+            if curl -fsSL --max-time 15 "$base/mobile.html?build=$version" -o /tmp/mobile.html && grep -Fq "pedome-$version.js" /tmp/mobile.html && curl -fsSL --max-time 15 "$base/js/pedome-ui-$version.js" -o /tmp/hud.js && grep -Fq 'data-drive="forward"' /tmp/hud.js; then
+              echo "Public mobile entry and versioned HUD verified: $version"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Public deployment not yet verified"
+          exit 1
