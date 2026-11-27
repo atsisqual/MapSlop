@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - '.github/workflows/dgt-laz.yml'
+      - 'tools/collect-dgt-pedome.py'
 permissions:
   contents: write
 concurrency:
