@@ -185,6 +185,7 @@ export async function driveTerrainRoute({reference=null,minGrade=0.02,targetSpee
     }
     const result={route,reason,distance_m:distanceM,progress_m:progress,sample_count:samples,
       target_speed_m_s:targetSpeed,max_speed_m_s:maxSpeed,reached_target_speed:maxSpeed>=targetSpeed*.9,
+      at_target_speed_samples:vertical.filter(v=>v.speed>=targetSpeed*.9).length,
       fixed_regression_probes:fixed,straight_cross_sections:sections,straight_wheel_worst:wheelRows.sort((a,b)=>b.roll_degrees-a.roll_degrees).slice(0,10),
       contact_max_m:maxGround,contact_mean_m:samples?sumGround/samples:null,surface_contact_max_m:maxSurface,
       max_cross_track_m:maxCross,road_grade_20m:m.grade,road_turn_degrees:m.turnDegrees,
