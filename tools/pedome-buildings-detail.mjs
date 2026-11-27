@@ -20,6 +20,15 @@ function tri(m,a,b,c){
   if(n.lengthSq()>1e-10)buckets.get(m).push(...a,...b,...c);
 }
 function quad(m,a,b,c,d){tri(m,a,b,c);tri(m,a,c,d);}
+function clipAbove(p,y){
+  const out=[];
+  for(let i=0;i<p.length;i++){
+    const a=p[i],b=p[(i+1)%p.length],ia=a[1]>=y,ib=b[1]>=y;
+    if(ia)out.push(a);
+    if(ia!==ib){const t=(y-a[1])/(b[1]-a[1]);out.push([a[0]+t*(b[0]-a[0]),y,a[2]+t*(b[2]-a[2])]);}
+  }
+  return out;
+}
 function bounds(b){
   let min=Infinity,max=-Infinity;
   const add=(x,z)=>{const y=heightAt(x,z);min=Math.min(min,y);max=Math.max(max,y);};
@@ -98,12 +107,13 @@ export function buildDetailedBuildings(){
       // Verify correspondence to OSM footprint and the approved TIN in the actual runtime frame.
       const xs=b.ring.filter((_,i)=>i%2===0),zs=b.ring.filter((_,i)=>i%2===1);
       const coords=src.roof.concat(src.walls);
-      let ok=src.roof_min_y>min+.5&&src.roof_max_y>max+1&&src.wall_min_y>=min-1&&src.wall_min_y<=max+2;
+      let ok=src.roof_min_y>base+1.0&&src.roof_max_y>max+1&&src.wall_min_y>=min-1&&src.wall_min_y<=base+.15;
       for(let i=0;i<coords.length;i+=3)if(coords[i]<Math.min(...xs)-1.5||coords[i]>Math.max(...xs)+1.5||coords[i+2]<Math.min(...zs)-1.5||coords[i+2]>Math.max(...zs)+1.5)ok=false;
       if(ok){
-        for(const [values,m] of [[src.roof,rm],[src.walls,fm]])for(let i=0;i<values.length;i+=9)tri(m,values.slice(i,i+3),values.slice(i+3,i+6),values.slice(i+6,i+9));
+        for(let i=0;i<src.roof.length;i+=9)tri(rm,src.roof.slice(i,i+3),src.roof.slice(i+3,i+6),src.roof.slice(i+6,i+9));
+        for(let i=0;i<src.walls.length;i+=9){const q=clipAbove([src.walls.slice(i,i+3),src.walls.slice(i+3,i+6),src.walls.slice(i+6,i+9)],base);for(let j=1;j<q.length-1;j++)tri(fm,q[0],q[j],q[j+1]);}
         top=src.roof_max_y;eave=src.roof_min_y;policy='roofer_lod22';
-        if(src.wall_min_y>min+.02)wallRing(b,min,src.wall_min_y,stone);
+        if(src.wall_min_y>base+.02)wallRing(b,base,src.wall_min_y,stone);
       }else reason='measured_geometry_frame_or_ground_mismatch';
     }
     if(policy!=='roofer_lod22'){
