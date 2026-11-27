@@ -2,7 +2,7 @@
 
 > Atualizado em 2026-11-27. Fonte de verdade para retomar o projeto; ler primeiro [AGENTS](../AGENTS.md). O histórico de investigação não substitui este estado.
 
-## Fase atual: P0 — condução livre em Pedome
+## Fase atual: P1 — reconstrução geográfica (terreno aprovado em privado)
 
 - Motor: Slop Nairobi `64b8599ae7dd7ba56ffbe68f19cc1423a9e7f903`, Three.js `f17eb5d689094a3fbd4cd0d64d54729a48036ce0`. Adaptador `tools/prepare-pedome.py`, sem código/dados de PortoSlop. Londres/Taipei são referências; ver [investigação](research/reuse-audit.md).
 - Piloto WGS84 S,W,N,E `41.4105,-8.395,41.4195,-8.383`, origem na igreja `41.41501,-8.38809` (OSM way 149406360). 1 208 elementos OSM, 179 registos de vias, 527 edifícios (511 alturas estimadas), 113 nós, 134 links. Área alargada W,S,E,N `-8.405,41.405,-8.375,41.435` (~8,4 km²), não confundir com piloto.
@@ -26,7 +26,7 @@
 
 ## Em aberto / conhecido como incompleto
 
-- Faixas/pintura ainda orientadas à esquerda, relevo DGT ainda não integrado, alturas e telhados não reconstruídos, vegetação/ortofotos não integradas.
+- Faixas/pintura ainda orientadas à esquerda, relevo DGT integrado em main para build privado (Pages continua plano), alturas e telhados não reconstruídos, vegetação/ortofotos não integradas.
 - Inventário completo de assets upstream por concluir; licenças por coleção DGT inconsistentes (MDT STAC proprietary, MDS CC BY 4.0, ortofoto public; documentação institucional aberta). Confirmar direitos específicos antes de publicar; autorização do utilizador obrigatória.
 - Cadastro OGC zero resultados; Mapa de Construções LiDAR identificado, não descarregado; não prometer cobertura.
 - Não foram executados Roofer com Pedome, City4CFD nem pipeline de reconstrução. Não afirmar desempenho móvel nem qualidade geométrica.
@@ -34,18 +34,17 @@
 
 ## Próximos passos (por prioridade)
 
-1. [#6 — Integrar MDT DGT de 0,5 m no terreno](https://github.com/atsisqual/MapSlop/issues/6)
-2. [#7 — Calcular alturas e reconstruir edifícios com MDS−MDT e LAZ](https://github.com/atsisqual/MapSlop/issues/7)
-3. [#8 — Corrigir circulação pela direita](https://github.com/atsisqual/MapSlop/issues/8)
-4. [#9 — Gerar vegetação a partir de LAZ e COS2025](https://github.com/atsisqual/MapSlop/issues/9)
-5. [#10 — Aplicar ortofoto de 25 cm ao solo com tiles LOD](https://github.com/atsisqual/MapSlop/issues/10)
+1. [#7 — Calcular alturas e reconstruir edifícios com MDS−MDT e LAZ](https://github.com/atsisqual/MapSlop/issues/7)
+2. [#8 — Corrigir circulação pela direita](https://github.com/atsisqual/MapSlop/issues/8)
+3. [#9 — Gerar vegetação a partir de LAZ e COS2025](https://github.com/atsisqual/MapSlop/issues/9)
+4. [#10 — Aplicar ortofoto de 25 cm ao solo com tiles LOD](https://github.com/atsisqual/MapSlop/issues/10)
 
 As issues são o backlog executável; ROADMAP inclui critérios e tarefas de aceitação adicionais. Não fechar sem evidência.
 
 ## Bloqueios
 
 - Distribuição pública de originais: releases rascunho, autorização ainda não dada; discrepâncias de licenças requerem esclarecimento. Agentes sem permissões de escrita não conseguem descarregar; pedir ao mantenedor acesso autorizado, nunca pedir credenciais em chat.
-- Não há pipeline DGT→runtime implementado. Copernicus é fallback, não resolução final. Teste em dispositivo físico pendente.
+- Pipeline DGT→runtime integrado para uso privado; Pages permanece plano. Copernicus é fallback. Teste em dispositivo físico pendente.
 - Não depender de logs/artefactos temporários como única prova. Evidência neste Git é metadado e excertos de resultados, não cópia integral dos logs.
 
 ## Ficheiros recebidos fora do repo
@@ -152,3 +151,18 @@ Condução longa em Rua das Bouças (OSM way 149303998): grelha 2 m 104,157436 m
 - Novo formato MSLTERR1 .bin com cabeçalho JSON embutido, alturas regulares Float32 LE (índices implícitos), TIN XYZ Float32 LE e faces Uint32 LE. O build e o Chromium leem o binário; não reexpande em JSON no geodata.js. Medir bytes brutos, gzip determinístico nível 9 (mtime=0), hash e tamanho equivalente JSON/gzip. Erros calculados sobre produto descodificado; nenhum ganho real de tamanho ou memória declarado antes do run. O browser lê .bin bruto; gzip é medição comparativa, não compressão HTTP já ativa.
 - Refinamento: Delatin base 0,25 m, pool 0,15 m e retenção de novos vértices até 6 m dos eixos OSM, com SciPy 1.15.3 (BSD-3-Clause, [fonte fixada](https://github.com/scipy/scipy/tree/e29dcb65a2040f04819b426a04b60d44a8f69c04)) Delaunay/Qhull; não é triangulação constrained. Até cinco rondas de avaliação/refinamento, cap 149999; acrescentar pontos reais do MDT em resíduos de estrada >0,38 m e nós de raster >0,43 m, avaliar todos os nós locais e corredores rodoviários. Relatar contagens, máximos e iterações, não alegar garantia contínua. validation.json schema 3 contém os 10 piores pontos por produto, way/nome/tipo/offset, x/z, lon/lat, altitude MDT/mesh e erro assinado/absoluto. Não atribuir causa sem inspeção; perfis próprios de estrada serão tarefa posterior.
 - CI offline pendente nesta revisão; rerun manual pedome-terrain.yml branch agent/dgt-terrain-grid mode=dgt. Novo workflow preserva único rascunho por branch e remove aliases/JSON antigos apenas quando substitui a evidência experimental; não toca nos originais. Sem merge até validar nova regra, sem publicar releases, sem subtree. Android físico/FPS/memória pendente.
+
+### Terreno aprovado — run 46056885609 / PR #15
+
+Commit testado `be3272b1454979dface813c39097f1465b229a64`; CI 46056759592/job 140701065308 success (16/16 testes Python, cinco execuções upstream 67/67, 83 links, 10 workflows, 116 digests, 4 hashes pequenos, condução TIN sintética 104,129529 m, contacto 0,03 m). Teste real 46056885609/job 140701452491 success, quatro TIFF verificados EPSG:3763, 4 040 084 pixels, zero inválidos. Merge #15 `71f3b19fda5356bf6c5fefe5fef163e5f61937e4`. [Evidência permanente](research/dgt-terrain-final-evidence-20261127.json) inclui relatório schema 3 dos logs e digests/tamanhos de 16 assets; bytes de validation.json não descarregados pelo conector.
+
+| Produto | Vértices | Triângulos | Binário bytes | Gzip bytes | Máx. pontos (m) | Máx. vias (m) | Resultado |
+|---|---:|---:|---:|---:|---:|---:|---|
+| 2 m | 252506 | 503004 | 1010224 | 754150 | 0.430891 | 1.412379 | rejeitado (near_candidate) |
+| 5 m | 41006 | 81204 | 164224 | 126324 | 1.192319 | 2.455828 | passou (distant_lod) |
+| 10 m | 10404 | 20402 | 41816 | 33017 | 1.820112 | 3.011911 | passou (distant_lod) |
+| TIN | 100800 | 201015 | 3622880 | 1966866 | 0.201276 | 0.350236 | passou (near_candidate) |
+
+TIN: 100 800 vértices, 201 015 triângulos, 0,201276 m máximo/0,058499 MAE/0,073361 RMSE nos 100 pontos; 0,350236 m máximo/0,035387 MAE/0,046205 RMSE em 70 627 amostras de 121 vias; 0,429646 m máximo em 4 020 009 nós locais. Rua das Bouças way 149303998: 104,219550 m, 1185 amostras, declive 5,799%/20 m, curva 46,550°, contacto 0,03 m, superfície de colisão 0 m, desvio lateral 0,394 m, zero colisões. TIN selecionada. SHA-256 `93495e59862affea17c7202a089fe3203afb536184ab47740727194da669bb59`; rascunho `geodata-dgt-terrain-agent-dgt-terrain-grid`, asset `terrain-tin.bin`. O alias observado chama-se terrain-default.json mas contém bytes MSLTERR1 idênticos; usar o nome inequívoco terrain-tin.bin. Gzip medido, não servido por HTTP. Refinamento rodoviário não monotónico (0,586451 → 0,424830 → 0,662954 → 0,350236 m); manifesto primary_pass=false refere grelha 2 m, validação final true. Estes pontos não alteram o gate final.
+
+Issue #6 concluída por autorização do mantenedor; seguimentos sem implementação: [#16 compressão <1 MB gzip](https://github.com/atsisqual/MapSlop/issues/16), [#17 refinamento monotónico](https://github.com/atsisqual/MapSlop/issues/17), [#18 manifesto/seleção](https://github.com/atsisqual/MapSlop/issues/18), [#19 telemóvel real](https://github.com/atsisqual/MapSlop/issues/19). Próxima prioridade #7 MDS−MDT; Roofer numa fase separada. Nenhuma release publicada, subtree não executado.
