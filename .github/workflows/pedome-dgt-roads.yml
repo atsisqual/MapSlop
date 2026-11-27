@@ -67,23 +67,25 @@ jobs:
                   r['previous_run_46067363364_crossfall']=old
                   p.write_text(json.dumps(r,indent=2,allow_nan=False)+'\n')
           PY
-      - name: Compare real browser physics before and after
+      - name: Compare real browser physics before and after, even on failed offline gates
+        if: always()
         run: |
           set -euo pipefail
           npx playwright install --with-deps chromium
           root=/tmp/road-results
+          mkdir -p "$root"
           for mode in baseline carved; do
             file=/tmp/road-input/terrain-tin.bin
             if [ "$mode" = carved ]; then file="$root/terrain-road-preview.bin"; fi
-            test -s "$file"
+            if [ ! -s "$file" ]; then echo "::warning::$mode mesh unavailable; cannot measure its driving"; continue; fi
             out="outputs/road-$mode"
-            .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi "$out" --osm-json data/pedome/pedome-osm.json --terrain-bin "$file" --three-vendor .cache/mapslop/three-vendor
+            if ! .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi "$out" --osm-json data/pedome/pedome-osm.json --terrain-bin "$file" --three-vendor .cache/mapslop/three-vendor; then echo "::warning::$mode build failed"; continue; fi
             mkdir -p "$root/$mode"
             make serve OUT="$out" PORT=8080 > "$root/$mode/http.log" 2>&1 &
             server=$!
             trap 'kill "$server" 2>/dev/null || true' EXIT
             for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
-            MAPSLOP_TEST_URL=http://127.0.0.1:8080/?webgl MAPSLOP_RESULTS="$root/$mode" MAPSLOP_EXPECT_TERRAIN='DGT MDT 0.5 m' MAPSLOP_LONG_DRIVE=1 MAPSLOP_ROUTE_REFERENCE="$root/baseline/browser-report.json" node tests/browser-smoke.mjs
+            MAPSLOP_TEST_URL=http://127.0.0.1:8080/?webgl MAPSLOP_RESULTS="$root/$mode" MAPSLOP_EXPECT_TERRAIN='DGT MDT 0.5 m' MAPSLOP_LONG_DRIVE=1 MAPSLOP_ROUTE_REFERENCE="$root/baseline/browser-report.json" node tests/browser-smoke.mjs || echo "::warning::$mode browser test failed; preserve available measurements"
             kill "$server"
             wait "$server" 2>/dev/null || true
             trap - EXIT
@@ -97,7 +99,7 @@ jobs:
           from pathlib import Path
           root=Path('/tmp/road-results')
           p=root/'road-validation.json'
-          r=json.loads(p.read_text())
+          r=json.loads(p.read_text()) if p.exists() else {"pass":False,"failure":"offline_candidate_generation_failed"}
           def load(mode):
               f=root/mode/'browser-report.json'
               return json.loads(f.read_text()) if f.is_file() else {}
@@ -109,14 +111,15 @@ jobs:
           roll=v.get('straight_roll_max_degrees')
           r['baseline_drive']=b
           r['carved_drive']=c
+          r['drive_measurement_status']={mode:('measured' if d.get('vertical_metrics') else 'unavailable') for mode,d in [('baseline',b),('carved',c)]}
           r['drive_pass']=bool(base.get('success') and carved.get('success') and b.get('success') and c.get('success')
               and b.get('route',{}).get('name')=='Rua das Bouças' and b.get('route')==c.get('route')
               and c.get('distance_m',0)>=104 and acc is not None and acc<=2
               and roll is not None and roll<=1 and v.get('straight_roll_samples',0)>=30)
-          r['pass']=bool(r['pass'] and r['drive_pass'])
+          r['pass']=bool(r.get('pass') and r['drive_pass'])
           p.write_text(json.dumps(r,indent=2,allow_nan=False)+'\n')
           print(json.dumps({k:v for k,v in r.items() if k not in ('way_metrics','baseline_drive','carved_drive')}))
-          print(json.dumps({'baseline_vertical':b.get('vertical_metrics'),'carved_vertical':v,'route':c.get('route',{}).get('name')}))
+          print(json.dumps({'baseline_vertical':b.get('vertical_metrics'),'carved_vertical':v,'route':c.get('route',{}).get('name'),'status':r['drive_measurement_status']}),flush=True)
           if not r['pass']:raise SystemExit('Road acceptance not met')
           PY
       - name: Preserve derivatives and evidence in an unpublished draft
@@ -131,7 +134,8 @@ jobs:
             *) exit 1 ;;
           esac
           cd "$root"
-          files=(road-validation.json road-profiles.json)
+          files=(road-validation.json)
+          if [ -s road-profiles.json ]; then files+=(road-profiles.json); fi
           for mode in baseline carved; do
             if [ -f "$mode/browser-report.json" ]; then cp "$mode/browser-report.json" "$mode-browser-report.json"; files+=("$mode-browser-report.json"); fi
           done
