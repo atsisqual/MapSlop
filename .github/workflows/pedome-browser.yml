@@ -1,11 +1,6 @@
 name: Pedome browser validation
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/pedome-browser.yml'
-      - 'tools/prepare-pedome.py'
-      - 'data/pedome/pedome-osm.json'
 permissions:
   contents: read
 jobs:
@@ -16,10 +11,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.16.0'
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.12.10'
       - name: Fetch exact upstream and Three.js revisions
         run: |
           git init /tmp/nairobi
