@@ -16,7 +16,7 @@ def polygonal(g):
     ps=[p for p in parts(g,{'Polygon'}) if p.area>1e-8]
     # buffer(0) repairs degenerate rings; remove line/point remnants before overlay.
     ps=[q for p in ps for q in parts(p.buffer(0),{'Polygon'}) if q.area>1e-8]
-    return sh.union_all(ps,grid_size=.01) if ps else sh.Polygon()
+    return ps[0] if len(ps)==1 else sh.union_all(ps,grid_size=.01) if ps else sh.Polygon()
 
 def polygon_union(geoms):
     import shapely as sh
