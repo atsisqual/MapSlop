@@ -1,0 +1,136 @@
+name: Pedome DGT terrain private validation
+on:
+  workflow_dispatch:
+    inputs:
+      archive:
+        description: Preserve TIN and grid comparison in one unpublished draft per branch
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      archive:
+        type: boolean
+        default: true
+permissions:
+  contents: write
+concurrency:
+  group: dgt-terrain-validation-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  terrain:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/agent/dgt-terrain-grid'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Setup fixed dependencies
+        run: |
+          make setup
+          .venv/bin/python -m pip install -r requirements-terrain.txt
+          .venv/bin/python -m pip check
+      - name: Retrieve four immutable pilot tiles from authorized draft
+        run: |
+          set -euo pipefail
+          tag=geodata-dgt-pedome-20261127
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          mkdir -p /tmp/dgt-input
+          for tile in 178494 178495 179494 179495; do
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/dgt-input --pattern "MDT-50cm-$tile-07-2025_v02.tif"
+          done
+      - name: Generate and compare terrain (retain precision failures)
+        continue-on-error: true
+        run: .venv/bin/python tools/build-dgt-terrain.py --input /tmp/dgt-input --output /tmp/dgt-terrain --primary-cell 2
+      - name: Require conversion manifest
+        run: test -s /tmp/dgt-terrain/manifest.json
+      - run: npx playwright install --with-deps chromium
+      - name: Build and drive near candidates privately
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          mkdir -p outputs /tmp/dgt-browser
+          failed=0
+          for cell in 2 tin; do
+            out="outputs/dgt-preview-$cell"
+            result="/tmp/dgt-browser/$cell"
+            mkdir -p "$result"
+            file="/tmp/dgt-terrain/terrain-$cell"; if [ "$cell" != tin ]; then file="${file}m"; fi; file="${file}.bin"
+            if [ ! -s "$file" ]; then echo "Candidate $cell unavailable"; failed=1; continue; fi
+            if ! .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi "$out" --osm-json data/pedome/pedome-osm.json --terrain-bin "$file" --three-vendor .cache/mapslop/three-vendor >"$result/build.log" 2>&1; then
+              echo "Build failed at $cell m; logs preserved privately"
+              failed=1
+              continue
+            fi
+            cp "$out/build-report.json" "$result/build-report.json"
+            make serve OUT="$out" PORT=8080 >"$result/http.log" 2>&1 &
+            server=$!
+            ready=false
+            for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then ready=true; break; fi; sleep 1; done
+            if [ "$ready" = true ]; then
+              MAPSLOP_TEST_URL=http://127.0.0.1:8080/?webgl MAPSLOP_RESULTS="$result" MAPSLOP_EXPECT_TERRAIN='DGT MDT 0.5 m' MAPSLOP_LONG_DRIVE=1 MAPSLOP_ROUTE_REFERENCE=/tmp/dgt-browser/2/browser-report.json node tests/browser-smoke.mjs >"$result/run.log" 2>&1 || failed=1
+            else
+              failed=1
+            fi
+            kill "$server" || true
+            wait "$server" 2>/dev/null || true
+          done
+          exit "$failed"
+      - name: Aggregate evidence and select a passing near candidate
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s /tmp/dgt-terrain/manifest.json
+          .venv/bin/python tools/summarize-terrain-validation.py --terrain /tmp/dgt-terrain --browser /tmp/dgt-browser --output /tmp/dgt-terrain/validation.json
+      - name: Create the selected near-product alias
+        if: success()
+        run: |
+          set -euo pipefail
+          selected="$(jq -r '.recommended_default_file' /tmp/dgt-terrain/validation.json)"
+          case "$selected" in terrain-tin.bin|terrain-2m.bin) ;; *) exit 1 ;; esac
+          cp "/tmp/dgt-terrain/$selected" /tmp/dgt-terrain/terrain-default.json
+      - name: Preserve one private evidence draft per branch
+        if: always() && inputs.archive
+        run: |
+          set -euo pipefail
+          if [ ! -s /tmp/dgt-terrain/manifest.json ]; then echo "No completed terrain manifest"; exit 0; fi
+          case "$GITHUB_REF" in
+            refs/heads/main) tag=geodata-dgt-terrain-main ;;
+            refs/heads/agent/dgt-terrain-grid) tag=geodata-dgt-terrain-agent-dgt-terrain-grid ;;
+            *) exit 1 ;;
+          esac
+          mkdir -p /tmp/dgt-evidence
+          cp /tmp/dgt-terrain/*.json /tmp/dgt-terrain/*.bin /tmp/dgt-evidence/
+          for cell in 2 tin; do
+            for f in build-report.json browser-report.json build.log run.log; do
+              if [ -f "/tmp/dgt-browser/$cell/$f" ]; then cp "/tmp/dgt-browser/$cell/$f" "/tmp/dgt-evidence/$cell-m-$f"; fi
+            done
+          done
+          cd /tmp/dgt-evidence
+          sha256sum ./*.json ./*.bin > SHA256SUMS.txt
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' > /tmp/dgt-draft-state 2>/dev/null; then
+            test "$(cat /tmp/dgt-draft-state)" = true
+            gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > /tmp/dgt-old-assets
+            while IFS= read -r asset; do
+              case "$asset" in
+                terrain-1m.json|terrain-2m.json|terrain-5m.json|terrain-10m.json|terrain-tin.json|terrain-default.json|terrain-1m.bin|terrain-2m.bin|terrain-5m.bin|terrain-10m.bin|terrain-tin.bin|terrain-default.bin|manifest.json|validation.json|SHA256SUMS.txt|2-m-build-report.json|5-m-build-report.json|tin-m-build-report.json|2-m-browser-report.json|5-m-browser-report.json|tin-m-browser-report.json|2-m-build.log|5-m-build.log|tin-m-build.log|2-m-run.log|5-m-run.log|tin-m-run.log) ;;
+                *) echo "Unexpected evidence asset; refuse update"; exit 1 ;;
+              esac
+            done < /tmp/dgt-old-assets
+            while IFS= read -r asset; do
+              if [ ! -f "$asset" ]; then gh release delete-asset "$tag" "$asset" --repo "$GITHUB_REPOSITORY" --yes; fi
+            done < /tmp/dgt-old-assets
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "DGT terrain evidence — $GITHUB_REF_NAME" --notes "Experimental derivatives only. See validation.json for tested commit and results, including failures. DGT attribution; licence unresolved. Never publish without approval."
+          fi
+          gh release upload "$tag" ./* --repo "$GITHUB_REPOSITORY" --clobber
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          echo "Draft preserved: $tag"

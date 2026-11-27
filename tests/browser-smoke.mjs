@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
+import {driveTerrainRoute} from './terrain-drive.mjs';
 const target=process.env.MAPSLOP_TEST_URL || 'http://127.0.0.1:8080/?webgl';
 const origin=new URL(target).origin+'/';
 const results=process.env.MAPSLOP_RESULTS || '/tmp/pedome-results';
@@ -20,11 +21,43 @@ try {
   await page.waitForFunction(()=>window.mapslop?.ready===true,{},{timeout:120000});
   const state=()=>page.evaluate(()=>{const e=window.mapslop.controllers.getActiveEntity();return {mode:window.mapslop.controllers.activeMode,x:e.position.x,y:e.position.y,z:e.position.z,speed:e.speed,heading:e.heading,status:document.querySelector('#status').textContent,canvas:!!document.querySelector('canvas'),roads:window.mapslop.GEO.roads.length,buildings:window.mapslop.GEO.buildings.length}});
   report.before=await state();
+  if(process.env.MAPSLOP_EXPECT_TERRAIN){
+    await page.evaluate(async()=>{
+      const {heightAt}=await import(new URL('js/terrain.js',location.href).href);
+      const samples=[];
+      let recording=true;
+      const tick=()=>{
+        if(!recording)return;
+        const m=window.mapslop,e=m.controllers.getActiveEntity(),p=e.position;
+        samples.push({terrain:Math.abs(p.y-heightAt(p.x,p.z)),surface:Math.abs(p.y-m.controllers.getGroundHeight(p.x,p.z,'car',p.y))});
+        requestAnimationFrame(tick);
+      };
+      window.__terrainContact={samples,stop:()=>{recording=false;}};
+      requestAnimationFrame(tick);
+    });
+  }
   await page.screenshot({path:path.join(results,'pedome-start.png'),timeout:60000});
   await page.keyboard.down('w');
   try { await page.waitForFunction(()=>Math.abs(window.mapslop.controllers.getActiveEntity().speed)>1,{},{timeout:60000}); await page.waitForFunction(({x,z})=>{const p=window.mapslop.controllers.getActiveEntity().position;return Math.hypot(p.x-x,p.z-z)>2;},report.before,{timeout:90000}); } finally { await page.keyboard.up('w'); }
   report.after=await state();
   report.distance=Math.hypot(report.after.x-report.before.x,report.after.z-report.before.z);
+  if(process.env.MAPSLOP_EXPECT_TERRAIN){
+    const terrain=await page.evaluate(async({before,after})=>{
+      const {heightAt}=await import(new URL('js/terrain.js',location.href).href);
+      const t=window.mapslop.GEO.terrain;
+      const recorder=window.__terrainContact;
+      recorder.stop();
+      const points=recorder.samples;
+      const summarize=key=>({max:points.reduce((m,p)=>Math.max(m,p[key]),0),mean:points.reduce((s,p)=>s+p[key],0)/points.length});
+      const values=t.kind==='tin'?t.vertices.filter((v,i)=>i%3===1):t.heights;
+      return {source:t.source,kind:t.kind||'grid',cell:t.cell,flat:window.mapslop.GEO.frame.flatTerrain,
+        spread:values.reduce((r,v)=>[Math.min(r[0],v),Math.max(r[1],v)],[Infinity,-Infinity]),
+        contact:[before,after].map(s=>Math.abs(s.y-heightAt(s.x,s.z))),contactSamples:points.length,contactDuringDrive:summarize('terrain'),collisionSurfaceDuringDrive:summarize('surface')};
+    },{before:report.before,after:report.after});
+    report.terrain=terrain;
+    if(terrain.source!==process.env.MAPSLOP_EXPECT_TERRAIN||terrain.flat||terrain.spread[1]-terrain.spread[0]<1||
+       terrain.contactSamples<3||terrain.contact.some(d=>!Number.isFinite(d)||d>0.5)||!Number.isFinite(terrain.contactDuringDrive.max)||terrain.contactDuringDrive.max>0.5||!Number.isFinite(terrain.collisionSurfaceDuringDrive.max)||terrain.collisionSurfaceDuringDrive.max>0.5)throw Error('Terrain/vehicle contact validation failed');
+  }
   await page.screenshot({path:path.join(results,'pedome-driving.png'),timeout:60000});
   if(report.before.mode!=='car'||!report.before.canvas||report.before.roads!==179||report.before.buildings!==527||!Number.isFinite(report.distance)||report.distance<=2||errors.length||consoleLog.some(m=>m.type==='error'||/GL_INVALID_OPERATION|GL_INVALID_FRAMEBUFFER_OPERATION|shader error/i.test(m.text))||failed.some(r=>!r.url.endsWith('/favicon.ico')))throw Error('Browser driving validation failed');
   // Verify mobile-sized layout, map position, pointer input and release.
@@ -60,6 +93,18 @@ try {
   report.location=await page.locator('#location').textContent();
   await page.screenshot({path:path.join(results,'pedome-mobile.png'),timeout:60000});
   if(errors.length||consoleLog.some(m=>m.type==='error'||/GL_INVALID_OPERATION|GL_INVALID_FRAMEBUFFER_OPERATION|shader error/i.test(m.text)))throw Error('HUD validation failed');
+  if(process.env.MAPSLOP_LONG_DRIVE==='1'){
+    let reference=null;
+    const ref=process.env.MAPSLOP_ROUTE_REFERENCE;
+    if(ref&&fs.existsSync(ref)){
+      const prev=JSON.parse(fs.readFileSync(ref,'utf8'));
+      if(prev.longDrive?.success)reference=prev.longDrive.route;
+    }
+    report.longDrive=await page.evaluate(driveTerrainRoute,{reference});
+    await page.screenshot({path:path.join(results,'long-drive-end.png'),timeout:60000});
+    if(!report.longDrive.success)throw Error('100 m sloped curve drive failed: '+report.longDrive.reason);
+  }
+  if(errors.length||consoleLog.some(m=>m.type==='error'||/GL_INVALID_OPERATION|GL_INVALID_FRAMEBUFFER_OPERATION|shader error/i.test(m.text)))throw Error('Post-drive rendering error');
   report.success=true;
 } catch(e) {
   report.success=false; report.error=e.message;

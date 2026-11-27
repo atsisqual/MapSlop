@@ -15,7 +15,7 @@ Critérios para fechar P0:
 
 ## P1 — reconstrução geográfica (por implementar)
 
-- MDT 0,5 m: CRS, cobertura sem NaN/nodata no piloto, origem/georreferenciação; comparar 10 pontos com raster, tolerância proposta 1 m no produto simplificado, documentar desvios.
+- MDT 0,5 m: CRS e cobertura sem nodata já verificados no run 46053111254; comparar 100 pontos e corredores rodoviários. TIN <150k vértices e máximos ≤0,5 m; caso não cumpra, fallback 2 m sujeito aos mesmos máximos ≤0,5 m nos 100 pontos e estradas; se nenhum passar, falhar. LOD distante avaliado por RMSE. Condução ≥100 m com declive/curva e contacto ≤0,5 m; ver [ADR 0010](decisions/0010-grelha-mdt.md).
 - MDS−MDT por footprint: guardar método/amostras/altura/qualidade/fallback; inspecionar pelo menos 20 edifícios. Roofer LoD2 com LAZ/footprints; guardar sucessos e falhas por edifício.
 - Ortofoto 25 cm: recorte georreferenciado, alinhamento com estradas/edifícios, tiles LOD, atribuição. Separar histórico do cenário atual.
 - Vegetação LAZ classes 3–5 e COS2025: altura, cobertura, excluir corredores de circulação; rever amostra visual.

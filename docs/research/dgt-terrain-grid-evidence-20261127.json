@@ -1,0 +1,214 @@
+{
+  "run_id": 46053111254,
+  "job_id": 140689046385,
+  "tested_commit": "b95df198c277fdf9509f94f58f63592854766d7a",
+  "release": "geodata-dgt-terrain-agent-dgt-terrain-grid",
+  "draft": true,
+  "conclusion": "failure (old rule required both 2 and 5 m to pass 1 m maximum error)",
+  "evidence": "JSON generator and validation report emitted verbatim in completed workflow log; asset sizes/digests independently read from GitHub release API. Raw validation.json bytes not available through connector, so no claimed rehash of report.",
+  "generator_output": {
+    "source_count": 4,
+    "source_crs": "EPSG:3763",
+    "coverage_pixels": 4040084,
+    "invalid_pixels": 0,
+    "products": [
+      {
+        "file": "terrain-2m.json",
+        "sha256": "6d38d6068f9372c2aa7bfd555c192bf10976d8348dd0d35a8164c5142d1c7e0e",
+        "bytes": 1812236,
+        "cell_m": 2,
+        "nx": 503,
+        "nz": 502,
+        "vertices": 252506,
+        "triangles": 503004,
+        "points": 100,
+        "max_abs_m": 0.43089148518959064,
+        "mean_abs_m": 0.041067608552234985,
+        "rmse_m": 0.08567699902499702
+      },
+      {
+        "file": "terrain-5m.json",
+        "sha256": "5ac8e4006f4a1c10f26a2bcff7e6f4d581185f0d36b6091d6d31e04db2b44ee1",
+        "bytes": 294403,
+        "cell_m": 5,
+        "nx": 203,
+        "nz": 202,
+        "vertices": 41006,
+        "triangles": 81204,
+        "points": 100,
+        "max_abs_m": 1.192318961648013,
+        "mean_abs_m": 0.10948271747744556,
+        "rmse_m": 0.22053546160841137
+      },
+      {
+        "file": "terrain-10m.json",
+        "sha256": "549b06faffd489b88959c78e0544033380c3c5ccae8ac23f306ab99e202e5fa7",
+        "bytes": 74841,
+        "cell_m": 10,
+        "nx": 102,
+        "nz": 102,
+        "vertices": 10404,
+        "triangles": 20402,
+        "points": 100,
+        "max_abs_m": 1.8201133645009406,
+        "mean_abs_m": 0.226085417514107,
+        "rmse_m": 0.385827146026744
+      }
+    ],
+    "primary_pass": true
+  },
+  "validation_output": {
+    "schema": 1,
+    "tested_commit": "b95df198c277fdf9509f94f58f63592854766d7a",
+    "branch": "agent/dgt-terrain-grid",
+    "run_id": "46053111254",
+    "source_release": "geodata-dgt-pedome-20261127",
+    "source_crs": "EPSG:3763",
+    "coverage_pixels": 4040084,
+    "invalid_pixels": 0,
+    "inputs": [
+      {
+        "name": "MDT-50cm-178494-07-2025_v02.tif",
+        "bytes": 14793371,
+        "sha256": "5f42a8bc6afddb3db52352c337e1ed52052d2c6c07dc8c34b1902bf5094e4297"
+      },
+      {
+        "name": "MDT-50cm-178495-07-2025_v02.tif",
+        "bytes": 15206031,
+        "sha256": "c69d26afc99fc7ef8603d7a4ebe39c2940d127298555ec2d606caf5bf7b4e3e0"
+      },
+      {
+        "name": "MDT-50cm-179494-07-2025_v02.tif",
+        "bytes": 15106331,
+        "sha256": "8ead6dc5ea6433f7849e60ccc0ca52050193a3edc4af51ddf264a40553eb1484"
+      },
+      {
+        "name": "MDT-50cm-179495-07-2025_v02.tif",
+        "bytes": 15279730,
+        "sha256": "30dca488ac13649bfbc2338d091a22431ba05140cdddb77f717ccf88c68c8088"
+      }
+    ],
+    "results": [
+      {
+        "cell_m": 2,
+        "vertices": 252506,
+        "json_bytes": 1812236,
+        "sha256": "6d38d6068f9372c2aa7bfd555c192bf10976d8348dd0d35a8164c5142d1c7e0e",
+        "points": 100,
+        "max_abs_m": 0.43089148518959064,
+        "mean_abs_m": 0.041067608552234985,
+        "rmse_m": 0.08567699902499702,
+        "distance_m": 2.025589485696979,
+        "contact_m": [
+          0.030000000000000027,
+          0.030000000000000027
+        ],
+        "contact_samples": 35,
+        "contact_max_m": 0.030000000000000027,
+        "contact_mean_m": 0.030000000000000027,
+        "surface_contact_max_m": 0,
+        "browser_success": true,
+        "multi_touch": true,
+        "touch_release": true,
+        "pass": true
+      },
+      {
+        "cell_m": 5,
+        "vertices": 41006,
+        "json_bytes": 294403,
+        "sha256": "5ac8e4006f4a1c10f26a2bcff7e6f4d581185f0d36b6091d6d31e04db2b44ee1",
+        "points": 100,
+        "max_abs_m": 1.192318961648013,
+        "mean_abs_m": 0.10948271747744556,
+        "rmse_m": 0.22053546160841137,
+        "distance_m": 2.101722390807203,
+        "contact_m": [
+          0.030000000000000027,
+          0.030000000000000027
+        ],
+        "contact_samples": 35,
+        "contact_max_m": 0.030000000000000027,
+        "contact_mean_m": 0.030000000000000027,
+        "surface_contact_max_m": 0,
+        "browser_success": true,
+        "multi_touch": true,
+        "touch_release": true,
+        "pass": false
+      }
+    ],
+    "recommended_default_cell_m": null,
+    "pass": false
+  },
+  "release_assets_at_run": [
+    {
+      "name": "2-m-browser-report.json",
+      "bytes": 2553,
+      "sha256": "5b27072c4ea523605c0043a36d6254ffc11cca41bb95980e46d808a4bacfba4f"
+    },
+    {
+      "name": "2-m-build-report.json",
+      "bytes": 216,
+      "sha256": "c54cccb31fbca3cd3047de5540d7887033095acc68d4486a1ac6c67d53067e99"
+    },
+    {
+      "name": "2-m-build.log",
+      "bytes": 15470,
+      "sha256": "e5cef188b09ef33e2150a28622b0b78de84eb0d1e18dd170b89c291e5610a15e"
+    },
+    {
+      "name": "2-m-run.log",
+      "bytes": 2554,
+      "sha256": "ed35a0cceb2a6b0f90f2ee8001be944aa4df6b4c3749bfab1dd642ba1bbfe186"
+    },
+    {
+      "name": "5-m-browser-report.json",
+      "bytes": 2552,
+      "sha256": "e7d1efa02808169ff84c352fe7b03743eb52e5f052f2bb430cf57e74c108809f"
+    },
+    {
+      "name": "5-m-build-report.json",
+      "bytes": 216,
+      "sha256": "a4421ea7ee81c7bf029d52d18b5da8c19ccf21dabccbdfe5242cd8185bc4f259"
+    },
+    {
+      "name": "5-m-build.log",
+      "bytes": 15468,
+      "sha256": "0852c636cf89073ba4430f14a1a2f1c0435a4076b4911ef6d3d6821948d5f5ee"
+    },
+    {
+      "name": "5-m-run.log",
+      "bytes": 2553,
+      "sha256": "d56c62004d0d2b2d9e27a9d07f8e788d1ec27f0ed2f2de8adde7a11d0ee35be3"
+    },
+    {
+      "name": "manifest.json",
+      "bytes": 21327,
+      "sha256": "e63932642bbc72c0891da9046bc4c8810680b94740294dc2895e5ad21d14a848"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "bytes": 783,
+      "sha256": "a584b36405d4626b9b2011972a1d6a9bdf9f91fb7c9bbbba78892f817381a948"
+    },
+    {
+      "name": "terrain-10m.json",
+      "bytes": 74841,
+      "sha256": "549b06faffd489b88959c78e0544033380c3c5ccae8ac23f306ab99e202e5fa7"
+    },
+    {
+      "name": "terrain-2m.json",
+      "bytes": 1812236,
+      "sha256": "6d38d6068f9372c2aa7bfd555c192bf10976d8348dd0d35a8164c5142d1c7e0e"
+    },
+    {
+      "name": "terrain-5m.json",
+      "bytes": 294403,
+      "sha256": "5ac8e4006f4a1c10f26a2bcff7e6f4d581185f0d36b6091d6d31e04db2b44ee1"
+    },
+    {
+      "name": "validation.json",
+      "bytes": 2445,
+      "sha256": "3233da06b8d3df1ed9f921ae82dd3abac34afde56b690343eb86a6bbba4f76e2"
+    }
+  ]
+}

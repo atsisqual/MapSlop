@@ -23,7 +23,9 @@ jobs:
         with:
           python-version: '3.12.10'
       - name: Reproducible setup
-        run: make setup
+        run: |
+          make setup
+          .venv/bin/python -m pip install -r requirements-terrain.txt
       - name: Offline repository and data workflow tests
         run: |
           .venv/bin/python -m pip check
@@ -54,6 +56,37 @@ jobs:
           trap 'kill "$server" || true' EXIT
           for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
           node tests/browser-smoke.mjs
+      - name: Build and test non-flat synthetic terrain (no DGT data)
+        env:
+          MAPSLOP_TEST_URL: http://127.0.0.1:8081/?webgl
+          MAPSLOP_RESULTS: /tmp/pedome-terrain-test
+          MAPSLOP_EXPECT_TERRAIN: SYNTHETIC TEST TERRAIN
+        run: |
+          set -euo pipefail
+          mkdir -p outputs /tmp/pedome-terrain-test
+          .venv/bin/python -c 'import sys; from pathlib import Path; sys.path.insert(0,"tools"); from terrain_grid import synthetic_grid; from terrain_binary import save; save(Path("outputs/synthetic-terrain.bin"),synthetic_grid(5))'
+          .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi outputs/nonflat --osm-json data/pedome/pedome-osm.json --terrain-bin outputs/synthetic-terrain.bin --three-vendor .cache/mapslop/three-vendor
+          make serve OUT=outputs/nonflat PORT=8081 > /tmp/pedome-terrain-test/http.log 2>&1 &
+          server=$!
+          trap 'kill "$server" || true' EXIT
+          for i in {1..30}; do if curl -fsS http://127.0.0.1:8081/ >/dev/null; then break; fi; sleep 1; done
+          node tests/browser-smoke.mjs
+      - name: Generate synthetic TIN and validate rendering, draping and 100 m physics
+        env:
+          MAPSLOP_TEST_URL: http://127.0.0.1:8082/?webgl
+          MAPSLOP_RESULTS: /tmp/pedome-tin-test
+          MAPSLOP_EXPECT_TERRAIN: SYNTHETIC TEST TERRAIN
+          MAPSLOP_LONG_DRIVE: '1'
+        run: |
+          set -euo pipefail
+          mkdir -p outputs /tmp/pedome-tin-test
+          .venv/bin/python -c 'import sys; from pathlib import Path; sys.path.insert(0,"tools"); from terrain_tin import synthetic_tin; from terrain_binary import save; save(Path("outputs/synthetic-tin.bin"),synthetic_tin())'
+          .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi outputs/tin --osm-json data/pedome/pedome-osm.json --terrain-bin outputs/synthetic-tin.bin --three-vendor .cache/mapslop/three-vendor
+          make serve OUT=outputs/tin PORT=8082 > /tmp/pedome-tin-test/http.log 2>&1 &
+          server=$!
+          trap 'kill "$server" || true' EXIT
+          for i in {1..30}; do if curl -fsS http://127.0.0.1:8082/ >/dev/null; then break; fi; sleep 1; done
+          node tests/browser-smoke.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -61,4 +94,8 @@ jobs:
           path: |
             /tmp/pedome-results/
             pedome/build-report.json
+            /tmp/pedome-terrain-test/
+            outputs/nonflat/build-report.json
+            /tmp/pedome-tin-test/
+            outputs/tin/build-report.json
           if-no-files-found: warn

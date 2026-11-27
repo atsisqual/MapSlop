@@ -1,0 +1,411 @@
+{
+  "run_id": 46055620274,
+  "job_id": 140697282083,
+  "tested_commit": "bec31303336100bd4a0ee89fed345ce9f5c2943d",
+  "release": "geodata-dgt-terrain-agent-dgt-terrain-grid",
+  "draft": true,
+  "conclusion": "success under historical inconsistent gate; neither near candidate satisfies revised road maximum of 0.5 m",
+  "evidence": "Verbatim generator and validation JSON from completed Actions log; release metadata sizes and digests independently checked. Connector does not expose raw draft asset bytes; validation.json not independently rehashed.",
+  "generator_output": {
+    "source_count": 4,
+    "source_crs": "EPSG:3763",
+    "coverage_pixels": 4040084,
+    "invalid_pixels": 0,
+    "products": [
+      {
+        "kind": "grid",
+        "file": "terrain-2m.json",
+        "sha256": "6d38d6068f9372c2aa7bfd555c192bf10976d8348dd0d35a8164c5142d1c7e0e",
+        "bytes": 1812236,
+        "cell_m": 2,
+        "nx": 503,
+        "nz": 502,
+        "vertices": 252506,
+        "triangles": 503004,
+        "roads": {
+          "points": 70627,
+          "ways": 121,
+          "step_m": 0.5,
+          "offsets_m": [
+            -1.5,
+            0,
+            1.5
+          ],
+          "max_abs_m": 1.4123783003297206,
+          "mean_abs_m": 0.027353591923373173,
+          "rmse_m": 0.07894533879368162
+        },
+        "points": 100,
+        "max_abs_m": 0.43089148518959064,
+        "mean_abs_m": 0.041067608552234985,
+        "rmse_m": 0.08567699902499702
+      },
+      {
+        "kind": "grid",
+        "file": "terrain-5m.json",
+        "sha256": "5ac8e4006f4a1c10f26a2bcff7e6f4d581185f0d36b6091d6d31e04db2b44ee1",
+        "bytes": 294403,
+        "cell_m": 5,
+        "nx": 203,
+        "nz": 202,
+        "vertices": 41006,
+        "triangles": 81204,
+        "roads": {
+          "points": 70627,
+          "ways": 121,
+          "step_m": 0.5,
+          "offsets_m": [
+            -1.5,
+            0,
+            1.5
+          ],
+          "max_abs_m": 2.455828031274706,
+          "mean_abs_m": 0.08594483843213874,
+          "rmse_m": 0.17895363396427413
+        },
+        "points": 100,
+        "max_abs_m": 1.192318961648013,
+        "mean_abs_m": 0.10948271747744556,
+        "rmse_m": 0.22053546160841137
+      },
+      {
+        "kind": "grid",
+        "file": "terrain-10m.json",
+        "sha256": "549b06faffd489b88959c78e0544033380c3c5ccae8ac23f306ab99e202e5fa7",
+        "bytes": 74841,
+        "cell_m": 10,
+        "nx": 102,
+        "nz": 102,
+        "vertices": 10404,
+        "triangles": 20402,
+        "roads": {
+          "points": 70627,
+          "ways": 121,
+          "step_m": 0.5,
+          "offsets_m": [
+            -1.5,
+            0,
+            1.5
+          ],
+          "max_abs_m": 3.0119104135088435,
+          "mean_abs_m": 0.20085019235954177,
+          "rmse_m": 0.34172112971733204
+        },
+        "points": 100,
+        "max_abs_m": 1.8201133645009406,
+        "mean_abs_m": 0.226085417514107,
+        "rmse_m": 0.385827146026744
+      },
+      {
+        "kind": "tin",
+        "file": "terrain-tin.json",
+        "sha256": "4ee23aff044425abc97bc674151f37052d33929b8d970a25742632a721a7a7a2",
+        "bytes": 4950736,
+        "vertices": 90284,
+        "triangles": 180007,
+        "algorithm": "pydelatin 0.4.0",
+        "target_error_m": 0.25,
+        "library_error_m": 0.25,
+        "roads": {
+          "points": 70627,
+          "ways": 121,
+          "step_m": 0.5,
+          "offsets_m": [
+            -1.5,
+            0,
+            1.5
+          ],
+          "max_abs_m": 0.5864534761838769,
+          "mean_abs_m": 0.05161522806233885,
+          "rmse_m": 0.06798881300698943
+        },
+        "points": 100,
+        "max_abs_m": 0.2128073137110107,
+        "mean_abs_m": 0.06210615221091089,
+        "rmse_m": 0.07831401405206437
+      }
+    ],
+    "primary_pass": true
+  },
+  "validation_output": {
+    "schema": 2,
+    "tested_commit": "bec31303336100bd4a0ee89fed345ce9f5c2943d",
+    "branch": "agent/dgt-terrain-grid",
+    "run_id": "46055620274",
+    "source_release": "geodata-dgt-pedome-20261127",
+    "source_crs": "EPSG:3763",
+    "coverage_pixels": 4040084,
+    "invalid_pixels": 0,
+    "inputs": [
+      {
+        "name": "MDT-50cm-178494-07-2025_v02.tif",
+        "bytes": 14793371,
+        "sha256": "5f42a8bc6afddb3db52352c337e1ed52052d2c6c07dc8c34b1902bf5094e4297"
+      },
+      {
+        "name": "MDT-50cm-178495-07-2025_v02.tif",
+        "bytes": 15206031,
+        "sha256": "c69d26afc99fc7ef8603d7a4ebe39c2940d127298555ec2d606caf5bf7b4e3e0"
+      },
+      {
+        "name": "MDT-50cm-179494-07-2025_v02.tif",
+        "bytes": 15106331,
+        "sha256": "8ead6dc5ea6433f7849e60ccc0ca52050193a3edc4af51ddf264a40553eb1484"
+      },
+      {
+        "name": "MDT-50cm-179495-07-2025_v02.tif",
+        "bytes": 15279730,
+        "sha256": "30dca488ac13649bfbc2338d091a22431ba05140cdddb77f717ccf88c68c8088"
+      }
+    ],
+    "tin_failure": null,
+    "results": [
+      {
+        "kind": "grid",
+        "cell_m": 2,
+        "file": "terrain-2m.json",
+        "vertices": 252506,
+        "triangles": 503004,
+        "json_bytes": 1812236,
+        "sha256": "6d38d6068f9372c2aa7bfd555c192bf10976d8348dd0d35a8164c5142d1c7e0e",
+        "points": 100,
+        "max_abs_m": 0.43089148518959064,
+        "mean_abs_m": 0.041067608552234985,
+        "rmse_m": 0.08567699902499702,
+        "road_points": 70627,
+        "road_ways": 121,
+        "road_max_abs_m": 1.4123783003297206,
+        "road_mean_abs_m": 0.027353591923373173,
+        "road_rmse_m": 0.07894533879368162,
+        "library_error_m": null,
+        "target_error_m": null,
+        "distance_m": 104.15743619896317,
+        "progress_m": 104.02557771185224,
+        "road_name": "Rua das Bouças",
+        "road_way": 149303998,
+        "road_grade_20m": 0.05527872954159783,
+        "driven_heading_range_degrees": 46.536363316517274,
+        "contact_samples": 1183,
+        "contact_max_m": 0.030000000000001137,
+        "contact_mean_m": 0.030000000000001113,
+        "surface_contact_max_m": 0,
+        "max_cross_track_m": 0.39475909627664973,
+        "collisions": 0,
+        "browser_success": true,
+        "long_drive_success": true,
+        "multi_touch": true,
+        "touch_release": true,
+        "failure": "Reached target",
+        "role": "near_candidate",
+        "precision_pass": true,
+        "pass": true
+      },
+      {
+        "kind": "grid",
+        "cell_m": 5,
+        "file": "terrain-5m.json",
+        "vertices": 41006,
+        "triangles": 81204,
+        "json_bytes": 294403,
+        "sha256": "5ac8e4006f4a1c10f26a2bcff7e6f4d581185f0d36b6091d6d31e04db2b44ee1",
+        "points": 100,
+        "max_abs_m": 1.192318961648013,
+        "mean_abs_m": 0.10948271747744556,
+        "rmse_m": 0.22053546160841137,
+        "road_points": 70627,
+        "road_ways": 121,
+        "road_max_abs_m": 2.455828031274706,
+        "road_mean_abs_m": 0.08594483843213874,
+        "road_rmse_m": 0.17895363396427413,
+        "library_error_m": null,
+        "target_error_m": null,
+        "distance_m": null,
+        "progress_m": null,
+        "road_name": null,
+        "road_way": null,
+        "road_grade_20m": null,
+        "driven_heading_range_degrees": null,
+        "contact_samples": null,
+        "contact_max_m": null,
+        "contact_mean_m": null,
+        "surface_contact_max_m": null,
+        "max_cross_track_m": null,
+        "collisions": null,
+        "browser_success": false,
+        "long_drive_success": false,
+        "multi_touch": false,
+        "touch_release": false,
+        "failure": null,
+        "role": "distant_lod",
+        "rmse_budget_m": 0.35,
+        "pass": true
+      },
+      {
+        "kind": "grid",
+        "cell_m": 10,
+        "file": "terrain-10m.json",
+        "vertices": 10404,
+        "triangles": 20402,
+        "json_bytes": 74841,
+        "sha256": "549b06faffd489b88959c78e0544033380c3c5ccae8ac23f306ab99e202e5fa7",
+        "points": 100,
+        "max_abs_m": 1.8201133645009406,
+        "mean_abs_m": 0.226085417514107,
+        "rmse_m": 0.385827146026744,
+        "road_points": 70627,
+        "road_ways": 121,
+        "road_max_abs_m": 3.0119104135088435,
+        "road_mean_abs_m": 0.20085019235954177,
+        "road_rmse_m": 0.34172112971733204,
+        "library_error_m": null,
+        "target_error_m": null,
+        "distance_m": null,
+        "progress_m": null,
+        "road_name": null,
+        "road_way": null,
+        "road_grade_20m": null,
+        "driven_heading_range_degrees": null,
+        "contact_samples": null,
+        "contact_max_m": null,
+        "contact_mean_m": null,
+        "surface_contact_max_m": null,
+        "max_cross_track_m": null,
+        "collisions": null,
+        "browser_success": false,
+        "long_drive_success": false,
+        "multi_touch": false,
+        "touch_release": false,
+        "failure": null,
+        "role": "distant_lod",
+        "rmse_budget_m": 0.6,
+        "pass": true
+      },
+      {
+        "kind": "tin",
+        "cell_m": null,
+        "file": "terrain-tin.json",
+        "vertices": 90284,
+        "triangles": 180007,
+        "json_bytes": 4950736,
+        "sha256": "4ee23aff044425abc97bc674151f37052d33929b8d970a25742632a721a7a7a2",
+        "points": 100,
+        "max_abs_m": 0.2128073137110107,
+        "mean_abs_m": 0.06210615221091089,
+        "rmse_m": 0.07831401405206437,
+        "road_points": 70627,
+        "road_ways": 121,
+        "road_max_abs_m": 0.5864534761838769,
+        "road_mean_abs_m": 0.05161522806233885,
+        "road_rmse_m": 0.06798881300698943,
+        "library_error_m": 0.25,
+        "target_error_m": 0.25,
+        "distance_m": 104.21396009778411,
+        "progress_m": 104.08195632754561,
+        "road_name": "Rua das Bouças",
+        "road_way": 149303998,
+        "road_grade_20m": 0.06063233363233742,
+        "driven_heading_range_degrees": 46.54323173205103,
+        "contact_samples": 1185,
+        "contact_max_m": 0.030000000000001137,
+        "contact_mean_m": 0.030000000000001137,
+        "surface_contact_max_m": 0,
+        "max_cross_track_m": 0.39384141767950875,
+        "collisions": 0,
+        "browser_success": true,
+        "long_drive_success": true,
+        "multi_touch": true,
+        "touch_release": true,
+        "failure": "Reached target",
+        "role": "near_candidate",
+        "precision_pass": false,
+        "pass": false
+      }
+    ],
+    "recommended_default_file": "terrain-2m.json",
+    "recommended_default_kind": "grid",
+    "recommended_default_cell_m": 2,
+    "pass": true
+  },
+  "release_assets_at_run": [
+    {
+      "name": "2-m-browser-report.json",
+      "bytes": 18399,
+      "sha256": "cc832bd157e50795f9a0d7b594785a1c5ca2002448492ae9ed961d59c03b759c"
+    },
+    {
+      "name": "2-m-build-report.json",
+      "bytes": 239,
+      "sha256": "8fe6730dbf4402b8a0cb6d322909be76891aa50286f7084715076da0fbce7373"
+    },
+    {
+      "name": "2-m-build.log",
+      "bytes": 15491,
+      "sha256": "0a0e3f3478f74c6586af84decd9eeb8c20738331463d93361ea42c751725046d"
+    },
+    {
+      "name": "2-m-run.log",
+      "bytes": 18400,
+      "sha256": "af0257a9050d14e11c691a323c69cdfc1095caa7edf12a8d37b1ec4bb2bf50a9"
+    },
+    {
+      "name": "manifest.json",
+      "bytes": 27363,
+      "sha256": "3a221d8be73f325e874807edc6666a8a75eaaad1b52db5b823e0e5056ccd55aa"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "bytes": 961,
+      "sha256": "d31299bc64eff7217b2e5b12caa6829fac618854f25dad2476510768e1560af9"
+    },
+    {
+      "name": "terrain-10m.json",
+      "bytes": 74841,
+      "sha256": "549b06faffd489b88959c78e0544033380c3c5ccae8ac23f306ab99e202e5fa7"
+    },
+    {
+      "name": "terrain-2m.json",
+      "bytes": 1812236,
+      "sha256": "6d38d6068f9372c2aa7bfd555c192bf10976d8348dd0d35a8164c5142d1c7e0e"
+    },
+    {
+      "name": "terrain-5m.json",
+      "bytes": 294403,
+      "sha256": "5ac8e4006f4a1c10f26a2bcff7e6f4d581185f0d36b6091d6d31e04db2b44ee1"
+    },
+    {
+      "name": "terrain-default.json",
+      "bytes": 1812236,
+      "sha256": "6d38d6068f9372c2aa7bfd555c192bf10976d8348dd0d35a8164c5142d1c7e0e"
+    },
+    {
+      "name": "terrain-tin.json",
+      "bytes": 4950736,
+      "sha256": "4ee23aff044425abc97bc674151f37052d33929b8d970a25742632a721a7a7a2"
+    },
+    {
+      "name": "tin-m-browser-report.json",
+      "bytes": 18376,
+      "sha256": "f7d9b4441b31e544ab615178dec261d1f023997de0e3c6bc106df0554d35828b"
+    },
+    {
+      "name": "tin-m-build-report.json",
+      "bytes": 240,
+      "sha256": "f7ed4ac7dce9d2bd2e82c6a1c087d7f0e471d9db5b323dac8c46cafaeb75a1f7"
+    },
+    {
+      "name": "tin-m-build.log",
+      "bytes": 15493,
+      "sha256": "e47ffc16bd782e968b118fd2bf5c28506bf26cb93fc119745a0ff48ccacfcc47"
+    },
+    {
+      "name": "tin-m-run.log",
+      "bytes": 18377,
+      "sha256": "5b90ca317e0a1f6f570fbd0587bdef39f32595cc8c346a561f79c0842c96c7dd"
+    },
+    {
+      "name": "validation.json",
+      "bytes": 6303,
+      "sha256": "de57396186a847c1259fefff180cc1e1a440768d07d5f2732fdb387666bfff5d"
+    }
+  ]
+}

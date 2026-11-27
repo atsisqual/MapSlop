@@ -100,3 +100,55 @@ Tamanhos e SHA-256 calculados sobre ficheiros montados em 2026-11-27 (Python has
 - Tarefa 7: cinco workflows DGT substituídos por dgt.yml parametrizado; dados workflow_dispatch apenas, CI read-only em PRs, smoke browser partilhado com Pages. Ver [workflows](workflows.md). CI run 46044980735/job 140661859061 no head 6bd7d1ca6ca89c7ab9dd0f9a3dace8fd8bfcffa0 concluído success: 6/6 testes DGT offline; 61 links, 9 workflows, 116 digests e 4 hashes; 67/67 em três execuções npm test; browser desktop e multitouch OK (2,1776 m). [Evidência persistente](research/ci-evidence-20261127.md). Nenhuma aquisição live nem publicação de releases.
 
 - Tarefa 8: ADR 0009 com estado proposta, alternativas, plano, riscos de licenciamento e critérios verificáveis. Nenhuma migração executada; motor, build e workflows inalterados nesta tarefa. CI run 46045393176/job 140663257164, head eeb5b60c731a456b14289a33a6c0541f4ae4750d: success; 67 links internos, 9 workflows, 116 digests, 4 hashes; DGT offline 6/6; três execuções de 67/67 testes; build real/plano 179 vias, 527 edifícios, 113 nós, 134 ligações; Chromium distância 2,0356617684523037 m, touchSpeed 1,3689840365607093, multiTouch=true, touchRelease=true, success=true. Formatação e 23 links nas três páginas modificadas verificados antes do PR. Cinco releases mantidas em rascunho; 116 nomes/tamanhos/digests da API iguais ao inventário (7 803 124 586 bytes). Não houve redownload independente dos originais nem teste em dispositivo físico.
+
+## Continuação P1 — issue #6
+
+- Preparado pipeline offline de MDT 0,5 m → grelhas estáticas (2/5/10 m, 1 m opcional), validação de SHA-256/CRS/nodata/cobertura e 100 pontos, integração opt-in no adaptador, testes sintéticos e workflow exclusivamente manual de validação real. Ver [pipeline](terrain-dgt.md) e [ADR 0010](decisions/0010-grelha-mdt.md).
+- Nesta alteração ainda não foi executada a recolha/conversão real nem o teste Chromium com DGT. PR CI solicitado; resultados a registar depois. Não fechar #6, não publicar derivados/release nem executar subtree. A demo plana continua inalterada.
+
+### Revisão pré-merge PR #15
+
+- CI inicial no commit `b96f9c9d8bdc5da011164e246a755536fe3f3544`, run 46051557178/job 140683868394: success. `make setup`, unittest 11/11, check-repo 73 links/10 workflows/116 digests/4 hashes; quatro execuções npm test 67/67; Chromium plano 2,177635 m, sintético 5 m 2,195771 m, contacto início/fim 0,03 m, multitoque e release true. Valores sintéticos, não DGT.
+- Revisão: dispatch permite branch agent/dgt-terrain-grid e main; uma execução compara 2/5 m; um rascunho por branch, substituição segura dos assets, MAE/máximo/RMSE, contagem/tamanho/hash e contacto por frame limitado a 0,5 m. Cinco releases existentes são originais/toolchain; nenhum rascunho experimental existia, nada eliminado.
+- Bloqueio: conector não disponibiliza workflow_dispatch e o workflow novo ainda não está registado em main. Contorno legítimo sem merge: workflow manual já registado pedome-terrain.yml no branch do PR, mode=dgt, chama o novo workflow via workflow_call. Conector não tem ação para iniciar a execução. Comando: gh workflow run pedome-terrain.yml --ref agent/dgt-terrain-grid -f mode=dgt. PR #15 ficou aberto aguardando os resultados; regra histórica de ambas as resoluções foi substituída na revisão TIN abaixo.
+- Tarefa adicional: teste manual num Android físico, 5 minutos com aceleração, viragem, travagem e reset. Registar modelo/OS/browser/resolução, mediana e percentil baixo FPS, pico de memória e método (ou indisponibilidade), falhas e comparação 2/5 m. Não executado. Não publicar derivados DGT para testar sem autorização.
+
+
+### Resultados reais — run 46053111254 (27-11-2026)
+
+O run manual em `b95df198c277fdf9509f94f58f63592854766d7a` terminou failure pela regra antiga, não por falha de condução. Quatro TIFF originais conferidos pelo pipeline (bytes e SHA-256), EPSG:3763, 4 040 084 pixels do envelope, 0 inválidos. Rascunho `geodata-dgt-terrain-agent-dgt-terrain-grid`. [Evidência preservada](research/dgt-terrain-grid-evidence-20261127.json): JSON emitido nos logs e metadados dos assets (tamanhos/digests); conector não permite descarregar bytes de asset de release, não alegar rehash do validation.json.
+
+| Produto | Vértices | Triângulos | JSON bytes | Máx. 100 pts (m) | MAE (m) | RMSE (m) | Condução (m) | Contacto máximo (m) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Grelha 2 m | 252 506 | 503 004 | 1 812 236 | 0,430891 | 0,041068 | 0,085677 | 2,025589 | 0,03 |
+| Grelha 5 m | 41 006 | 81 204 | 294 403 | 1,192319 | 0,109483 | 0,220535 | 2,101722 | 0,03 |
+| Grelha 10 m | 10 404 | 20 402 | 74 841 | 1,820113 | 0,226085 | 0,385827 | não testada | não testado |
+
+2/5 m: 35 amostras em cada, diferença máxima superfície de colisão 0 m, browser/multitoque/release true. Hash completo de cada saída e de validation.json no JSON histórico (a release experimental será atualizada, mas esta evidência não será substituída).
+
+### PR #15 — revisão TIN e condução longa
+
+- TIN offline pydelatin 0.4.0, MIT, código upstream tag v0.4.0 commit e281368a62429a47686c1e21786678cc5213fcb1; dependência fixada, não implementar algoritmo. Reamostragem do MDT original para coordenadas locais a 0,5 m, erro interno 0,25 m, cap 149 999; validação por 100 pontos e vias OSM amostradas de 0,5 m em 0,5 m, centro e ±1,5 m. TIN usa as próprias faces no terreno, altura/colli­sões e corte de estradas/passeios. Critério TIN máximo ≤0,5 m em ambos os conjuntos e <150k vértices. Se falhar, manter 2 m com custo e erros registados no ADR; 5/10 m como LOD distante por RMSE, sem gate global.
+- Teste longo: percurso ≥100 m com curva e declive numa via OSM, comandos analógicos e física/colli­sões reais em Chromium (passos fixos 1/60 s, sem teleport durante o percurso, não benchmark FPS). Contacto por passo ≤0,5 m, curva medida ≥15°, declive ≥2%/20 m, zero colisões reportadas. O workflow testa 2 m e TIN e emite validation.json schema 2 e alias terrain-default.json só se um candidato próximo passar. Mantém um rascunho de evidência por branch; os dados originais e o Pages público não são alterados.
+- [Pipeline](terrain-dgt.md) e [ADR 0010](decisions/0010-grelha-mdt.md) atualizados. CI sintético e teste real da nova revisão pendentes neste registo. Voltar a lançar pedome-terrain.yml no branch agent/dgt-terrain-grid com mode=dgt após CI. Não fazer merge até análise dos novos resultados e registo persistente. Teste Android real/FPS/memória permanece aberto.
+
+
+### Resultado real TIN — run 46055620274 (27-11-2026)
+
+Commit `bec31303336100bd4a0ee89fed345ce9f5c2943d`, workflow success pela regra anterior inconsistente; **não aceitar nenhum candidato de proximidade segundo o critério uniforme atual**. Quatro TIFF verificados, CRS EPSG:3763, 4 040 084 pixels de cobertura, zero inválidos. 70 627 amostras rodoviárias, 121 vias. [Evidência persistente](research/dgt-terrain-tin-evidence-20261127.json) guarda JSON dos logs e metadados de 16 assets do rascunho `geodata-dgt-terrain-agent-dgt-terrain-grid`, incluindo hashes completos. Não foi possível descarregar bytes de validation.json pelo conector; JSON emitido nos logs é a fonte do conteúdo.
+
+| Produto | Vértices | Triângulos | JSON bytes | Máx. 100 pts (m) | MAE (m) | RMSE (m) | Máx. estrada (m) | RMSE estrada (m) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2 m | 252506 | 503004 | 1812236 | 0,430891 | 0,041068 | 0,085677 | 1,412378 | 0,078945 |
+| 5 m | 41006 | 81204 | 294403 | 1,192319 | 0,109483 | 0,220535 | 2,455828 | 0,178954 |
+| 10 m | 10404 | 20402 | 74841 | 1,820113 | 0,226085 | 0,385827 | 3,011910 | 0,341721 |
+| TIN 0,25 m | 90284 | 180007 | 4950736 | 0,212807 | 0,062106 | 0,078314 | 0,586453 | 0,067989 |
+
+Condução longa em Rua das Bouças (OSM way 149303998): grelha 2 m 104,157436 m, 1183 amostras, declive 5,528%/20 m, curva real 46,536°, desvio lateral 0,395 m; TIN 104,213960 m, 1185 amostras, declive 6,063%/20 m, curva 46,543°, desvio lateral 0,394 m. Ambos contacto máximo 0,03 m, superfície de colisão 0 m, zero colisões reportadas, browser e multitoque passaram. Este teste é física fixed-step, não FPS real. A escolha histórica terrain-default.json (2 m) fica explicitamente invalidada pela revisão seguinte. 5/10 m passaram metas RMSE de LOD distante, sem condução avaliada.
+
+### Revisão 3 — precisão uniforme, binário e refinamento junto a vias
+
+- Todos os candidatos próximos, inclusive grelha 2 m de recurso, têm de satisfazer máximo ≤0,5 m nos 100 pontos e nas estradas, mais teste de condução. TIN adicionalmente <150 000 vértices e máximo ≤0,5 m nos nós da grelha local reamostrada. Se nenhum passar, validation.json pass=false e sem alias; o workflow falha, não há fallback aprovado. Teste unitário de regressão com 1,41 m em estrada e 0,50001 m nos 100 pontos.
+- Novo formato MSLTERR1 .bin com cabeçalho JSON embutido, alturas regulares Float32 LE (índices implícitos), TIN XYZ Float32 LE e faces Uint32 LE. O build e o Chromium leem o binário; não reexpande em JSON no geodata.js. Medir bytes brutos, gzip determinístico nível 9 (mtime=0), hash e tamanho equivalente JSON/gzip. Erros calculados sobre produto descodificado; nenhum ganho real de tamanho ou memória declarado antes do run. O browser lê .bin bruto; gzip é medição comparativa, não compressão HTTP já ativa.
+- Refinamento: Delatin base 0,25 m, pool 0,15 m e retenção de novos vértices até 6 m dos eixos OSM, com SciPy 1.15.3 (BSD-3-Clause, [fonte fixada](https://github.com/scipy/scipy/tree/e29dcb65a2040f04819b426a04b60d44a8f69c04)) Delaunay/Qhull; não é triangulação constrained. Até cinco rondas de avaliação/refinamento, cap 149999; acrescentar pontos reais do MDT em resíduos de estrada >0,38 m e nós de raster >0,43 m, avaliar todos os nós locais e corredores rodoviários. Relatar contagens, máximos e iterações, não alegar garantia contínua. validation.json schema 3 contém os 10 piores pontos por produto, way/nome/tipo/offset, x/z, lon/lat, altitude MDT/mesh e erro assinado/absoluto. Não atribuir causa sem inspeção; perfis próprios de estrada serão tarefa posterior.
+- CI offline pendente nesta revisão; rerun manual pedome-terrain.yml branch agent/dgt-terrain-grid mode=dgt. Novo workflow preserva único rascunho por branch e remove aliases/JSON antigos apenas quando substitui a evidência experimental; não toca nos originais. Sem merge até validar nova regra, sem publicar releases, sem subtree. Android físico/FPS/memória pendente.

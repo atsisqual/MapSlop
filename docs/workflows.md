@@ -26,3 +26,9 @@ gh workflow run dgt.yml --ref main -f mode=laz -f snapshot=20261127
 Modos pilot-public e pilot-authenticated só guardam manifesto de verificação; expanded, laz, historical e collection arquivam originais. snapshot YYYYMMDD seleciona o rascunho geodata-dgt-pedome-YYYYMMDD (historical: geodata-dgt-history-YYYYMMDD). Os originais existentes são comparados por tamanho e SHA-256; conflito obriga novo snapshot, não clobber. O workflow só aceita main, verifica os ficheiros e os digests após upload e marca falhas parciais como falhas. Requer os segredos de repositório DGT_USERNAME e DGT_PASSWORD para modos autenticados. Não os pedir em chat. Nenhuma transferência live foi executada para testar esta refatoração; CI usa fixtures.
 
 Ver [catálogo](data-catalog.md), [STATUS](STATUS.md), [evidência histórica](research/evidence-20261127.md). Os nomes de workflows antigos nos registos de runs são históricos.
+
+## P1 — terreno DGT
+
+O workflow manual `pedome-dgt-terrain.yml` (main ou branch agent/dgt-terrain-grid autorizado) lê os quatro MDT arquivados, converte e testa num browser local do runner; por omissão preserva resultados numa única release em rascunho por branch, nunca Pages. Não tem segredos DGT nem redistribui artefactos publicamente. Ver [pipeline](terrain-dgt.md). O CI usa apenas terreno sintético.
+
+Antes do merge do PR #15, executar o workflow manual já registado pedome-terrain.yml com branch agent/dgt-terrain-grid e mode=dgt. Chama o workflow reutilizável DGT sem triggers push/PR; copernicus mantém o fallback. Ver [pipeline](terrain-dgt.md).
