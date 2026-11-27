@@ -1,0 +1,626 @@
+{
+  "captured": "2026-11-27",
+  "source": "GitHub REST GET /repos/atsisqual/MapSlop/releases?per_page=100; asset sizes and digest fields. Successful acquisition workflows computed file SHA-256 before upload; release digests recorded here, no independent redownload in this session.",
+  "releases": [
+    {
+      "tag": "geodata-dgt-history-20261127",
+      "draft": true,
+      "asset_count": 17,
+      "total_bytes": 3588843733,
+      "assets": [
+        {
+          "name": "manifest-46039259098.json",
+          "bytes": 7406,
+          "sha256": "67c0912116ebaf370c7985574416e1910c79f1ac1d339a7b402036a8485a8042"
+        },
+        {
+          "name": "ORTOS-1995-cog-1m-084-2_v01.tif",
+          "bytes": 34481129,
+          "sha256": "2b87e9ae464c2d1c1e27339724199b834108c82f39ca306a1bce657f2ec28d33"
+        },
+        {
+          "name": "ORTOS-1995-cog-1m-084-4_v01.tif",
+          "bytes": 33116676,
+          "sha256": "3921636c6a8cf111c74ed0cb174a6a09aca57e95d825a7e585cf577fdfc49c96"
+        },
+        {
+          "name": "ORTOS-2004-cog-50cm-084-2_v01.tif",
+          "bytes": 131074584,
+          "sha256": "bee4b48170972214981cbc2f16ef88f0ad9e0280449454e111dd36b6a7425cfc"
+        },
+        {
+          "name": "ORTOS-2004-cog-50cm-084-4_v01.tif",
+          "bytes": 130116993,
+          "sha256": "a4eb3094cf25d68a72ad92d213252fe7a6303f5739d8b20b9a9d0b870412feb7"
+        },
+        {
+          "name": "ORTOS-2007-cog-50cm-084-2_v01.tif",
+          "bytes": 121854649,
+          "sha256": "d8cd15333d36ee77894b3785d43dbc1479e9c6752ad5e8f01b5d22d67ae6347b"
+        },
+        {
+          "name": "ORTOS-2007-cog-50cm-084-4_v01.tif",
+          "bytes": 123540690,
+          "sha256": "49b3f3d92c9b9c06d92b6731be899cbd8683768657196a8eddcf45b9be07b14a"
+        },
+        {
+          "name": "ORTOS-2010-cog-50cm-084-2_v01.tif",
+          "bytes": 141620779,
+          "sha256": "99e17f91b74598b938eb0a3eef4dbbe6d3ed8b375169823ff928400c4cb94f23"
+        },
+        {
+          "name": "ORTOS-2010-cog-50cm-084-4_v01.tif",
+          "bytes": 144335373,
+          "sha256": "0e490f03522be3bae3e29d9bb52a723042ecd66b65359c41edbae0ff1e5a547d"
+        },
+        {
+          "name": "ORTOS-2012-cog-50cm-084-2_v01.tif",
+          "bytes": 131690796,
+          "sha256": "96ba0fc4863e2df3cdbadd77b143643fd30c8bf3c7f45c49640600ea9c46d07d"
+        },
+        {
+          "name": "ORTOS-2012-cog-50cm-084-4_v01.tif",
+          "bytes": 141379014,
+          "sha256": "a080d0a35d65170a3a5089e2fd5f2454035594e2a14791b248547915b1ecb9d6"
+        },
+        {
+          "name": "ORTOS-2015-cog-50cm-084-2_v01.tif",
+          "bytes": 139976974,
+          "sha256": "06ef11037822a027709719fdbfe499f3b7c42716f4341ecd538c9991dda70fae"
+        },
+        {
+          "name": "ORTOS-2015-cog-50cm-084-4_v01.tif",
+          "bytes": 143457316,
+          "sha256": "49e3c64edef1396ed1a4658855c7e858fef6bb1e4b740bd84138c074b74b092d"
+        },
+        {
+          "name": "ORTOS-2018-cog-25cm-084-2_v01.tif",
+          "bytes": 592606324,
+          "sha256": "230e4efb44d84ddc25fea1186c7108c9d6e1315e4bc1cbb48ac6d4ec23322b9b"
+        },
+        {
+          "name": "ORTOS-2018-cog-25cm-084-4_v01.tif",
+          "bytes": 583936462,
+          "sha256": "0c70654acc65ca4f1ab03d38ef65ad4371d4e38077922e4a11b3cf61505c2ef3"
+        },
+        {
+          "name": "ORTOS-2021-cog-25cm-084-2_v01.tif",
+          "bytes": 491964222,
+          "sha256": "d2f7321501752ec7584915c6cbf4eb2c7fda5610be797e93dba8b80829920501"
+        },
+        {
+          "name": "ORTOS-2021-cog-25cm-084-4_v01.tif",
+          "bytes": 503684346,
+          "sha256": "f22d19795ca247332efc972334647f3b796326ec1461852607383c2c5be5e8a1"
+        }
+      ]
+    },
+    {
+      "tag": "geodata-dgt-pedome-20261127",
+      "draft": true,
+      "asset_count": 80,
+      "total_bytes": 3489302830,
+      "assets": [
+        {
+          "name": "LO-177493-07-2025_v05.laz",
+          "bytes": 103010629,
+          "sha256": "297f0b83f6426a89ab06fc2601445c5e70818fcc1c5c284954ee746c1b4ff0c8"
+        },
+        {
+          "name": "LO-177494-07-2025_v05.laz",
+          "bytes": 160088478,
+          "sha256": "0c8d4b112b37d5f611e7e7a93390ee9e666eb6a0a993ffe1c5cdcf7381a98e5c"
+        },
+        {
+          "name": "LO-177495-07-2025_v05.laz",
+          "bytes": 162517976,
+          "sha256": "d3a6475d6379c050cf858ed98fa5ee595e19e4274ebcee26cff48e418ca7a049"
+        },
+        {
+          "name": "LO-177496-07-2025_v05.laz",
+          "bytes": 143633362,
+          "sha256": "38a42c37243dffd205989a4f792c4ea96ff2ec4d2f3e738832a65fb061557b0b"
+        },
+        {
+          "name": "LO-177497-07-2025_v05.laz",
+          "bytes": 118222843,
+          "sha256": "123327c85a404876d2be44a031c2104b2b131b48c03fb210c6b441e13397731a"
+        },
+        {
+          "name": "LO-178493-07-2025_v05.laz",
+          "bytes": 107208499,
+          "sha256": "d58297f778ed01dd6d4d6bb5c61b9e98a32e2e7540815e6e291b05060c707a00"
+        },
+        {
+          "name": "LO-178494-07-2025_v05.laz",
+          "bytes": 126251286,
+          "sha256": "b47ab27fb44dc6dbf575226f170feb9910bd890ecb4737dda578d24ccea33469"
+        },
+        {
+          "name": "LO-178495-07-2025_v05.laz",
+          "bytes": 123793693,
+          "sha256": "da076bcfafbb182d5da44e3c13525954d279d7ac19e7599f8a63b524fa3ca01a"
+        },
+        {
+          "name": "LO-178496-07-2025_v05.laz",
+          "bytes": 135609555,
+          "sha256": "85ffdd0ad05849833648311091e82c701f909a99b6f8f09de57aed7a73d34df8"
+        },
+        {
+          "name": "LO-178497-07-2025_v05.laz",
+          "bytes": 105278910,
+          "sha256": "97fda0cfc4ca3a5941c1e2e0787bc9b0ecb1078a279dfa7cdc605ad3878b8c79"
+        },
+        {
+          "name": "LO-179493-07-2025_v05.laz",
+          "bytes": 103024793,
+          "sha256": "58a8f25c823917ed46b0c925398eced9ec39b9f0941245f810214df19386dac7"
+        },
+        {
+          "name": "LO-179494-07-2025_v05.laz",
+          "bytes": 147669913,
+          "sha256": "a96f562938c63a4961ce78e9b70069942d4d92083dff884597e0779beda03068"
+        },
+        {
+          "name": "LO-179495-07-2025_v05.laz",
+          "bytes": 110987681,
+          "sha256": "08b39852dc0aed8b0741473fe5d46592e9de7d0b2d81aebe9bac975b8f18fcdf"
+        },
+        {
+          "name": "LO-179496-07-2025_v05.laz",
+          "bytes": 144185954,
+          "sha256": "5f128b4e8dce6abc69c55753330dd5d06a121dfaf4434c9617116899b1e27ebe"
+        },
+        {
+          "name": "LO-179497-07-2025_v05.laz",
+          "bytes": 111507362,
+          "sha256": "bc508d0f0f90ad88986d87d511ca23d2d7b62680c9f51d696874db72cf9308eb"
+        },
+        {
+          "name": "manifest-46038918273.json",
+          "bytes": 29369,
+          "sha256": "3b53884d8c0130736a1826d2e5e9cc7f9d94ae9cd4a52357df9fdda3af0295eb"
+        },
+        {
+          "name": "manifest-46039731389.json",
+          "bytes": 6261,
+          "sha256": "91e1118dbfdd40ed9f43d7c7668ea287732305fb5bd16a9f14031b3586203d3d"
+        },
+        {
+          "name": "manifest-46040126937.json",
+          "bytes": 6591,
+          "sha256": "da3c180edce69e64454233e102988319a3e5bad68300b8b1c1322e4f9731adba"
+        },
+        {
+          "name": "MDS-2m-177493-07-2025_v02.tif",
+          "bytes": 1024445,
+          "sha256": "d74dc288dac678fa03df17bfeef7b6ca9a3c504032d81c9ec3105c2c6544ae9d"
+        },
+        {
+          "name": "MDS-2m-177494-07-2025_v02.tif",
+          "bytes": 1013335,
+          "sha256": "a04582c748a319165170d58a4733b2e25ec15c4eb3b5b4b4e279dcb71ebeceeb"
+        },
+        {
+          "name": "MDS-2m-177495-07-2025_v02.tif",
+          "bytes": 1033973,
+          "sha256": "a5f80b365ac580082afa053e4ef9104439b73582443a53438f90a1362bd2eaf9"
+        },
+        {
+          "name": "MDS-2m-177496-07-2025_v02.tif",
+          "bytes": 1024877,
+          "sha256": "ae23946113b8bbabdae44af273ef30542d38aa38d0e760bcc81ac526de6e8946"
+        },
+        {
+          "name": "MDS-2m-177497-07-2025_v02.tif",
+          "bytes": 1006798,
+          "sha256": "ab97e7d2dd256ed5f06b88decb2a6a02f853382bebed1d859b5745f8edfc0467"
+        },
+        {
+          "name": "MDS-2m-178493-07-2025_v02.tif",
+          "bytes": 1029136,
+          "sha256": "0fe596a3a8181db8f37b1633fe42ecb1f77d467a26fdad393505b941e297b8c9"
+        },
+        {
+          "name": "MDS-2m-178494-07-2025_v02.tif",
+          "bytes": 1029724,
+          "sha256": "5d457b926048e4c468f9d722768d234962a8051c35af359171f6644df6402fcc"
+        },
+        {
+          "name": "MDS-2m-178495-07-2025_v02.tif",
+          "bytes": 1041557,
+          "sha256": "044dd45780294850812ddb097f7141189edbeec29d77c526afc9a650834cdc99"
+        },
+        {
+          "name": "MDS-2m-178496-07-2025_v02.tif",
+          "bytes": 1021947,
+          "sha256": "49968a670ec7ac1000b3ce39044647bc90bcee512e14cfee0888083b5bb9fdd8"
+        },
+        {
+          "name": "MDS-2m-178497-07-2025_v02.tif",
+          "bytes": 1019352,
+          "sha256": "a6dddd558ce94baebff4e1e4f40c4963081c442ef428d84613861a9605934811"
+        },
+        {
+          "name": "MDS-2m-179493-07-2025_v02.tif",
+          "bytes": 1029265,
+          "sha256": "648f26d6730e196dc59818f59c3ef254f12ea79f08898d5ba03d83fbb127750a"
+        },
+        {
+          "name": "MDS-2m-179494-07-2025_v02.tif",
+          "bytes": 1037110,
+          "sha256": "0fe03a4b66558425416136d5725dde339d1eb7e411f1c3aa142a6da7d5a82d4e"
+        },
+        {
+          "name": "MDS-2m-179495-07-2025_v02.tif",
+          "bytes": 1047897,
+          "sha256": "8c56c1c3cdc57ea47a69bbdcf65512aeef42992fc3aa9869ac48bdeb9c7f2572"
+        },
+        {
+          "name": "MDS-2m-179496-07-2025_v02.tif",
+          "bytes": 1044416,
+          "sha256": "ef8a6f116e86381e6d6cbc5142924d72fd4fd9c2ef3b1d73802e2e579cc50a46"
+        },
+        {
+          "name": "MDS-2m-179497-07-2025_v02.tif",
+          "bytes": 1039503,
+          "sha256": "94fc73815f7627cb8443675132696458b514aa76e1b66e88be6250e9bc360c88"
+        },
+        {
+          "name": "MDS-50cm-177493-07-2025_v02.tif",
+          "bytes": 15138628,
+          "sha256": "731aaa6f737fd28beb8e036837d9eaf1e88c006296c9b4ee81cea20f1dca9207"
+        },
+        {
+          "name": "MDS-50cm-177494-07-2025_v02.tif",
+          "bytes": 15099128,
+          "sha256": "89822665b40104d6ccee5a372b1c24571ddb5a3f8aea19f25a0e999c0a9364a3"
+        },
+        {
+          "name": "MDS-50cm-177495-07-2025_v02.tif",
+          "bytes": 15676523,
+          "sha256": "ff4349bedf3866fff4566c7c540ce2e524d0aa1393b382b93479c5359bac7285"
+        },
+        {
+          "name": "MDS-50cm-177496-07-2025_v02.tif",
+          "bytes": 15175173,
+          "sha256": "5338974b318d5f05f4a25b59b0b752977b3206f14752df83224ef0a29bfc3753"
+        },
+        {
+          "name": "MDS-50cm-177497-07-2025_v02.tif",
+          "bytes": 14909971,
+          "sha256": "09b7213cbf582892e893585ff5eb68762e9fb2a7b5a8283e373b1e668965bdfd"
+        },
+        {
+          "name": "MDS-50cm-178493-07-2025_v02.tif",
+          "bytes": 15427881,
+          "sha256": "826b0677315ce698be5fce11e4f07bddfc257ab7ffe6e7f3ab5082d41d0ee49f"
+        },
+        {
+          "name": "MDS-50cm-178494-07-2025_v02.tif",
+          "bytes": 15279867,
+          "sha256": "d7134abde1d4104931ce386f674fcb7062e049d283dea8e13b4b8ee972eed5fa"
+        },
+        {
+          "name": "MDS-50cm-178495-07-2025_v02.tif",
+          "bytes": 15601447,
+          "sha256": "d54930f32b10dfeac7fd08c53771da840ff547b4ce16e79e52de4522551e6a62"
+        },
+        {
+          "name": "MDS-50cm-178496-07-2025_v02.tif",
+          "bytes": 15227851,
+          "sha256": "38d48263a81cdc62cc90ef0bf7a2b7cb0cefe9f2174f977809a7d7ac902c88e4"
+        },
+        {
+          "name": "MDS-50cm-178497-07-2025_v02.tif",
+          "bytes": 14972153,
+          "sha256": "838f94a2a580acb5f48e5fb42f437d70e87221f2ee6cfb1f9d39f4875e7f74e2"
+        },
+        {
+          "name": "MDS-50cm-179493-07-2025_v02.tif",
+          "bytes": 15241198,
+          "sha256": "06cd1ad8b5269516058afc64f17ff2dfe5a8b4403e23f9f6398408a52ead27e8"
+        },
+        {
+          "name": "MDS-50cm-179494-07-2025_v02.tif",
+          "bytes": 15560579,
+          "sha256": "83bc2081ac9f6f5e617787fca21307edd96ef69ea5632c19438c544321ae8d03"
+        },
+        {
+          "name": "MDS-50cm-179495-07-2025_v02.tif",
+          "bytes": 15712862,
+          "sha256": "78e9ee1a253c0df621fef8d0edda2cfd0005cdd42e1d9db3c0573dfa8e6a4bfe"
+        },
+        {
+          "name": "MDS-50cm-179496-07-2025_v02.tif",
+          "bytes": 15649308,
+          "sha256": "57c9f5127b0d75774b3d1988893520423720c993fd1eb51268ac74b3385841b0"
+        },
+        {
+          "name": "MDS-50cm-179497-07-2025_v02.tif",
+          "bytes": 15641995,
+          "sha256": "1b79fdf773a58ecd96194443281637a89dbf38a83a132a2a84ef78d41585fec9"
+        },
+        {
+          "name": "MDT-2m-177493-07-2025_v02.tif",
+          "bytes": 1008865,
+          "sha256": "e9c6c7f688b7975e95c4aaaabd245fb8293dfc428ddf9bc826703da5a21b2e08"
+        },
+        {
+          "name": "MDT-2m-177494-07-2025_v02.tif",
+          "bytes": 991958,
+          "sha256": "fd8240e83f3d387bd5bd273d9da4e477d39fbd18ca10e306965b35fe6558c1e6"
+        },
+        {
+          "name": "MDT-2m-177495-07-2025_v02.tif",
+          "bytes": 1025562,
+          "sha256": "9dce84767356caac01828a702e45b822e2d80322150a8039b3f527a23ca0b034"
+        },
+        {
+          "name": "MDT-2m-177496-07-2025_v02.tif",
+          "bytes": 1014685,
+          "sha256": "6ce47172d647022a26b55027b8c2f935cf74b8eeab8fa58843bfd5d9951569d1"
+        },
+        {
+          "name": "MDT-2m-177497-07-2025_v02.tif",
+          "bytes": 981973,
+          "sha256": "3598eab33f012b198d1fa181c38e3ffccb79f54cebfc9e81409f9c0aa75ded2d"
+        },
+        {
+          "name": "MDT-2m-178493-07-2025_v02.tif",
+          "bytes": 1008737,
+          "sha256": "94f0a773a091c4845e030e67bd65141e27717151ce54ff411e7eb49265cca094"
+        },
+        {
+          "name": "MDT-2m-178494-07-2025_v02.tif",
+          "bytes": 1017639,
+          "sha256": "54e9258947d5db9a593683a319880aae69ca8906d7b48019d0b5890cf62bd68c"
+        },
+        {
+          "name": "MDT-2m-178495-07-2025_v02.tif",
+          "bytes": 1033181,
+          "sha256": "babfd9e8f06ce19a36f9187ab56dec512346894d7c91cd40ab8d193a67897ba5"
+        },
+        {
+          "name": "MDT-2m-178496-07-2025_v02.tif",
+          "bytes": 1009359,
+          "sha256": "ae3ab32bc5c5c34c979ecfd000a1c767e7c8a19591088ceb4b867651e826ebe4"
+        },
+        {
+          "name": "MDT-2m-178497-07-2025_v02.tif",
+          "bytes": 1003755,
+          "sha256": "3694f1aeafdd66129f09f383b6051256a71b6aed0391b4678849ba0e9a9aa2a8"
+        },
+        {
+          "name": "MDT-2m-179493-07-2025_v02.tif",
+          "bytes": 1018402,
+          "sha256": "aa9e8e88842273694a5a407a9b35a3c00eb390bef12b275d9b0ed645b61000f9"
+        },
+        {
+          "name": "MDT-2m-179494-07-2025_v02.tif",
+          "bytes": 1020452,
+          "sha256": "99f05f213d0ed27e8df005fa9cee06d8a4762e15d8cb4d0285758ea94054c01d"
+        },
+        {
+          "name": "MDT-2m-179495-07-2025_v02.tif",
+          "bytes": 1039250,
+          "sha256": "f6dd64a0dd230f58d60579fe6c0609db08f5dd30ee168736188857f29e830c52"
+        },
+        {
+          "name": "MDT-2m-179496-07-2025_v02.tif",
+          "bytes": 1037842,
+          "sha256": "0c37f475aa5cf13328d6629d3e264fbc3d059aa42d524c7a99afda0a9c212d0f"
+        },
+        {
+          "name": "MDT-2m-179497-07-2025_v02.tif",
+          "bytes": 1025667,
+          "sha256": "3e0d0f8306f2570cdd338cea9e563bd98015d24a1cc443cd34f94eb66c0e1a12"
+        },
+        {
+          "name": "MDT-50cm-177493-07-2025_v02.tif",
+          "bytes": 14578833,
+          "sha256": "f65fcd3145855b714f0986057ec5a8228c43ccb920e575bca2b176f40cc2f819"
+        },
+        {
+          "name": "MDT-50cm-177494-07-2025_v02.tif",
+          "bytes": 14483176,
+          "sha256": "087ee1aebf5af85a3eaf595a363c48df2722ebc33e0ec085f39e69aea7450104"
+        },
+        {
+          "name": "MDT-50cm-177495-07-2025_v02.tif",
+          "bytes": 15216690,
+          "sha256": "1875ecc09d5e116c81a95d0f4717c0013da70b40afe979cdde1b3ddcf424e46c"
+        },
+        {
+          "name": "MDT-50cm-177496-07-2025_v02.tif",
+          "bytes": 14788013,
+          "sha256": "ae313b6a273ea8f188c590d2c1542b053f6adf466c5d30dc42e33ae848fc0e65"
+        },
+        {
+          "name": "MDT-50cm-177497-07-2025_v02.tif",
+          "bytes": 14104419,
+          "sha256": "9d8d799ff5bc30dab153c4df971b66be5c7d63c723fd706b78d3444274b30b5b"
+        },
+        {
+          "name": "MDT-50cm-178493-07-2025_v02.tif",
+          "bytes": 14815391,
+          "sha256": "006747cbcd188f8fe0dcf74abf4e6cfe866f63de88f7af6ef3e551664ddabdc8"
+        },
+        {
+          "name": "MDT-50cm-178494-07-2025_v02.tif",
+          "bytes": 14793371,
+          "sha256": "5f42a8bc6afddb3db52352c337e1ed52052d2c6c07dc8c34b1902bf5094e4297"
+        },
+        {
+          "name": "MDT-50cm-178495-07-2025_v02.tif",
+          "bytes": 15206031,
+          "sha256": "c69d26afc99fc7ef8603d7a4ebe39c2940d127298555ec2d606caf5bf7b4e3e0"
+        },
+        {
+          "name": "MDT-50cm-178496-07-2025_v02.tif",
+          "bytes": 14843446,
+          "sha256": "5b0019397086d23d88ba26f56cb07ae520b56ca1a44895472fa65c97b9a13d28"
+        },
+        {
+          "name": "MDT-50cm-178497-07-2025_v02.tif",
+          "bytes": 14369858,
+          "sha256": "050787dc69eb6dacca85b7c1288c867a47bc86bbf299bc619789760e82d7ea32"
+        },
+        {
+          "name": "MDT-50cm-179493-07-2025_v02.tif",
+          "bytes": 14814207,
+          "sha256": "bf42a6601edcaaa2f3ef36d1020e5a61e286ac7eddd3bca2c95e1fcfc8a5dc15"
+        },
+        {
+          "name": "MDT-50cm-179494-07-2025_v02.tif",
+          "bytes": 15106331,
+          "sha256": "8ead6dc5ea6433f7849e60ccc0ca52050193a3edc4af51ddf264a40553eb1484"
+        },
+        {
+          "name": "MDT-50cm-179495-07-2025_v02.tif",
+          "bytes": 15279730,
+          "sha256": "30dca488ac13649bfbc2338d091a22431ba05140cdddb77f717ccf88c68c8088"
+        },
+        {
+          "name": "MDT-50cm-179496-07-2025_v02.tif",
+          "bytes": 15259975,
+          "sha256": "939322574e42e1658164ff6ef8e63d9ab18e9a02840313cab573508f71dadb31"
+        },
+        {
+          "name": "MDT-50cm-179497-07-2025_v02.tif",
+          "bytes": 15064047,
+          "sha256": "18998fadf8eea1f5e03604de492bf38745aef6ab4362e5f60c0e18dbbccc04f0"
+        },
+        {
+          "name": "ORTOS-2025-cog-25cm-084-2_v01.tif",
+          "bytes": 537517351,
+          "sha256": "090b00636eb3539747716c5151ee4c4d641f8efa4b5b3e6ac815d67cfdbaa385"
+        },
+        {
+          "name": "ORTOS-2025-cog-25cm-084-4_v01.tif",
+          "bytes": 565033580,
+          "sha256": "3773f1136f8b5dbc8811e23bd83231f0e04a08dfdea20a6f9b04f92b325190e1"
+        }
+      ]
+    },
+    {
+      "tag": "geodata-pedome-vectors-20261127",
+      "draft": true,
+      "asset_count": 9,
+      "total_bytes": 21599364,
+      "assets": [
+        {
+          "name": "cadastro.geojson",
+          "bytes": 211,
+          "sha256": "8cb823d7aef6239b2dc301311675e970be9aa4027c5e775c23446b94c0d1c91e"
+        },
+        {
+          "name": "cos2025v1.geojson",
+          "bytes": 17031584,
+          "sha256": "ee4d27ed5d8d9fa9e0911f5d5edac54a2affe0ac717d67d180d6e2433f228535"
+        },
+        {
+          "name": "crus.geojson",
+          "bytes": 2036932,
+          "sha256": "effc2b4b4024e295e538cc3ba4884a8cab812d299b5c6daf17a48171162d3172"
+        },
+        {
+          "name": "freguesias.geojson",
+          "bytes": 123009,
+          "sha256": "a51a66a872e0bf6a58e028478f07b6f695fe8a6645f31435a93ed08d76dd7856"
+        },
+        {
+          "name": "municipios.geojson",
+          "bytes": 226586,
+          "sha256": "0b3aacb05a29365408ff5091724c3620be793675df18d9168f9a7c8e60ac5363"
+        },
+        {
+          "name": "ogc-collection-inventory.json",
+          "bytes": 28531,
+          "sha256": "aadb3ad7e5e2bf582736baefcccce4eb32e4dd6819b0cfc1ccf83866ffd8cf0d"
+        },
+        {
+          "name": "pedome-expanded-osm.json",
+          "bytes": 2150454,
+          "sha256": "2a8d22218de6fbcc9e7f5d5b0e103b8336cdd2df7165751b4652de61da13742c"
+        },
+        {
+          "name": "SHA256SUMS-46039014994.txt",
+          "bytes": 690,
+          "sha256": "f6782938e6e9c3fca424c03e7509e3fd8ba034cd7bb380e7f8b327d422a9781f"
+        },
+        {
+          "name": "vector-manifest.json",
+          "bytes": 1367,
+          "sha256": "2948d6eb15264885ba69f599321ecc02be165de4b3ace334cda37842469d048c"
+        }
+      ]
+    },
+    {
+      "tag": "geodata-portugal-20261126",
+      "draft": true,
+      "asset_count": 1,
+      "total_bytes": 429648916,
+      "assets": [
+        {
+          "name": "portugal-261126.osm.pbf",
+          "bytes": 429648916,
+          "sha256": "983c1ffcc59535d53b674ae0caeac3e4d25f28d93a7a635f2a9a531c4445bc91"
+        }
+      ]
+    },
+    {
+      "tag": "reconstruction-toolchain-20261127",
+      "draft": true,
+      "asset_count": 9,
+      "total_bytes": 273729743,
+      "assets": [
+        {
+          "name": "3dfier-master.zip",
+          "bytes": 36402288,
+          "sha256": "2515cdce3572b0d2b3649555c4a1d7504f47602370ef3eb98cc11e2511fad3d6"
+        },
+        {
+          "name": "BlenderGIS-master.zip",
+          "bytes": 422742,
+          "sha256": "62fe4c73c1fee2d825580500b77b9adc85b5b9b891ec829831cced0f7ae6316b"
+        },
+        {
+          "name": "City3D-main.zip",
+          "bytes": 69497555,
+          "sha256": "9bf4b4c89fa2ac4cc49ae3ca2af9b0bf241b2557fbd2f97587ae45f0d0aa3f04"
+        },
+        {
+          "name": "City4CFD-main.zip",
+          "bytes": 131761175,
+          "sha256": "36e496106b6590338e04e6594c25eacf1806fa1717359052e6f0c8fdbb67d469"
+        },
+        {
+          "name": "cjio-master.zip",
+          "bytes": 8001075,
+          "sha256": "9e02df04a4c7d37403eeaf7bee27fb0ad9a4947bfae8661d1d1755bbd316700e"
+        },
+        {
+          "name": "manifest.json",
+          "bytes": 3731,
+          "sha256": "e0538e3f025bd082b2a4c691d385bed74acc01960d18c0a2185a7a45caab259e"
+        },
+        {
+          "name": "OSM2World-master.zip",
+          "bytes": 3915929,
+          "sha256": "e0ac980281a27a40e38eca176202ae6685e16371a0ffed350ae82167b45b49e0"
+        },
+        {
+          "name": "roofer-linux-x86_64-v1.0.0.tar.gz",
+          "bytes": 20291139,
+          "sha256": "85834b289467b0e583e2b9c59a725c97ef39dc03c0c0a12417a8a0666e1aa0a1"
+        },
+        {
+          "name": "roofer-main.zip",
+          "bytes": 3434109,
+          "sha256": "0a64fcd19410be4e92ca211b347e9e0b2b3b43753f55b44a01a77d3f04503e56"
+        }
+      ]
+    }
+  ]
+}

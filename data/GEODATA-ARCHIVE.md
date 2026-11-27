@@ -24,3 +24,6 @@ DGT states its [nine orthophoto coverages](https://www.dgterritorio.gov.pt/novo-
 ## Game preparation
 
 Original tiles are archival source data, not files served to mobile clients. Generate terrain meshes at suitable levels of detail, surface-minus-terrain height statistics for building footprints, tree/vegetation classes and canopy structure from LAZ, tiled aerial textures, hydrography, road elevations and land-use surfaces. Keep full-resolution originals so these products can be rebuilt without re-downloading. All archive assets require manifest/hash verification; numerical resolution is not a guarantee of survey accuracy.
+
+## Atualização de conclusão (2026-11-27)
+As recolhas LAZ e histórico terminaram com sucesso; 15 LAZ e 16 ortofotos históricas foram arquivadas. Ver [evidência e contagens](../docs/research/evidence-20261127.md) e [digests completos](../docs/research/release-assets-20261127.json). Cadastro vazio. Todas as releases em rascunho; publicação requer autorização.
