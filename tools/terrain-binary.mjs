@@ -58,13 +58,25 @@ export function decodeTerrain(data){
   }else throw Error('Unknown terrain encoding');
   return t;
 }
+function decodeMeasured(data){
+  const memory=()=>typeof performance.memory?.usedJSHeapSize==='number'?performance.memory.usedJSHeapSize:null;
+  const before=memory(),start=performance.now(),t=decodeTerrain(data);
+  const duration=performance.now()-start,after=memory();
+  const n=new DataView(data).getUint32(8,true);
+  const encoding=JSON.parse(new TextDecoder().decode(new Uint8Array(data,12,n))).encoding;
+  t.decodeMetrics={encoding,decode_ms:duration,input_bytes:data.byteLength,
+    output_typed_array_bytes:(t.vertices?.byteLength||0)+(t.triangles?.byteLength||0)+(t.heights?.byteLength||0),
+    compact_scratch_stream_bytes:encoding==='tin-morton-cm-f32bits-varint'?8*(t.vertices.length+t.triangles.length):0,
+    js_heap_before_bytes:before,js_heap_after_bytes:after,js_heap_method:before===null?'unavailable':'Chromium performance.memory (approximate, not peak; excludes some buffers)'};
+  return t;
+}
 export async function loadTerrain(url){
   if(typeof window==='undefined'&&typeof process!=='undefined'&&process.versions?.node){
     const {readFile}=await import('node:fs/promises');
     const b=await readFile(url);
-    return decodeTerrain(b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength));
+    return decodeMeasured(b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength));
   }
   const response=await fetch(url);
   if(!response.ok)throw Error('Terrain download '+response.status);
-  return decodeTerrain(await response.arrayBuffer());
+  return decodeMeasured(await response.arrayBuffer());
 }
