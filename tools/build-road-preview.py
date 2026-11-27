@@ -28,7 +28,10 @@ def main():
         raise ValueError("Expected reviewed natural TIN")
     original=decode(a.terrain.read_bytes())
     osm=json.loads((dt.ROOT/"data/pedome/pedome-osm.json").read_text())
-    xy,ways,nodes,shared,excluded=network(osm)
+    x0,z0=original["x0"],original["z0"]
+    x1=x0+(original["nx"]-1)*original["cell"]
+    z1=z0+(original["nz"]-1)*original["cell"]
+    xy,ways,nodes,shared,excluded=network(osm,(x0,z0,x1,z1))
     with ExitStack() as stack:
         ds=[]
         for asset in dt.expected_assets():
@@ -39,13 +42,23 @@ def main():
         mosaic,affine=merge(ds,nodata=-9999.,dtype="float32",masked=True)
         dt.check_coverage(mosaic[0],affine,crs)
         reference=dt.sample(mosaic[0],affine,crs,xy[:,0],xy[:,1])-original["base"]
-    y=solve(reference,ways)
+        y=solve(reference,ways)
+        # Independent 0.5 m centreline probes, including between optimisation nodes.
+        dense=[];pred=[]
+        for w in ways:
+            for i,j in zip(w["ids"],w["ids"][1:]):
+                u=np.linspace(0,1,max(2,int(np.ceil(np.linalg.norm(xy[j]-xy[i])/0.5))+1))
+                dense.extend(xy[i]+u[:,None]*(xy[j]-xy[i]))
+                pred.extend(y[i]+u*(y[j]-y[i]))
+        dense=np.asarray(dense)
+        actual=dt.sample(mosaic[0],affine,crs,dense[:,0],dense[:,1])-original["base"]
+        dense_error=float(np.max(np.abs(actual-np.array(pred))))
     m=metrics(reference,y,ways)
     maxdev=max(row["max_deviation_m"] for row in m)
     maxgrade=max(row["max_grade_change_per_3m"] for row in m)
     report={"schema":1,"ways":len(ways),"samples":len(xy),"shared_nodes":len(shared),
             "junction_identity_max_m":0.0,"excluded_structures":excluded,"max_deviation_m":maxdev,
-            "max_grade_change_per_3m":maxgrade,"profile_pass":maxdev<=MAX_DEVIATION+1e-7 and maxgrade<=3*CURVATURE+1e-7,
+            "max_grade_change_per_3m":maxgrade,"dense_samples":len(dense),"dense_max_deviation_m":dense_error,"profile_pass":maxdev<=MAX_DEVIATION+1e-7 and dense_error<=MAX_DEVIATION+1e-7 and maxgrade<=3*CURVATURE+1e-7,
             "way_metrics":m}
     write(a.output/"road-profiles.json",{"schema":1,"xy":xy.tolist(),"height_m":y.tolist(),"mdt_m":reference.tolist(),
         "ways":ways,"junction_nodes":{str(n):nodes[n] for n in shared if n in nodes},"excluded_structures":excluded})
