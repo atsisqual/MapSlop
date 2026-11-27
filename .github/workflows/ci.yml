@@ -80,7 +80,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p outputs /tmp/pedome-tin-test
-          .venv/bin/python -c 'import sys; from pathlib import Path; sys.path.insert(0,"tools"); from terrain_tin import synthetic_tin; from terrain_binary import save; save(Path("outputs/synthetic-tin.bin"),synthetic_tin())'
+          .venv/bin/python -c 'import sys; from pathlib import Path; sys.path.insert(0,"tools"); from terrain_tin import synthetic_tin; from terrain_binary import save; save(Path("outputs/synthetic-tin.bin"),synthetic_tin(),compact=True)'
           .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi outputs/tin --osm-json data/pedome/pedome-osm.json --terrain-bin outputs/synthetic-tin.bin --three-vendor .cache/mapslop/three-vendor
           make serve OUT=outputs/tin PORT=8082 > /tmp/pedome-tin-test/http.log 2>&1 &
           server=$!
