@@ -86,3 +86,5 @@ Tamanhos e SHA-256 calculados sobre ficheiros montados em 2026-11-27 (Python has
 - PR #1: links relativos e fences de seis documentos verificados; integrado.
 - PR #2: README/licença/gitignore/CLAUDE.md; links relativos, fences e modo symlink 120000 verificados; integrado.
 - Tarefa 2: STATUS e evidências corrigidos a partir de logs dos sete runs, metadados das releases e hashes de ficheiros montados; links relativos, fences, JSON e formato dos digests verificados. Não executa novo build do jogo.
+
+- Tarefa 3: ADRs 0003–0008 registam decisões já tomadas (piloto, fallback, DGT, ferramentas/licenças, Pages/HUD e não reutilização PortoSlop). Verificação de links relativos e fences executada; sem alteração do jogo. Subtree fica para ADR de proposta separado.
