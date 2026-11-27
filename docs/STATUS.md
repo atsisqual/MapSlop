@@ -18,7 +18,7 @@
 - Edifícios: alturas estimadas; ainda sem MDS−MDT nem telhados.
 - Inventário de licenças de assets do Nairobi por concluir.
 - Licenças por coleção DGT inconsistentes → releases continuam rascunho.
-- `README.md` desatualizado (refere Slop New York e "não executável").
+- README corrigido; MIT/avisos upstream, .gitignore e symlink CLAUDE.md adicionados (tarefa 1). Inventário de assets permanece pendente.
 
 ### Próximos passos (por prioridade)
 1. Integrar MDT DGT 0,5 m → terreno do jogo (substituir GLO-30).
@@ -36,3 +36,7 @@
 | portugal-261126.osm.pbf | 429 648 916 | 983c1ffc…5bc91 | Release `geodata-portugal-20261126` |
 | MapSlop-Pedome-P0.zip | ? | 8b8cc496…ccb7cf2 | **Não arquivado** |
 | HAR PortoSlop / map.json PortoSlop | — | — | Não arquivar (terceiros) |
+
+## Passagem de turno — processo
+- PR #1: verificação de seis documentos por script JS (links relativos existentes e blocos de código equilibrados); integrado.
+- Tarefa 1: verificação estática de README/STATUS/LICENSE/.gitignore e symlink no Git; não altera o runtime. Não representa novo teste de condução.
