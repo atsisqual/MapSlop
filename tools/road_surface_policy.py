@@ -40,4 +40,6 @@ def parallel_policy(xy,ways):
         if not lo-1e-6<=v<=hi+1e-6:continue
         j=min(len(s)-2,max(0,int(np.searchsorted(s,v)-1)));u=float(np.clip((v-s[j])/(s[j+1]-s[j]),0,1))
         eq.append([(int(i),1),(int(aa[j]),u-1),(int(aa[j+1]),-u)])
-    return {"ids":aa,"axis":axis,"stations":s,"lo":lo,"hi":hi,"ways":list(PARALLEL_IDS)},eq
+    order=np.argsort(t)
+    return {"ids":aa,"axis":axis,"stations":s,"lo":lo,"hi":hi,"ways":list(PARALLEL_IDS),
+            "other_ids":bb[order],"other_stations":t[order],"half_a":a["width_m"]/2,"half_b":b["width_m"]/2},eq
