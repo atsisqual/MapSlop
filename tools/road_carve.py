@@ -209,7 +209,26 @@ def check_surface(t,original,corridor,legacy=False):
     outside=q[w==0];base=baseline[w==0]
     delta=np.abs(np.array([s(*p) for p in outside])-base)
     junction_errors=[abs(s(*p)-h) for p,h in zip(corridor.junction_xy,corridor.junction_y)]
+    platform_slopes=[]
+    for p,r in zip(corridor.junction_xy,corridor.junction_radius):
+        if not (x0+r<p[0]<x1-r and z0+r<p[1]<z1-r):continue
+        for axis in (np.array([1.,0.]),np.array([0.,1.])):
+            v=axis*r*0.65
+            platform_slopes.append(abs(float(np.degrees(np.arctan2(s(*(p+v))-s(*(p-v)),2*r*0.65)))))
+    # Additional exterior probes close to the berm, not only on a coarse grid.
+    edge_points=[]
+    for sign in (-1,1):
+        for margin in (0.1,0.5,1.0):
+            edge_points.extend(centre+sign*normal*(corridor.half+BERM+margin)[:,None])
+    q=np.asarray(edge_points)
+    q=q[(q[:,0]>=x0)&(q[:,0]<=x1)&(q[:,1]>=z0)&(q[:,1]<=z1)]
+    base=np.array([old(*p) for p in q])
+    _,w=corridor.target(q,base,platforms=not legacy)
+    q=q[w==0];base=base[w==0]
+    edge_delta=np.abs(np.array([s(*p) for p in q])-base)
     return {"junction_samples":len(junction_errors),"max_junction_mesh_delta_m":max(junction_errors,default=0),
+            "junction_platform_crossfall_samples":len(platform_slopes),"max_junction_platform_crossfall_degrees":max(platform_slopes,default=None),
+            "near_berm_outside_samples":len(edge_delta),"near_berm_outside_max_change_m":float(edge_delta.max(initial=0)),
             "transverse_samples":len(slopes),"max_crossfall_degrees":max((r["crossfall_degrees"] for r in slopes),default=None),
             "worst_10_crossfall":sorted(slopes,key=lambda r:-r["crossfall_degrees"])[:10],
             "all_crossfall_samples":len(all_slopes),"worst_10_all_crossfall":sorted(all_slopes,key=lambda r:-r["crossfall_degrees"])[:10],
