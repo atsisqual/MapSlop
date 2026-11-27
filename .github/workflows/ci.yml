@@ -25,7 +25,7 @@ jobs:
       - name: Reproducible setup
         run: |
           make setup
-          .venv/bin/python -m pip install -r requirements-terrain.txt
+          .venv/bin/python -m pip install -r requirements-buildings.txt
       - name: Offline repository and data workflow tests
         run: |
           .venv/bin/python -m pip check
