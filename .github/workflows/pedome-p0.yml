@@ -1,0 +1,38 @@
+name: Pedome P0 build
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/prepare-pedome.py'
+      - '.github/workflows/pedome-p0.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch pinned MIT upstream
+        run: |
+          git init /tmp/nairobi
+          git -C /tmp/nairobi remote add origin https://github.com/briankariuki/slop-nairobi.git
+          git -C /tmp/nairobi fetch --depth=1 origin 64b8599ae7dd7ba56ffbe68f19cc1423a9e7f903
+          git -C /tmp/nairobi checkout --detach FETCH_HEAD
+      - name: Build fixture and verify controllers and road geometry
+        run: python tools/prepare-pedome.py /tmp/nairobi /tmp/mapslop-fixture --fixture
+      - name: Build real Pedome
+        run: python tools/prepare-pedome.py /tmp/nairobi /tmp/mapslop-pedome
+      - name: Upload report only (source licensing inventory still pending)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pedome-build-report
+          path: /tmp/mapslop-pedome/build-report.json
+          if-no-files-found: warn
