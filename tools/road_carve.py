@@ -204,11 +204,12 @@ class Corridor:
             points=sh.points(q)
             pp,tt=self.strip_tree.query(points,predicate="intersects")
             choices={}
-            for i,j in zip(pp,tt):
+            poly_distance=sh.distance(self.strip_polys[tt],points[pp])
+            for i,j,poly_d in zip(pp,tt,poly_distance):
                 k=self.strip_segment[j]
                 u=float(np.clip(np.dot(q[i]-self.a[k],self.d[k])/self.length2[k],0,1))
                 d=float(np.linalg.norm(q[i]-self.a[k]-u*self.d[k]))
-                rank=(d,int(j))
+                rank=(float(poly_d),d,int(j))
                 if i not in choices or rank<choices[i][0]:choices[i]=(rank,j)
             for i,(_,j) in choices.items():
                 ids=self.strip_triangles[j];a,b,c=self.strip_vertices[ids]
