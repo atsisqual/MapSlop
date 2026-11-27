@@ -1,0 +1,16 @@
+{
+  "source": "DGT CDD public STAC item metadata, retrieved 2026-11-27",
+  "bbox": [-8.395, 41.4105, -8.383, 41.4195],
+  "items": [
+    {"collection":"MDT-50cm","id":"MDT-50cm-178494-07-2025"},
+    {"collection":"MDT-50cm","id":"MDT-50cm-178495-07-2025"},
+    {"collection":"MDT-50cm","id":"MDT-50cm-179494-07-2025"},
+    {"collection":"MDT-50cm","id":"MDT-50cm-179495-07-2025"},
+    {"collection":"MDS-50cm","id":"MDS-50cm-178494-07-2025"},
+    {"collection":"MDS-50cm","id":"MDS-50cm-178495-07-2025"},
+    {"collection":"MDS-50cm","id":"MDS-50cm-179494-07-2025"},
+    {"collection":"MDS-50cm","id":"MDS-50cm-179495-07-2025"},
+    {"collection":"ORTOS-2025","id":"ORTOS-2025-cog-25cm-084-4"},
+    {"collection":"ORTOS-2025","id":"ORTOS-2025-cog-25cm-084-2"}
+  ]
+}
