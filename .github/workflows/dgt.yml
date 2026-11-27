@@ -70,7 +70,7 @@ jobs:
           DGT_USERNAME: ${{ secrets.DGT_USERNAME }}
           DGT_PASSWORD: ${{ secrets.DGT_PASSWORD }}
         run: |
-          test -n "$DGT_USERNAME" && test -n "$DGT_PASSWORD"
+          test -n "$DGT_USERNAME" && test -n "$DGT_PASSWORD" || { echo "::error::Missing DGT repository secrets"; exit 1; }
           python tools/dgt-workflow.py collect --mode "$MODE" --collection "$COLLECTION" --snapshot "$SNAPSHOT" --output "$OUTPUT"
       - name: Archive verified originals in draft release (never publish or overwrite)
         if: always() && steps.collect.outcome != 'skipped' && inputs.mode != 'pilot-authenticated' && inputs.mode != 'pilot-public'

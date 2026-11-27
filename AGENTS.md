@@ -10,6 +10,7 @@ MapSlop: simulador 3D em browser de localidades reais (condução livre em 3.ª 
 - **Dados de jogo versionados**: `data/pedome/` (OSM filtrado, CAOP, COS2025).
 - **Arquivo geográfico bruto**: GitHub Releases em **rascunho** (só visíveis a quem tem acesso de escrita). Índice: `data/GEODATA-ARCHIVE.md`.
 - **Pré-visualização pública**: https://atsisqual.github.io/MapSlop (workflow `pages.yml`).
+- Dados: workflows manuais, ver `docs/workflows.md`; CI em cada PR. Nunca publicar releases sem autorização.
 - Decisões registadas em `docs/decisions/`. Investigação em `docs/research/` (histórico, não normativo).
 
 ## Mapa do repositório
