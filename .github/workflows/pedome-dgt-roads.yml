@@ -54,7 +54,7 @@ jobs:
             echo "::warning::Previous release is not a draft; skip recovery"
             exit 0
           fi
-          for name in regression-46070423399.bin terrain-road-preview.bin road-validation.json; do
+          for name in regression-46070423399.bin regression-46082170878.bin terrain-road-preview.bin road-validation.json; do
             if jq -e --arg name "$name" '.assets | any(.name == $name)' <<< "$metadata" >/dev/null; then
               gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/previous-road --pattern "$name" || echo "::warning::Optional asset $name unavailable"
             fi
@@ -68,6 +68,15 @@ jobs:
               cp terrain-road-preview.bin "$regression"
             else
               echo "::warning::Exact regression mesh unavailable; new generation continues"
+            fi
+          fi
+          latest=regression-46082170878.bin
+          if ! verify 70095e879a104d0f9373f65efb771e8ac949dd799d7da4ca18f563202a2ebe91 "$latest"; then
+            rm -f "$latest"
+            if verify 70095e879a104d0f9373f65efb771e8ac949dd799d7da4ca18f563202a2ebe91 terrain-road-preview.bin; then
+              cp terrain-road-preview.bin "$latest"
+            else
+              echo "::warning::Previous best mesh unavailable; generation continues"
             fi
           fi
           if ! verify adb2429526dda22c7186a1c1655930970a9eabbc93524a5e969fca79a3e85e73 terrain-road-preview.bin; then
@@ -99,9 +108,10 @@ jobs:
           npx playwright install --with-deps chromium
           root=/tmp/road-results
           mkdir -p "$root"
-          for mode in baseline regression carved; do
+          for mode in baseline regression previous carved; do
             file=/tmp/road-input/terrain-tin.bin
             if [ "$mode" = regression ]; then file=/tmp/previous-road/regression-46070423399.bin; fi
+            if [ "$mode" = previous ]; then file=/tmp/previous-road/regression-46082170878.bin; fi
             if [ "$mode" = carved ]; then file="$root/terrain-road-preview.bin"; fi
             if [ ! -s "$file" ]; then echo "::warning::$mode mesh unavailable; cannot measure its driving"; continue; fi
             out="outputs/road-$mode"
@@ -135,30 +145,31 @@ jobs:
           def load(mode):
               f=root/mode/'browser-report.json'
               return json.loads(f.read_text()) if f.is_file() else {}
-          base,regression,carved=load('baseline'),load('regression'),load('carved')
+          base,regression,previous,carved=load('baseline'),load('regression'),load('previous'),load('carved')
           b=base.get('longDrive',{})
           c=carved.get('longDrive',{})
           v=c.get('vertical_metrics',{})
           acc=v.get('surface_window_0_2s',{}).get('max_m_s2')
           roll=v.get('straight_roll_max_degrees')
           r['regression_46070423399_drive']=regression.get('longDrive',{})
+          r['regression_46082170878_drive']=previous.get('longDrive',{})
           r['baseline_drive']=b
-          r['drive_50kmh']={mode:report.get('longDrive50',{}) for mode,report in [('baseline',base),('regression',regression),('carved',carved)]}
+          r['drive_50kmh']={mode:report.get('longDrive50',{}) for mode,report in [('baseline',base),('regression',regression),('previous',previous),('carved',carved)]}
           r['drive_50kmh_status']={mode:('measured' if d.get('vertical_metrics') else 'unavailable') for mode,d in r['drive_50kmh'].items()}
-          r['fixed_station_comparison']={mode:{'20kmh':report.get('longDrive',{}).get('fixed_regression_probes',[]),'50kmh':report.get('longDrive50',{}).get('fixed_regression_probes',[])} for mode,report in [('baseline',base),('regression',regression),('carved',carved)]}
-          r['straight_collision_comparison']={mode:{'wheel_worst':report.get('longDrive',{}).get('straight_wheel_worst',[]),'sections':report.get('longDrive',{}).get('straight_cross_sections',[])} for mode,report in [('baseline',base),('regression',regression),('carved',carved)]}
+          r['fixed_station_comparison']={mode:{'20kmh':report.get('longDrive',{}).get('fixed_regression_probes',[]),'50kmh':report.get('longDrive50',{}).get('fixed_regression_probes',[])} for mode,report in [('baseline',base),('regression',regression),('previous',previous),('carved',carved)]}
+          r['straight_collision_comparison']={mode:{'wheel_worst':report.get('longDrive',{}).get('straight_wheel_worst',[]),'sections':report.get('longDrive',{}).get('straight_cross_sections',[])} for mode,report in [('baseline',base),('regression',regression),('previous',previous),('carved',carved)]}
           r['carved_drive']=c
-          r['drive_measurement_status']={mode:('measured' if d.get('vertical_metrics') else 'unavailable') for mode,d in [('baseline',b),('regression',r['regression_46070423399_drive']),('carved',c)]}
+          r['drive_measurement_status']={mode:('measured' if d.get('vertical_metrics') else 'unavailable') for mode,d in [('baseline',b),('regression',r['regression_46070423399_drive']),('previous',r['regression_46082170878_drive']),('carved',c)]}
           r['drive_acceptance_20kmh']=evaluate_drive(b,c,5.5)
           r['drive_acceptance_50kmh']=evaluate_drive(base.get('longDrive50',{}),carved.get('longDrive50',{}),14.0)
           r['drive_pass']=bool(base.get('success') and carved.get('success') and r['drive_acceptance_20kmh']['pass'] and r['drive_acceptance_50kmh']['pass'])
           r['pass']=bool(r.get('pass') and r['drive_pass'])
           p.write_text(json.dumps(r,indent=2,allow_nan=False)+'\n')
-          print(json.dumps({k:v for k,v in r.items() if k not in ('way_metrics','baseline_drive','carved_drive','regression_46070423399_drive','drive_50kmh','fixed_station_comparison','straight_collision_comparison')}))
-          print(json.dumps({'baseline_vertical':b.get('vertical_metrics'),'regression_46070423399_vertical':r['regression_46070423399_drive'].get('vertical_metrics'),'carved_vertical':v,'route':c.get('route',{}).get('name'),'status':r['drive_measurement_status']}),flush=True)
+          print(json.dumps({k:v for k,v in r.items() if k not in ('way_metrics','baseline_drive','carved_drive','regression_46070423399_drive','regression_46082170878_drive','ramp_sections','drive_50kmh','fixed_station_comparison','straight_collision_comparison')}))
+          print(json.dumps({'baseline_vertical':b.get('vertical_metrics'),'regression_46070423399_vertical':r['regression_46070423399_drive'].get('vertical_metrics'),'regression_46082170878_vertical':r['regression_46082170878_drive'].get('vertical_metrics'),'carved_vertical':v,'route':c.get('route',{}).get('name'),'status':r['drive_measurement_status']}),flush=True)
           print('FIXED_STATION_COMPARISON',json.dumps(r['fixed_station_comparison']),flush=True)
           for mode,d in r['drive_50kmh'].items():
-              print('DRIVE_50KMH',mode,json.dumps({k:d.get(k) for k in ('success','reason','distance_m','max_speed_m_s','reached_target_speed','vertical_metrics')}),flush=True)
+              print('DRIVE_50KMH',mode,json.dumps({k:d.get(k) for k in ('success','reason','distance_m','max_speed_m_s','reached_target_speed','speed_policy','lateral_acceleration_window_0_2s_max_m_s2','vertical_metrics')}),flush=True)
           for mode,d in r['straight_collision_comparison'].items():
               print('STRAIGHT_COLLISION_COMPARISON',mode,json.dumps({'wheel_worst':d['wheel_worst'][:3],'worst_sections':sorted(d['sections'],key=lambda x:-x['collision_roll_degrees'])[:5]}),flush=True)
           if not r['pass']:raise SystemExit('Road acceptance not met')
@@ -177,19 +188,21 @@ jobs:
           cd "$root"
           files=(road-validation.json)
           if [ -s road-profiles.json ]; then files+=(road-profiles.json); fi
-          for mode in baseline regression carved; do
+          for mode in baseline regression previous carved; do
             if [ -f "$mode/browser-report.json" ]; then cp "$mode/browser-report.json" "$mode-browser-report.json"; files+=("$mode-browser-report.json"); fi
           done
           if [ -f terrain-road-preview.bin ]; then files+=(terrain-road-preview.bin); fi
-          if [ -s /tmp/previous-road/regression-46070423399.bin ]; then cp /tmp/previous-road/regression-46070423399.bin .; files+=(regression-46070423399.bin); fi
+          for name in regression-46070423399.bin regression-46082170878.bin; do
+            if [ -s "/tmp/previous-road/$name" ]; then cp "/tmp/previous-road/$name" .; files+=("$name"); fi
+          done
           sha256sum "${files[@]}" > SHA256SUMS.txt
           files+=(SHA256SUMS.txt)
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' > /tmp/road-draft 2>/dev/null; then
             test "$(cat /tmp/road-draft)" = true
             while IFS= read -r old; do
-              case "$old" in road-validation.json|road-profiles.json|terrain-road-preview.bin|baseline-browser-report.json|carved-browser-report.json|regression-browser-report.json|regression-46070423399.bin|SHA256SUMS.txt) ;;
+              case "$old" in road-validation.json|road-profiles.json|terrain-road-preview.bin|baseline-browser-report.json|carved-browser-report.json|regression-browser-report.json|previous-browser-report.json|regression-46070423399.bin|regression-46082170878.bin|SHA256SUMS.txt) ;;
                 *) echo "Unexpected asset"; exit 1 ;; esac
-              if [ "$old" = regression-46070423399.bin ]; then continue; fi
+              if [ "$old" = regression-46070423399.bin ] || [ "$old" = regression-46082170878.bin ]; then continue; fi
               if [ ! -f "$old" ]; then gh release delete-asset "$tag" "$old" --repo "$GITHUB_REPOSITORY" --yes; fi
             done < <(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
           else
