@@ -34,11 +34,13 @@
 
 ## Próximos passos (por prioridade)
 
-1. Integrar MDT DGT 0,5 m → terreno do jogo (substituir GLO-30).
-2. Alturas de edifícios via MDS−MDT por footprint OSM.
-3. Circulação pela direita: faixas, pintura, rotundas.
-4. Árvores/vegetação a partir de LAZ (classes 3–5) e COS2025.
-5. Ortofoto como textura de solo (tiles com LOD).
+1. [#6 — Integrar MDT DGT de 0,5 m no terreno](https://github.com/atsisqual/MapSlop/issues/6)
+2. [#7 — Calcular alturas e reconstruir edifícios com MDS−MDT e LAZ](https://github.com/atsisqual/MapSlop/issues/7)
+3. [#8 — Corrigir circulação pela direita](https://github.com/atsisqual/MapSlop/issues/8)
+4. [#9 — Gerar vegetação a partir de LAZ e COS2025](https://github.com/atsisqual/MapSlop/issues/9)
+5. [#10 — Aplicar ortofoto de 25 cm ao solo com tiles LOD](https://github.com/atsisqual/MapSlop/issues/10)
+
+As issues são o backlog executável; ROADMAP inclui critérios e tarefas de aceitação adicionais. Não fechar sem evidência.
 
 ## Bloqueios
 
@@ -90,3 +92,5 @@ Tamanhos e SHA-256 calculados sobre ficheiros montados em 2026-11-27 (Python has
 - Tarefa 3: ADRs 0003–0008 registam decisões já tomadas (piloto, fallback, DGT, ferramentas/licenças, Pages/HUD e não reutilização PortoSlop). Verificação de links relativos e fences executada; sem alteração do jogo. Subtree fica para ADR de proposta separado.
 
 - Tarefa 4: ROADMAP P0–P3 com critérios por testar e catálogo de dados, ligando hashes de todos os assets. SHA-256 dos 4 pequenos blobs calculado do conteúdo UTF-8 (autoteste abc, tamanho e comparação com sha256sum local do piloto). Corrigida contagem da toolchain. Links/fences verificados. Sem publicar releases.
+
+- Tarefa 5: três templates Markdown com frontmatter YAML simples e cinco issues correspondentes ao backlog; links e formatação verificados. Issues #6–#10 confirmadas abertas pela API; nenhuma encerrada.
