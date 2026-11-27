@@ -74,11 +74,13 @@ jobs:
           set -euo pipefail
           export PYTHONPATH=/tmp/roof-tool/cjio-master
           .venv/bin/python tools/convert-roofer-preview.py --archive /tmp/roof-input/roofer-cityjson.tar.gz --summary /tmp/roof-input/roofer-summary.json --terrain /tmp/roof-input/terrain-tin.bin --output /tmp/roof-results/converted
+      - name: Attempt bounded terrain cut for building 223354671
+        run: .venv/bin/python tools/cut-roof-terrain.py --terrain /tmp/roof-input/terrain-tin.bin --roofs /tmp/roof-results/converted/roof-preview.json --osm /tmp/roof-input/height-preview-osm.json --output /tmp/roof-results/terrain-building-preview.bin
       - name: Build and render private preview
         run: |
           set -euo pipefail
           root=/tmp/roof-results
-          .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi outputs/roof-preview --osm-json /tmp/roof-input/height-preview-osm.json --terrain-bin /tmp/roof-input/terrain-tin.bin --building-preview --roof-preview "$root/converted/roof-preview.json" --three-vendor .cache/mapslop/three-vendor
+          .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi outputs/roof-preview --osm-json /tmp/roof-input/height-preview-osm.json --terrain-bin "$root/terrain-building-preview.bin" --building-preview --roof-preview "$root/converted/roof-preview.json" --three-vendor .cache/mapslop/three-vendor
           npx playwright install --with-deps chromium
           make serve OUT=outputs/roof-preview PORT=8080 > "$root/http.log" 2>&1 &
           server=$!
@@ -103,7 +105,7 @@ jobs:
           cd "$root"
           tar -czf converted-roofs.tar.gz converted
           files=(converted-roofs.tar.gz)
-          for f in converted/roof-conversion-report.json building-detail-report.json browser-report.json roof-preview.png pedome-mobile.png regression-46070425792-buildings.json regression-46070425792-diagnostics.json; do
+          for f in converted/roof-conversion-report.json building-detail-report.json browser-report.json roof-preview.png pedome-mobile.png terrain-building-preview.bin roof-terrain-cut-report.json regression-46070425792-buildings.json regression-46070425792-diagnostics.json; do
             if [ -f "$f" ]; then files+=("$f"); fi
           done
           sha256sum "${files[@]}" > SHA256SUMS.txt
