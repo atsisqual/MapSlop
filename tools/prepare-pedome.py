@@ -127,6 +127,11 @@ export const tin = T.kind === 'tin' ? makeTin(T) : null;""")
         if not a.building_preview or not a.terrain_bin or not terrain or terrain.get('kind')!='tin':
             p.error('--roof-preview requires --building-preview and verified TIN')
         geo['roofPreview']=json.loads(a.roof_preview.read_text())
+        source_tags={str(e['id']):e.get('tags',{}) for e in data['elements'] if e.get('type')=='way'}
+        for b in geo['buildings']:
+            t=source_tags.get(str(b['id']),{})
+            b['roofOnly']=t.get('building')=='roof' or t.get('building:part')=='roof'
+            b['explicitMinH']='min_height' in t or 'building:min_level' in t
         shutil.copy2(P(__file__).resolve().parent/'pedome-buildings-detail.mjs',out/'js/pedome-buildings-detail.mjs')
         f=out/'js/buildings.js'
         patch(f,'export function footings() {',"import { detailBases } from './pedome-buildings-detail.mjs';\nexport function footings() {\n  if(detailBases.size) return detailBases;")
