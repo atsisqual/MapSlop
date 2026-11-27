@@ -1,0 +1,105 @@
+name: Pedome DGT building measurements and Roofer private trial
+on:
+  workflow_call:
+permissions:
+  contents: write
+concurrency:
+  group: dgt-building-trial-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  buildings:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/agent/dgt-building-heights'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Install offline measurement dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r requirements-buildings.txt
+          .venv/bin/python -m pip check
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin
+          .venv/bin/python -m unittest discover -s tests -p 'test_dgt_buildings.py' -v
+      - name: Retrieve only the eight paired TIFF and four LAZ from the private archive
+        run: |
+          set -euo pipefail
+          tag=geodata-dgt-pedome-20261127
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          mkdir -p /tmp/dgt-building-input /tmp/dgt-roofer-toolchain
+          for tile in 178494 178495 179494 179495; do
+            for kind in MDT MDS; do
+              gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/dgt-building-input --pattern "${kind}-50cm-${tile}-07-2025_v02.tif"
+            done
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/dgt-building-input --pattern "LO-${tile}-07-2025_v05.laz"
+          done
+          tag=reconstruction-toolchain-20261127
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/dgt-roofer-toolchain --pattern roofer-linux-x86_64-v1.0.0.tar.gz
+      - name: Measure 527 OSM footprints with paired raster data
+        id: measure
+        run: .venv/bin/python tools/build-dgt-buildings.py --input /tmp/dgt-building-input --output /tmp/dgt-building-results
+      - name: Build private preview with verified compact terrain and candidate heights
+        run: |
+          set -euo pipefail
+          tag=geodata-dgt-terrain-agent-tin-compact-binary
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          mkdir -p /tmp/buildings-terrain
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/buildings-terrain --pattern terrain-tin.bin
+          echo 'de37795151e47e5892b4ed8c701968f0bfe60f64f35d9142fc7b89c71ac633d0  /tmp/buildings-terrain/terrain-tin.bin' | sha256sum -c -
+          make setup
+          root=/tmp/dgt-building-results
+          .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi outputs/building-preview --osm-json "$root/height-preview-osm.json" --building-preview --terrain-bin /tmp/buildings-terrain/terrain-tin.bin --three-vendor .cache/mapslop/three-vendor
+          cp outputs/building-preview/build-report.json "$root/preview-build-report.json"
+          .venv/bin/python tools/verify-building-preview.py --osm data/pedome/pedome-osm.json "$root/building-heights.json" outputs/building-preview/js/nairobi-geodata.js "$root/preview-height-verification.json"
+          npx playwright install --with-deps chromium
+          mkdir -p "$root/browser"
+          make serve OUT=outputs/building-preview PORT=8080 > "$root/browser/http.log" 2>&1 &
+          server=$!
+          trap 'kill "$server" || true' EXIT
+          for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
+          MAPSLOP_TEST_URL=http://127.0.0.1:8080/?webgl MAPSLOP_RESULTS="$root/browser" MAPSLOP_EXPECT_TERRAIN='DGT MDT 0.5 m' MAPSLOP_LONG_DRIVE=1 node tests/browser-smoke.mjs
+      - name: Try Roofer LoD2.2 with classified LiDAR and twenty footprints
+        if: always() && steps.measure.outcome == 'success'
+        run: .venv/bin/python tools/run-roofer-sample.py --input /tmp/dgt-building-input --measurements /tmp/dgt-building-results --toolchain /tmp/dgt-roofer-toolchain
+      - name: Preserve only private derivatives and evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          root=/tmp/dgt-building-results
+          if [ ! -s "$root/building-heights.json" ]; then exit 0; fi
+          case "$GITHUB_REF" in
+            refs/heads/main) tag=geodata-dgt-buildings-main ;;
+            refs/heads/agent/dgt-building-heights) tag=geodata-dgt-buildings-agent-dgt-building-heights ;;
+            *) exit 1 ;;
+          esac
+          cd "$root"
+          files=(building-heights.json roofer-sample.geojson)
+          if [ -f browser/browser-report.json ]; then cp browser/browser-report.json preview-browser-report.json; fi
+          for f in roofer.log roofer-summary.json roofer-cityjson.tar.gz preview-build-report.json preview-browser-report.json preview-height-verification.json; do
+            if [ -f "$f" ]; then files+=("$f"); fi
+          done
+          sha256sum "${files[@]}" > SHA256SUMS.txt
+          files+=(SHA256SUMS.txt)
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' > /tmp/buildings-draft 2>/dev/null; then
+            test "$(cat /tmp/buildings-draft)" = true
+            while IFS= read -r old; do
+              case "$old" in building-heights.json|roofer-sample.geojson|roofer.log|roofer-summary.json|roofer-cityjson.tar.gz|preview-build-report.json|preview-browser-report.json|preview-height-verification.json|SHA256SUMS.txt) ;;
+                *) echo "Unexpected asset, refuse update"; exit 1 ;; esac
+              if [ ! -f "$old" ]; then gh release delete-asset "$tag" "$old" --repo "$GITHUB_REPOSITORY" --yes; fi
+            done < <(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Private Pedome building trial" --notes "Experimental DGT derivatives only. Never publish without approval."
+          fi
+          gh release upload "$tag" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
