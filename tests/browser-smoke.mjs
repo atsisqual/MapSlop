@@ -24,6 +24,18 @@ try {
   await page.keyboard.down('w');
   try { await page.waitForFunction(()=>Math.abs(window.mapslop.controllers.getActiveEntity().speed)>1,{},{timeout:60000}); await page.waitForFunction(({x,z})=>{const p=window.mapslop.controllers.getActiveEntity().position;return Math.hypot(p.x-x,p.z-z)>2;},report.before,{timeout:90000}); } finally { await page.keyboard.up('w'); }
   report.after=await state();
+  if(process.env.MAPSLOP_EXPECT_TERRAIN){
+    const terrain=await page.evaluate(async({before,after})=>{
+      const {heightAt}=await import(new URL('js/terrain.js',location.href).href);
+      const t=window.mapslop.GEO.terrain;
+      return {source:t.source,cell:t.cell,flat:window.mapslop.GEO.frame.flatTerrain,
+        spread:t.heights.reduce((r,v)=>[Math.min(r[0],v),Math.max(r[1],v)],[Infinity,-Infinity]),
+        contact:[before,after].map(s=>Math.abs(s.y-heightAt(s.x,s.z)))};
+    },{before:report.before,after:report.after});
+    report.terrain=terrain;
+    if(terrain.source!==process.env.MAPSLOP_EXPECT_TERRAIN||terrain.flat||terrain.spread[1]-terrain.spread[0]<1||
+       terrain.contact.some(d=>!Number.isFinite(d)||d>1.5))throw Error('Terrain/vehicle contact validation failed');
+  }
   report.distance=Math.hypot(report.after.x-report.before.x,report.after.z-report.before.z);
   await page.screenshot({path:path.join(results,'pedome-driving.png'),timeout:60000});
   if(report.before.mode!=='car'||!report.before.canvas||report.before.roads!==179||report.before.buildings!==527||!Number.isFinite(report.distance)||report.distance<=2||errors.length||consoleLog.some(m=>m.type==='error'||/GL_INVALID_OPERATION|GL_INVALID_FRAMEBUFFER_OPERATION|shader error/i.test(m.text))||failed.some(r=>!r.url.endsWith('/favicon.ico')))throw Error('Browser driving validation failed');

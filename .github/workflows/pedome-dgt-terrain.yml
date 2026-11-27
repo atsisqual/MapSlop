@@ -1,0 +1,89 @@
+name: Pedome DGT terrain private validation
+on:
+  workflow_dispatch:
+    inputs:
+      primary_cell:
+        description: Runtime grid spacing in metres
+        type: choice
+        options: ['1', '2', '5']
+        default: '2'
+      archive:
+        description: Preserve outputs in a new unpublished draft release
+        type: boolean
+        default: true
+permissions:
+  contents: write
+concurrency:
+  group: dgt-terrain-validation
+  cancel-in-progress: false
+jobs:
+  terrain:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PRIMARY_CELL: ${{ inputs.primary_cell }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Setup fixed dependencies
+        run: |
+          make setup
+          .venv/bin/python -m pip install -r requirements-terrain.txt
+          .venv/bin/python -m pip check
+      - name: Retrieve four immutable pilot tiles from authorized draft
+        run: |
+          set -euo pipefail
+          tag=geodata-dgt-pedome-20261127
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          mkdir -p /tmp/dgt-input
+          for tile in 178494 178495 179494 179495; do
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/dgt-input --pattern "MDT-50cm-$tile-07-2025_v02.tif"
+          done
+      - name: Build and compare terrain to source
+        run: .venv/bin/python tools/build-dgt-terrain.py --input /tmp/dgt-input --output /tmp/dgt-terrain --primary-cell "$PRIMARY_CELL"
+      - name: Build game with DGT terrain without publishing
+        run: |
+          mkdir -p outputs
+          .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi outputs/dgt-preview --osm-json data/pedome/pedome-osm.json --terrain-json "/tmp/dgt-terrain/terrain-${PRIMARY_CELL}m.json" --three-vendor .cache/mapslop/three-vendor
+      - run: npx playwright install --with-deps chromium
+      - name: Validate driving and terrain contact privately
+        env:
+          MAPSLOP_TEST_URL: http://127.0.0.1:8080/?webgl
+          MAPSLOP_RESULTS: /tmp/dgt-browser
+          MAPSLOP_EXPECT_TERRAIN: DGT MDT 0.5 m
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/dgt-browser
+          make serve OUT=outputs/dgt-preview PORT=8080 >/tmp/dgt-browser/http.log 2>&1 &
+          server=$!
+          trap 'kill "$server" || true' EXIT
+          for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
+          result=0
+          node tests/browser-smoke.mjs >/tmp/dgt-browser/run.log 2>&1 || result=$?
+          .venv/bin/python -c 'import json; d=json.load(open("/tmp/dgt-browser/browser-report.json")); print(json.dumps({k:d.get(k) for k in ("success","distance","multiTouch","touchRelease")}))'
+          exit "$result"
+      - name: Preserve private draft evidence and grid products
+        if: always() && inputs.archive
+        run: |
+          set -euo pipefail
+          if [ ! -f /tmp/dgt-terrain/manifest.json ]; then echo "No completed terrain manifest"; exit 0; fi
+          tag="geodata-dgt-terrain-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p /tmp/dgt-evidence
+          cp /tmp/dgt-terrain/* /tmp/dgt-evidence/
+          if [ -f outputs/dgt-preview/build-report.json ]; then cp outputs/dgt-preview/build-report.json /tmp/dgt-evidence/; fi
+          if [ -f /tmp/dgt-browser/browser-report.json ]; then cp /tmp/dgt-browser/browser-report.json /tmp/dgt-evidence/; fi
+          cd /tmp/dgt-evidence
+          sha256sum *.json > SHA256SUMS.txt
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "DGT terrain experiment $GITHUB_RUN_ID" --notes "Private experimental derivatives, possibly failed acceptance. Review manifest and browser report. DGT attribution; license unresolved. Do not publish."
+          gh release upload "$tag" ./* --repo "$GITHUB_REPOSITORY"
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          echo "Draft preserved: $tag"

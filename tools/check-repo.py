@@ -43,7 +43,7 @@ workflows = {}
 for p in wf.glob("*.yml"):
     content = yaml.load(p.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
     workflows[p.name] = content
-manual = {"archive-portugal.yml", "dgt.yml", "expanded-vectors.yml", "pedome-terrain.yml", "reconstruction-archive.yml"}
+manual = {"archive-portugal.yml", "dgt.yml", "expanded-vectors.yml", "pedome-terrain.yml", "reconstruction-archive.yml", "pedome-dgt-terrain.yml"}
 for name in manual:
     if set(workflows[name]["on"]) != {"workflow_dispatch"}:
         errors.append(f"Data workflow not manual: {name}")

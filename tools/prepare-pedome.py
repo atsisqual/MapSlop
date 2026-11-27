@@ -3,6 +3,7 @@
 No PortoSlop code or data is used. Default downloads real OSM; fixture is testing only.
 """
 import argparse, json, math, pathlib, re, shutil, subprocess, urllib.request, urllib.parse
+from terrain_grid import validate as validate_terrain
 P=pathlib.Path
 BBOX=(41.4105,-8.395,41.4195,-8.383)
 LAT,LON=41.41501,-8.38809 # church; OSM way 149406360
@@ -34,9 +35,11 @@ def flat_dem():
     s,w,n,e=BBOX; step=.00025; nx=math.ceil((e-w+.02)/step); ny=math.ceil((n-s+.02)/step)
     return dict(source='SYNTHETIC FLAT TEST TERRAIN',west=w-.01,north=n+.01,dx=step,dy=-step,nx=nx,ny=ny,values=[0]*(nx*ny))
 def main():
-    p=argparse.ArgumentParser(); p.add_argument('upstream',type=P); p.add_argument('output',type=P); p.add_argument('--osm-json',type=P); p.add_argument('--dem-json',type=P); p.add_argument('--flat',action='store_true'); p.add_argument('--fixture',action='store_true'); p.add_argument('--three-vendor',type=P,help='Optional local Three.js tree (experimental version compatibility)'); a=p.parse_args()
+    p=argparse.ArgumentParser(); p.add_argument('upstream',type=P); p.add_argument('output',type=P); p.add_argument('--osm-json',type=P); p.add_argument('--dem-json',type=P); p.add_argument('--terrain-json',type=P,help='Precomputed local metric terrain grid; no DSM filtering'); p.add_argument('--flat',action='store_true'); p.add_argument('--fixture',action='store_true'); p.add_argument('--three-vendor',type=P,help='Optional local Three.js tree (experimental version compatibility)'); a=p.parse_args()
     if a.output.exists(): p.error('output must not exist; no existing files overwritten')
     if a.fixture and a.osm_json: p.error('fixture and osm-json are mutually exclusive')
+    if a.terrain_json and (a.dem_json or a.flat or a.fixture): p.error('terrain-json is exclusive with dem-json, flat and fixture')
+    terrain=validate_terrain(json.loads(a.terrain_json.read_text(encoding='utf-8'))) if a.terrain_json else None
     src=a.upstream.resolve(); out=a.output.resolve()
     data=fixture() if a.fixture else json.loads(a.osm_json.read_text(encoding='utf-8-sig')) if a.osm_json else get_osm()
     els=data.get('elements');
@@ -57,7 +60,7 @@ def main():
     for k,v in selected.items(): write(out/f'tools/data/osm_{k}.json',{'elements':v})
     write(out/'tools/bbox.json',dict(zip(['south','west','north','east'],BBOX)))
     if a.dem_json: shutil.copy2(a.dem_json,out/'tools/data/dem_glo30.json')
-    elif a.flat or a.fixture: write(out/'tools/data/dem_glo30.json',flat_dem())
+    elif a.flat or a.fixture or terrain: write(out/'tools/data/dem_glo30.json',flat_dem())
     else:
         run('npm.cmd' if __import__('os').name=='nt' else 'npm','ci',cwd=out)
         run('node','tools/fetch-terrain.mjs',cwd=out)
@@ -73,7 +76,8 @@ def main():
     run('node','tools/build-geodata.mjs',cwd=out)
     geo_path=out/'js/nairobi-geodata.js'; gs=geo_path.read_text(); geo=json.loads(gs.split('export const GEO = ',1)[1].strip().removesuffix(';'))
     if not geo['roadGraph']['links'] or not geo['buildings']: raise ValueError('Map has no usable road graph or buildings')
-    geo['frame']['testFixture']=a.fixture; geo['frame']['flatTerrain']=bool(a.flat or a.fixture); geo['frame']['demSource']=dem.get('source','unknown');
+    if terrain: geo['terrain']=terrain
+    geo['frame']['testFixture']=a.fixture; geo['frame']['flatTerrain']=bool(a.flat or a.fixture); geo['frame']['demSource']=terrain['source'] if terrain else dem.get('source','unknown');
     geo_path.write_text('// Geographic data © OpenStreetMap contributors, ODbL 1.0 (real mode). See upstream README for terrain attribution.\nexport const GEO = '+json.dumps(geo,ensure_ascii=False)+';\n',encoding='utf-8')
     (out/'js/nairobi-models.js').write_text('export const MODEL_HEIGHTS = {};\nexport const MODEL_BUILDINGS = [];\n')
     f=out/'js/controllers.js'; patch(f,'if (l.name !== name) continue;',"if (name && l.name !== name) continue;\n    if (l.tunnel || l.bridge || (l.layer || 0) !== 0 || !['residential','unclassified','tertiary','secondary','living_street'].includes(l.kind)) continue;")
@@ -112,7 +116,7 @@ try {
  window.mapslop={GEO,controllers,camera,world}; const spawn=roadSpawn(null,0,0); controllers.teleportActiveTo(spawn[0],spawn[1],spawn[2]); const ui=installPedomeUI(GEO,controllers,spawn,cameras);
  window.addEventListener('keydown',e=>{if(e.code==='KeyR')controllers.teleportActiveTo(spawn[0],spawn[1],spawn[2]);});
  window.addEventListener('resize',()=>{renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();});
- let last=performance.now(); renderer.setAnimationLoop(now=>{const dt=Math.max(0,Math.min(.05,(now-last)/1000));last=now;gamepad.update(dt);controllers.update(dt,now/1000); cameras.update(dt,now/1000);renderer.render(scene,camera);ui.update(now);status.textContent=(GEO.frame.testFixture?'TESTE FICTÍCIO — ':GEO.frame.flatTerrain?'PEDOME — relevo plano — ':'PEDOME — ')+Math.round(Math.abs(controllers.getActiveEntity().speed)*3.6)+' km/h'; window.mapslop.ready=true;});
+ let last=performance.now(); renderer.setAnimationLoop(now=>{const dt=Math.max(0,Math.min(.05,(now-last)/1000));last=now;gamepad.update(dt);controllers.update(dt,now/1000); cameras.update(dt,now/1000);renderer.render(scene,camera);ui.update(now);status.textContent=(GEO.frame.testFixture?'TESTE FICTÍCIO — ':GEO.frame.flatTerrain?'PEDOME — relevo plano — ':GEO.frame.demSource==='SYNTHETIC TEST TERRAIN'?'PEDOME — terreno de teste — ':'PEDOME — ')+Math.round(Math.abs(controllers.getActiveEntity().speed)*3.6)+' km/h'; window.mapslop.ready=true;});
 } catch(e){status.textContent='Erro: '+e.message; console.error(e);throw e;}
 ''',encoding='utf-8')
     html=(out/'index.html').read_text(); imp=re.search(r'<script type="importmap">.*?</script>',html,re.S).group()
@@ -120,7 +124,9 @@ try {
         shutil.copytree(a.three_vendor,out/'vendor/three')
         imp=re.sub(r'https://cdn\.jsdelivr\.net/gh/mrdoob/three\.js@[^/]+/', './vendor/three/',imp)
     (out/'index.html').write_text('''<!doctype html><html lang="pt"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MapSlop | Pedome P0</title>'''+imp+'''<style>html,body{margin:0;overflow:hidden;background:#202b36;font:15px system-ui;color:#fff}canvas{display:block}#status,#credits{position:fixed;z-index:1;background:#15202bdc;padding:10px;border-radius:6px;left:10px}#status{top:10px}#credits{bottom:10px;font-size:12px}a{color:white}</style><div id="status">A construir mapa…</div><div id="credits">MapSlop P0 · <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a> · Slop Nairobi / Mr.doob · Copernicus (quando usado)</div><script type="module" src="./js/pedome.js"></script></html>''',encoding='utf-8')
-    write(out/'build-report.json',dict(fixture=a.fixture,flat=geo['frame']['flatTerrain'],bbox=BBOX,roads=len(geo['roads']),buildings=len(geo['buildings']),nodes=len(geo['roadGraph']['nodes']),links=len(geo['roadGraph']['links']),estimatedBuildings=sum(b.get('est',0) for b in geo['buildings'])))
+    if terrain:
+        page=out/'index.html'; page.write_text(page.read_text(encoding='utf-8').replace('Copernicus (quando usado)', 'DGT — MDT 0,5 m (uso experimental)' if terrain['source'].startswith('DGT') else 'Terreno sintético de teste'),encoding='utf-8')
+    write(out/'build-report.json',dict(fixture=a.fixture,flat=geo['frame']['flatTerrain'],terrainSource=geo['frame']['demSource'],terrainCell=geo['terrain']['cell'],bbox=BBOX,roads=len(geo['roads']),buildings=len(geo['buildings']),nodes=len(geo['roadGraph']['nodes']),links=len(geo['roadGraph']['links']),estimatedBuildings=sum(b.get('est',0) for b in geo['buildings'])))
     shutil.copytree(src/'tests',out/'tests')
     # Update only the stub fixture, not controller assertions.
     testfile=out/'tests/controllers.test.cjs'; patch(testfile,"name: 'Kenyatta Avenue', oneway:","name: 'TESTE', kind: 'residential', oneway:")
