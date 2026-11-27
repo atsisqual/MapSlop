@@ -1,6 +1,9 @@
 name: DGT authenticated download
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/dgt-authenticated.yml'
 permissions:
   contents: read
 jobs:
