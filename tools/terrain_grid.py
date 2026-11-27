@@ -36,6 +36,9 @@ def height_at(t,x,z):
 
 def validate(t, bounds=None):
     """Require coverage and the exact frame; do not clamp missing source coverage."""
+    if t.get("kind") == "tin":
+        from terrain_tin import validate_tin
+        return validate_tin(t,bounds)
     if t.get("origin_lat_lon") != list(ORIGIN):
         raise ValueError("Terrain origin mismatch")
     if t.get("source") not in {"DGT MDT 0.5 m","SYNTHETIC TEST TERRAIN"}:

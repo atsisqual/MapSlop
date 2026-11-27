@@ -77,6 +77,49 @@ def main():
     geo_path=out/'js/nairobi-geodata.js'; gs=geo_path.read_text(); geo=json.loads(gs.split('export const GEO = ',1)[1].strip().removesuffix(';'))
     if not geo['roadGraph']['links'] or not geo['buildings']: raise ValueError('Map has no usable road graph or buildings')
     if terrain: geo['terrain']=terrain
+    if terrain and terrain.get('kind')=='tin':
+        shutil.copy2(P(__file__).resolve().parent/'tin-runtime.mjs',out/'js/tin-runtime.mjs')
+        f=out/'js/terrain.js'
+        patch(f,'const T = GEO.terrain;',"""import { makeTin } from './tin-runtime.mjs';
+const T = GEO.terrain;
+export const tin = T.kind === 'tin' ? makeTin(T) : null;""")
+        patch(f,'export function heightAt(x, z) {','export function heightAt(x, z) {\n  if(tin) return tin.heightAt(x,z);')
+        patch(f,'function normals() {','function normals() {\n  if(tin) return tin.normals;')
+        patch(f,'export function terrainNormal(x, z, out = [0, 1, 0]) {','export function terrainNormal(x, z, out = [0, 1, 0]) {\n  if(tin) return tin.normalAt(x,z,out);')
+        f=out/'js/ground.js'
+        s=f.read_text()
+        start=s.index('  const pos = new Float32Array(T.nx * T.nz * 3);')
+        end=s.index("  geo.setAttribute('position'",start)
+        old=s[start:end]
+        # Keep the upstream grid path unchanged and use the actual TIN vertex/index buffers.
+        s=s[:start]+"""  let pos, uv, index;
+  if(T.kind==='tin'){
+    pos=new Float32Array(T.vertices);
+    uv=new Float32Array(pos.length/3*2);
+    for(let i=0;i<pos.length/3;i++) uv.set([(pos[3*i]-T.x0)/W,1-(pos[3*i+2]-T.z0)/H],2*i);
+    index=T.triangles;
+  } else {
+"""+old.replace('const pos =','pos =').replace('const uv =','uv =').replace('const index =','index =')+"""  }
+"""+s[end:]
+        f.write_text(s,encoding='utf-8')
+        f=out/'js/street-geometry.js'
+        patch(f,"import { heightAt, terrainNormal } from './terrain.js';","import { heightAt, terrainNormal, tin } from './terrain.js';")
+        patch(f,'export function drape(p, fn) {',"""export function drape(p, fn) {
+  if(tin){
+    const b=bounds(p);
+    for(const i of tin.faces(b.minX,b.minZ,b.maxX,b.maxZ)){
+      const tri=tin.triangle(i);
+      let q=p;
+      for(let j=0;j<6 && q;j+=2){
+        const k=(j+2)%6,dx=tri[k]-tri[j],dz=tri[k+1]-tri[j+1];
+        q=clip(q,dz,-dx,dz*tri[j]-dx*tri[j+1]);
+      }
+      if(q) fn(q);
+    }
+    return;
+  }""")
+        patch(f,'function segmentBreaks(ax, az, bx, bz) {','function segmentBreaks(ax, az, bx, bz) {\n  if(tin) return tin.segmentBreaks(ax,az,bx,bz);')
+
     geo['frame']['testFixture']=a.fixture; geo['frame']['flatTerrain']=bool(a.flat or a.fixture); geo['frame']['demSource']=terrain['source'] if terrain else dem.get('source','unknown');
     geo_path.write_text('// Geographic data © OpenStreetMap contributors, ODbL 1.0 (real mode). See upstream README for terrain attribution.\nexport const GEO = '+json.dumps(geo,ensure_ascii=False)+';\n',encoding='utf-8')
     (out/'js/nairobi-models.js').write_text('export const MODEL_HEIGHTS = {};\nexport const MODEL_BUILDINGS = [];\n')
@@ -126,7 +169,7 @@ try {
     (out/'index.html').write_text('''<!doctype html><html lang="pt"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MapSlop | Pedome P0</title>'''+imp+'''<style>html,body{margin:0;overflow:hidden;background:#202b36;font:15px system-ui;color:#fff}canvas{display:block}#status,#credits{position:fixed;z-index:1;background:#15202bdc;padding:10px;border-radius:6px;left:10px}#status{top:10px}#credits{bottom:10px;font-size:12px}a{color:white}</style><div id="status">A construir mapa…</div><div id="credits">MapSlop P0 · <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a> · Slop Nairobi / Mr.doob · Copernicus (quando usado)</div><script type="module" src="./js/pedome.js"></script></html>''',encoding='utf-8')
     if terrain:
         page=out/'index.html'; page.write_text(page.read_text(encoding='utf-8').replace('Copernicus (quando usado)', 'DGT — MDT 0,5 m (uso experimental)' if terrain['source'].startswith('DGT') else 'Terreno sintético de teste'),encoding='utf-8')
-    write(out/'build-report.json',dict(fixture=a.fixture,flat=geo['frame']['flatTerrain'],terrainSource=geo['frame']['demSource'],terrainCell=geo['terrain']['cell'],bbox=BBOX,roads=len(geo['roads']),buildings=len(geo['buildings']),nodes=len(geo['roadGraph']['nodes']),links=len(geo['roadGraph']['links']),estimatedBuildings=sum(b.get('est',0) for b in geo['buildings'])))
+    write(out/'build-report.json',dict(fixture=a.fixture,flat=geo['frame']['flatTerrain'],terrainSource=geo['frame']['demSource'],terrainCell=geo['terrain']['cell'],terrainKind=geo['terrain'].get('kind','grid'),bbox=BBOX,roads=len(geo['roads']),buildings=len(geo['buildings']),nodes=len(geo['roadGraph']['nodes']),links=len(geo['roadGraph']['links']),estimatedBuildings=sum(b.get('est',0) for b in geo['buildings'])))
     shutil.copytree(src/'tests',out/'tests')
     # Update only the stub fixture, not controller assertions.
     testfile=out/'tests/controllers.test.cjs'; patch(testfile,"name: 'Kenyatta Avenue', oneway:","name: 'TESTE', kind: 'residential', oneway:")

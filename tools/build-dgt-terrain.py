@@ -18,7 +18,8 @@ from rasterio.merge import merge
 from rasterio.warp import transform, transform_bounds
 from rasterio.windows import from_bounds
 
-from terrain_grid import BBOX, ORIGIN, KX, KY, extent, grid_shape, height_at, validate
+from terrain_grid import BBOX, ORIGIN, KX, KY, extent, grid_shape, height_at, validate, to_world
+from terrain_tin import build_tin, TinSampler
 
 RELEASE = "geodata-dgt-pedome-20261127"
 TILES = ("178494","178495","179494","179495")
@@ -96,18 +97,63 @@ def build_grid(mosaic, affine, crs, cell, bounds=None, source="DGT MDT 0.5 m"):
            heights=np.round(values,3).ravel().tolist())
     return validate(t,bounds)
 
-def compare(t,mosaic,affine,crs,bounds=None):
+def compare(t,mosaic,affine,crs,bounds=None,sampler=None):
     """100 deterministic off-grid interior points; compare to source bilinear height."""
     x0,z0,x1,z1=extent() if bounds is None else bounds
     x,z=np.meshgrid(x0+(np.arange(10)+0.37)*(x1-x0)/10,
                     z0+(np.arange(10)+0.63)*(z1-z0)/10)
     ref=sample(mosaic,affine,crs,x,z).ravel()
-    actual=np.array([t["base"]+height_at(t,float(a),float(b)) for a,b in zip(x.ravel(),z.ravel())])
+    query=sampler or (lambda x,z: height_at(t,x,z))
+    actual=np.array([t["base"]+query(float(a),float(b)) for a,b in zip(x.ravel(),z.ravel())])
     err=np.abs(actual-ref)
     return {"points":int(err.size),"max_abs_m":float(err.max()),"mean_abs_m":float(err.mean()),"rmse_m":float(np.sqrt(np.mean(err**2))),
             "within_1m":int(np.count_nonzero(err<=1.0)),
             "point_errors":[{"x":round(float(a),3),"z":round(float(b),3),"abs_error_m":round(float(c),5)}
                             for a,b,c in zip(x.ravel(),z.ravel(),err)]}
+
+def road_samples(osm):
+    """Sample surface drivable centrelines every <=0.5 m, including two
+    lateral traces at +/-1.5 m (representative wheel corridors, not surveyed kerbs).
+    Restrict to pilot; exclude bridges/tunnels/layers rather than comparing their decks to ground.
+    """
+    kinds={"motorway","trunk","primary","secondary","tertiary","unclassified","residential","living_street","service"}
+    x0,z0,x1,z1=extent()
+    points=[]
+    ways=0
+    for e in osm["elements"]:
+        t=e.get("tags",{})
+        if e.get("type")!="way" or t.get("highway","").removesuffix("_link") not in kinds:
+            continue
+        if t.get("bridge","no")!="no" or t.get("tunnel","no")!="no" or t.get("layer","0")!="0" or t.get("area")=="yes":
+            continue
+        geom=[to_world(p["lon"],p["lat"]) for p in e.get("geometry",[])]
+        start=len(points)
+        for (ax,az),(bx,bz) in zip(geom,geom[1:]):
+            dx,dz=bx-ax,bz-az
+            length=math.hypot(dx,dz)
+            if length<1e-6:
+                continue
+            if max(ax,bx)<x0-2 or min(ax,bx)>x1+2 or max(az,bz)<z0-2 or min(az,bz)>z1+2:
+                continue
+            for u in np.linspace(0,1,max(2,math.ceil(length/0.5)+1)):
+                for offset in (-1.5,0.0,1.5):
+                    x=ax+dx*u-dz/length*offset
+                    z=az+dz*u+dx/length*offset
+                    if x0<=x<=x1 and z0<=z<=z1:
+                        points.append((x,z))
+        if len(points)>start:
+            ways+=1
+    if not points:
+        raise ValueError("No eligible surface road samples")
+    return np.array(points),ways
+
+def compare_roads(t,points,ways,reference,sampler=None):
+    query=sampler or (lambda x,z: height_at(t,x,z))
+    values=np.array([t["base"]+query(float(x),float(z)) for x,z in points])
+    errors=np.abs(values-reference)
+    return {"points":len(points),"ways":ways,"step_m":0.5,"offsets_m":[-1.5,0,1.5],
+            "max_abs_m":float(errors.max()),"mean_abs_m":float(errors.mean()),
+            "rmse_m":float(np.sqrt(np.mean(errors**2)))}
 
 def write_json(p,data):
     p.write_text(json.dumps(data,ensure_ascii=False,separators=(",",":"),allow_nan=False)+"\n",encoding="utf-8")
@@ -140,16 +186,26 @@ def main():
         mosaic=arr[0]
         coverage=check_coverage(mosaic,affine,crs)
         args.output.mkdir(parents=True)
+        points,ways=road_samples(json.loads((ROOT/'data/pedome/pedome-osm.json').read_text()))
+        reference=sample(mosaic,affine,crs,points[:,0],points[:,1])
         products=[]
         for cell in sorted({args.primary_cell,2,5,10}):
             t=build_grid(mosaic,affine,crs,cell)
             error=compare(t,mosaic,affine,crs)
             file=args.output/f"terrain-{cell}m.json"
             write_json(file,t)
-            products.append({"file":file.name,"sha256":digest(file),"bytes":file.stat().st_size,
+            products.append({"kind":"grid","file":file.name,"sha256":digest(file),"bytes":file.stat().st_size,
                 "cell_m":cell,"nx":t["nx"],"nz":t["nz"],"vertices":t["nx"]*t["nz"],
-                "triangles":2*(t["nx"]-1)*(t["nz"]-1),"error":error})
-        primary=next(x for x in products if x["cell_m"]==args.primary_cell)
+                "triangles":2*(t["nx"]-1)*(t["nz"]-1),"error":error,"roads":compare_roads(t,points,ways,reference)})
+        t=build_tin(mosaic,affine,crs,sample)
+        sampler=TinSampler(t)
+        f=args.output/"terrain-tin.json"
+        write_json(f,t)
+        products.append({"kind":"tin","file":f.name,"sha256":digest(f),"bytes":f.stat().st_size,
+            "vertices":len(t["vertices"])//3,"triangles":len(t["triangles"])//3,
+            "algorithm":t["algorithm"],"target_error_m":t["target_error_m"],"library_error_m":t["library_error_m"],
+            "error":compare(t,mosaic,affine,crs,sampler=sampler),"roads":compare_roads(t,points,ways,reference,sampler)})
+        primary=next(x for x in products if x.get("cell_m")==args.primary_cell)
         report={"schema":1,"source_release":RELEASE,"source_attribution":"Direção-Geral do Território (DGT)",
                 "license_status":"MDT STAC proprietary conflicts with institutional open-data policy; do not publish",
                 "bbox_s_w_n_e":list(BBOX),"origin_lat_lon":list(ORIGIN),"frame":"x east, z south, y up, metres",
@@ -159,6 +215,7 @@ def main():
                 "command":"python tools/build-dgt-terrain.py --input "+str(args.input)+" --output "+str(args.output)+" --primary-cell "+str(args.primary_cell),
                 "script_sha256":digest(Path(__file__)),
                 "frame_sha256":digest(Path(__file__).with_name("terrain_grid.py")),
+                "tin_script_sha256":digest(Path(__file__).with_name("terrain_tin.py")),
                 "rasterio":rasterio.__version__,"numpy":np.__version__}
         write_json(args.output/"manifest.json",report)
         print(json.dumps({"source_count":len(metadata),"source_crs":crs.to_string(),"coverage_pixels":coverage["pixels_checked"],
