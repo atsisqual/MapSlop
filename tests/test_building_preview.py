@@ -23,3 +23,13 @@ class PreviewTests(unittest.TestCase):
         self.assertEqual(r["missing_ids"],[1])
     def test_reject_wrong_osm_type(self):
         with self.assertRaises(ValueError):m.osm_way_id("relation/12")
+
+    def test_outline_exclusion_requires_exported_part(self):
+        geo={"buildings":[{"id":i,"h":6.25} for i in range(1,527)]+[{"id":1531621904,"part":1,"h":3}]}
+        report={"building_count":527,"rows":[{"osm_id":1493951967,"height_m":6.25,"preview_policy":"raster_p90_candidate"},{"osm_id":1,"height_m":6.25,"preview_policy":"raster_p90_candidate"}]}
+        osm={"elements":[{"type":"way","id":1493951967,"nodes":[1,2,3,1],"tags":{"building":"roof","layer":"1"}},{"type":"way","id":1531621904,"nodes":[1,2,4,1],"tags":{"building:part":"yes"}}]}
+        out=m.compare(report,geo,osm)
+        self.assertTrue(out["pass"])
+        self.assertEqual(out["excluded"][0]["replacement_osm_id"],1531621904)
+        geo["buildings"][-1].pop("part")
+        self.assertFalse(m.compare(report,geo,osm)["pass"])
