@@ -20,7 +20,7 @@ AUTH = "https://auth.cdd.dgterritorio.gov.pt"
 AUTH_PATH = AUTH + "/realms/dgterritorio/protocol/openid-connect/auth"
 ASSET_HOSTS = {"cdd.dgterritorio.gov.pt", "stratus.d.incd.pt"}
 # Observed legitimate authenticated DGT redirect to ACNCA object storage.
-DOWNLOAD_HOSTS = ASSET_HOSTS | {"stor-002.a.acnca.pt"}
+DOWNLOAD_HOSTS = ASSET_HOSTS | {"stor-002.a.acnca.pt", "stor-001.a.acnca.pt"}
 TILES = ("178494", "178495", "179494", "179495")
 ITEMS = [(c, f"{c}-{n}-07-2025") for c in ("MDT-50cm", "MDS-50cm") for n in TILES]
 ITEMS += [("ORTOS-2025", f"ORTOS-2025-cog-25cm-{n}") for n in ("084-4", "084-2")]
