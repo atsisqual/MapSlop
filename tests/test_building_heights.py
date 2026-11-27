@@ -33,7 +33,7 @@ class BuildingHeightTest(unittest.TestCase):
         r={"schema":1,"osm_sha256":"a","terrain_sha256":"b","buildings":[{"footprint_key":key(b),"method":"fallback","render_height_m":4}]}
         self.assertEqual(apply([b],r,"a","b"),0)
         self.assertEqual(b["est"],1)
-        r["buildings"][0].update(method="mds_mdt",render_height_m=6,roof_relative_m=7)
+        r["buildings"][0].update(method="mds_mdt",render_height_m=6,roof_relative_m=7,probe_local_m=[1,1])
         self.assertEqual(apply([b],r,"a","b"),1)
         self.assertEqual(b["h"],6)
         self.assertNotIn("est",b)

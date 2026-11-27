@@ -88,6 +88,9 @@ def main():
     if a.building_heights:
         report=json.loads(a.building_heights.read_text(encoding='utf-8'))
         measured=apply_heights(geo['buildings'],report,file_digest(a.osm_json),file_digest(a.terrain_bin))
+        f=out/'js/buildings.js'
+        patch(f,'const parapet = y1 - y0 >= 6 ? PARAPET : 0;',"const parapet = b.roofTargetY === undefined && y1 - y0 >= 6 ? PARAPET : 0;")
+        patch(f,'if (big && b.h >= 10 && !b.part) {','if (big && b.h >= 10 && !b.part && b.roofTargetY === undefined) {')
     if terrain: geo['terrain']=terrain
     if terrain and terrain.get('kind')=='tin':
         shutil.copy2(P(__file__).resolve().parent/'tin-runtime.mjs',out/'js/tin-runtime.mjs')

@@ -43,14 +43,14 @@ workflows = {}
 for p in wf.glob("*.yml"):
     content = yaml.load(p.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
     workflows[p.name] = content
-manual = {"archive-portugal.yml", "dgt.yml", "expanded-vectors.yml", "pedome-terrain.yml", "reconstruction-archive.yml", "pedome-dgt-terrain.yml"}
+manual = {"archive-portugal.yml", "dgt.yml", "expanded-vectors.yml", "pedome-terrain.yml", "reconstruction-archive.yml", "pedome-dgt-terrain.yml", "pedome-building-heights.yml"}
 for name in manual:
-    allowed = {"workflow_dispatch", "workflow_call"} if name == "pedome-dgt-terrain.yml" else {"workflow_dispatch"}
+    allowed = {"workflow_dispatch", "workflow_call"} if name in {"pedome-dgt-terrain.yml","pedome-building-heights.yml"} else {"workflow_dispatch"}
     if set(workflows[name]["on"]) != allowed:
         errors.append(f"Data workflow not manual: {name}")
 for name, workflow in workflows.items():
     for job in workflow.get("jobs", {}).values():
-        if job.get("uses") == "./.github/workflows/pedome-dgt-terrain.yml":
+        if job.get("uses") in {"./.github/workflows/pedome-dgt-terrain.yml","./.github/workflows/pedome-building-heights.yml"}:
             if name != "pedome-terrain.yml" or set(workflow["on"]) != {"workflow_dispatch"}:
                 errors.append("DGT terrain must be called only by the registered manual launcher")
 if any(n.startswith("dgt-") for n in workflows):

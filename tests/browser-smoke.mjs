@@ -105,6 +105,24 @@ try {
     if(!report.longDrive.success)throw Error('100 m sloped curve drive failed: '+report.longDrive.reason);
   }
   if(errors.length||consoleLog.some(m=>m.type==='error'||/GL_INVALID_OPERATION|GL_INVALID_FRAMEBUFFER_OPERATION|shader error/i.test(m.text)))throw Error('Post-drive rendering error');
+  if(process.env.MAPSLOP_EXPECT_BUILDINGS){
+    const expected=process.env.MAPSLOP_EXPECT_BUILDINGS;
+    report.buildingHeights=await page.evaluate(async expected=>{
+      const {footings}=await import(new URL('js/buildings.js',location.href).href);
+      const {GEO,controllers}=window.mapslop;
+      const all=GEO.buildings.filter(b=>b.heightSource===expected);
+      const base=footings();
+      const sorted=all.slice().sort((a,b)=>a.h-b.h||a.id-b.id);
+      const picks=Array.from({length:Math.min(20,sorted.length)},(_,i)=>sorted[Math.floor(i*(sorted.length-1)/Math.max(1,Math.min(20,sorted.length)-1))]);
+      const probes=picks.map(b=>{
+        const [x,z]=b.roofProbe,roof=base.get(b)+b.h;
+        const surface=controllers.getGroundHeight(x,z,'person',roof+0.01);
+        return {id:b.id,type:b.osmType,roofError:Math.abs(roof-b.roofTargetY),collisionError:Math.abs(surface-roof)};
+      });
+      return {measured:all.length,total:GEO.buildings.length,probes,pass:all.length>=20&&probes.every(p=>p.roofError<=0.01&&p.collisionError<=0.05)};
+    },expected);
+    if(!report.buildingHeights.pass)throw Error('Building roof/collider height validation failed');
+  }
   report.success=true;
 } catch(e) {
   report.success=false; report.error=e.message;

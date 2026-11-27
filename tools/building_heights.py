@@ -30,7 +30,11 @@ def apply(buildings,report,osm_sha,terrain_sha):
             if b.get("part") or b.get("podium") or b.get("minH"):
                 raise ValueError("Unsupported measured building part")
             b["h"]=h
-            b["heightSource"]="mds_mdt"
+            probe=r.get("probe_local_m")
+            if not isinstance(probe,list) or len(probe)!=2 or not all(isinstance(v,(int,float)) and math.isfinite(v) for v in probe):
+                raise ValueError("Invalid building probe")
+            b["heightSource"]="synthetic_mds_mdt" if report.get("source")=="SYNTHETIC TEST BUILDINGS" else "mds_mdt"
+            b["roofProbe"]=probe
             b["roofTargetY"]=roof
             b.pop("est",None)
             count+=1

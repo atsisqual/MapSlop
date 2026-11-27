@@ -5,7 +5,7 @@ on:
       mode:
         description: Terrain source to validate
         type: choice
-        options: [copernicus, dgt]
+        options: [copernicus, dgt, buildings]
         default: copernicus
 permissions:
   contents: read
@@ -62,3 +62,9 @@ jobs:
     uses: ./.github/workflows/pedome-dgt-terrain.yml
     with:
       archive: true
+
+  buildings:
+    if: inputs.mode == 'buildings' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/agent/mds-building-heights')
+    permissions:
+      contents: write
+    uses: ./.github/workflows/pedome-building-heights.yml

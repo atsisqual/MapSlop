@@ -1,0 +1,109 @@
+name: Pedome MDS MDT building heights private validation
+on:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: write
+concurrency:
+  group: building-heights-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  buildings:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/agent/mds-building-heights'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Setup fixed dependencies
+        run: |
+          make setup
+          .venv/bin/python -m pip install -r requirements-terrain.txt
+          .venv/bin/python -m pip check
+      - name: Retrieve eight original tiles and approved terrain
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/building-input /tmp/building-evidence outputs
+          tag=geodata-dgt-pedome-20261127
+          terrain=geodata-dgt-terrain-agent-dgt-terrain-grid
+          for release in "$tag" "$terrain"; do
+            test "$(gh release view "$release" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          done
+          for kind in MDT MDS; do
+            for tile in 178494 178495 179494 179495; do
+              gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/building-input --pattern "$kind-50cm-$tile-07-2025_v02.tif"
+            done
+          done
+          gh release download "$terrain" --repo "$GITHUB_REPOSITORY" --dir /tmp/building-input --pattern terrain-tin.bin
+          echo "93495e59862affea17c7202a089fe3203afb536184ab47740727194da669bb59  /tmp/building-input/terrain-tin.bin" | sha256sum -c -
+      - name: Export exact game footprints
+        run: |
+          .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi outputs/footprints --osm-json data/pedome/pedome-osm.json --flat --export-footprints /tmp/building-input/footprints.json --three-vendor .cache/mapslop/three-vendor
+      - name: Measure MDS MDT heights
+        run: |
+          .venv/bin/python tools/build-building-heights.py --input /tmp/building-input --footprints /tmp/building-input/footprints.json --terrain /tmp/building-input/terrain-tin.bin --osm data/pedome/pedome-osm.json --output /tmp/building-evidence/building-heights.json
+      - name: Build with accepted terrain and measured heights
+        run: |
+          .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi outputs/buildings --osm-json data/pedome/pedome-osm.json --terrain-bin /tmp/building-input/terrain-tin.bin --building-heights /tmp/building-evidence/building-heights.json --three-vendor .cache/mapslop/three-vendor
+          cp outputs/buildings/build-report.json /tmp/building-evidence/build-report.json
+      - run: npx playwright install --with-deps chromium
+      - name: Verify rendering, roof/colliders and driving
+        env:
+          MAPSLOP_TEST_URL: http://127.0.0.1:8080/?webgl
+          MAPSLOP_RESULTS: /tmp/building-browser
+          MAPSLOP_EXPECT_TERRAIN: DGT MDT 0.5 m
+          MAPSLOP_EXPECT_BUILDINGS: mds_mdt
+          MAPSLOP_LONG_DRIVE: '1'
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/building-browser
+          make serve OUT=outputs/buildings PORT=8080 >/tmp/building-browser/http.log 2>&1 &
+          server=$!
+          trap 'kill "$server" || true' EXIT
+          for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
+          result=0
+          node tests/browser-smoke.mjs >/tmp/building-browser/run.log 2>&1 || result=$?
+          if [ -s /tmp/building-browser/browser-report.json ]; then
+            jq '{success, distance, buildingHeights: (.buildingHeights | {measured,total,pass}), longDrive: (.longDrive | {success,distance_m,contact_max_m,collisions})}' /tmp/building-browser/browser-report.json
+          fi
+          exit "$result"
+      - name: Preserve private evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ ! -s /tmp/building-evidence/building-heights.json ]; then exit 0; fi
+          for f in browser-report.json run.log pedome-mobile.png long-drive-end.png failure.png; do
+            if [ -f "/tmp/building-browser/$f" ]; then cp "/tmp/building-browser/$f" /tmp/building-evidence/; fi
+          done
+          cd /tmp/building-evidence
+          sha256sum ./* > /tmp/building-checksums
+          mv /tmp/building-checksums SHA256SUMS.txt
+          case "$GITHUB_REF" in
+            refs/heads/main) tag=geodata-dgt-building-heights-main ;;
+            refs/heads/agent/mds-building-heights) tag=geodata-dgt-building-heights-agent-mds-building-heights ;;
+            *) exit 1 ;;
+          esac
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' >/tmp/building-state 2>/dev/null; then
+            test "$(cat /tmp/building-state)" = true
+            gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > /tmp/building-old
+            while IFS= read -r f; do
+              case "$f" in building-heights.json|build-report.json|browser-report.json|run.log|pedome-mobile.png|long-drive-end.png|failure.png|SHA256SUMS.txt) ;; *) exit 1 ;; esac
+            done < /tmp/building-old
+            while IFS= read -r f; do
+              if [ ! -f "$f" ]; then gh release delete-asset "$tag" "$f" --repo "$GITHUB_REPOSITORY" --yes; fi
+            done < /tmp/building-old
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Private building-height evidence" --notes "DGT and OSM derived experimental data. See report, including failures. Do not publish."
+          fi
+          gh release upload "$tag" ./* --repo "$GITHUB_REPOSITORY" --clobber
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          echo "Draft preserved: $tag"

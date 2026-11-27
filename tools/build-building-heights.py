@@ -128,7 +128,8 @@ def estimate(b,dt,ds,affine,crs,terrain,sampler):
     if not b.get("est") and abs(h-b["h"])>max(3.0,b["h"]*0.35):
         row["reason"]="conflicts_with_osm_height";return row
     row.update(method="mds_mdt",reason="accepted_heuristic",render_height_m=round(h,3),
-        roof_relative_m=round(roof,3),footing_relative_m=float(footing),nominal_height_m=stats["delta_p75_m"])
+        roof_relative_m=round(roof,3),footing_relative_m=float(footing),nominal_height_m=stats["delta_p75_m"],
+        probe_local_m=[float(poly.representative_point().x),float(poly.representative_point().y)])
     return row
 
 def summary(rows):
