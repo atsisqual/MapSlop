@@ -131,7 +131,7 @@ def deform(t,corridor):
     # the old piecewise planar terrain; split only intersecting edges at the boundary.
     faces=np.asarray(t["triangles"],dtype=int).reshape(-1,3)
     old_edges=np.unique(np.sort(np.concatenate([faces[:,[0,1]],faces[:,[1,2]],faces[:,[2,0]]]),axis=1),axis=0)
-    old_lines=sh.linestrings(original[old_edges])
+    old_lines=sh.linestrings((original_cm.astype(float)/100)[old_edges])
     sh.prepare(outer)
     hit=sh.intersects(outer,old_lines)
     clipped=sh.difference(old_lines[hit],outer,grid_size=0.01)
@@ -140,7 +140,7 @@ def deform(t,corridor):
     internal.extend(sh.boundary(platform_shapes))
     internal.extend(axes);internal.extend(cross)
     inside=sh.intersection(np.asarray(internal,dtype=object),domain,grid_size=0.01)
-    noded=sh.union_all(np.concatenate([inside,clipped]),grid_size=0.01)
+    noded=sh.union_all(np.concatenate([inside,clipped,old_lines[~hit]]),grid_size=0.01)
     points=[];edge_pairs=[]
     def collect(g):
         if g.is_empty:return
@@ -150,10 +150,7 @@ def deform(t,corridor):
         elif hasattr(g,"geoms"):
             for part in g.geoms:collect(part)
     collect(noded)
-    # Exterior edges never intersect internal constraints except where noding
-    # already split an incident clipped edge; their endpoint grid is unchanged.
-    for a,b in old_edges[~hit]:
-        edge_pairs.append((tuple(original_cm[a]),tuple(original_cm[b])))
+    # All exterior edges participated in the same precision-model noding pass.
     coords=sorted({p for pair in edge_pairs for p in pair})
     lookup={p:i for i,p in enumerate(coords)}
     edges=np.array(sorted({tuple(sorted((lookup[a],lookup[b]))) for a,b in edge_pairs}),dtype=np.int64)
