@@ -53,6 +53,14 @@ for name, workflow in workflows.items():
         if job.get("uses") == "./.github/workflows/pedome-dgt-terrain.yml":
             if name != "pedome-terrain.yml" or set(workflow["on"]) != {"workflow_dispatch"}:
                 errors.append("DGT terrain must be called only by the registered manual launcher")
+if "pedome-dgt-buildings.yml" in workflows:
+    if set(workflows["pedome-dgt-buildings.yml"]["on"]) != {"workflow_call"}:
+        errors.append("Building data workflow must be callable only")
+    for name, workflow in workflows.items():
+        for job in workflow.get("jobs", {}).values():
+            if job.get("uses") == "./.github/workflows/pedome-dgt-buildings.yml":
+                if name != "pedome-terrain.yml" or set(workflow["on"]) != {"workflow_dispatch"}:
+                    errors.append("DGT buildings must be called only by the registered manual launcher")
 if "pedome-dgt-roads.yml" in workflows:
     if set(workflows["pedome-dgt-roads.yml"]["on"]) != {"workflow_call"}:
         errors.append("Road data workflow must be callable only")

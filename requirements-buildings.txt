@@ -1,0 +1,3 @@
+-r requirements-terrain.txt
+laspy==2.6.1
+pyproj==3.7.1

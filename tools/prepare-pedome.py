@@ -36,7 +36,7 @@ def flat_dem():
     s,w,n,e=BBOX; step=.00025; nx=math.ceil((e-w+.02)/step); ny=math.ceil((n-s+.02)/step)
     return dict(source='SYNTHETIC FLAT TEST TERRAIN',west=w-.01,north=n+.01,dx=step,dy=-step,nx=nx,ny=ny,values=[0]*(nx*ny))
 def main():
-    p=argparse.ArgumentParser(); p.add_argument('upstream',type=P); p.add_argument('output',type=P); p.add_argument('--osm-json',type=P); p.add_argument('--dem-json',type=P); p.add_argument('--terrain-json',type=P,help='Legacy precomputed JSON terrain'); p.add_argument('--terrain-bin',type=P,help='MSLTERR1 binary terrain'); p.add_argument('--flat',action='store_true'); p.add_argument('--fixture',action='store_true'); p.add_argument('--three-vendor',type=P,help='Optional local Three.js tree (experimental version compatibility)'); a=p.parse_args()
+    p=argparse.ArgumentParser(); p.add_argument('upstream',type=P); p.add_argument('output',type=P); p.add_argument('--osm-json',type=P); p.add_argument('--dem-json',type=P); p.add_argument('--terrain-json',type=P,help='Legacy precomputed JSON terrain'); p.add_argument('--terrain-bin',type=P,help='MSLTERR1 binary terrain'); p.add_argument('--building-preview',action='store_true',help='Private height preview, preserve centimetres'); p.add_argument('--flat',action='store_true'); p.add_argument('--fixture',action='store_true'); p.add_argument('--three-vendor',type=P,help='Optional local Three.js tree (experimental version compatibility)'); a=p.parse_args()
     if a.output.exists(): p.error('output must not exist; no existing files overwritten')
     if a.fixture and a.osm_json: p.error('fixture and osm-json are mutually exclusive')
     if (a.terrain_json or a.terrain_bin) and (a.dem_json or a.flat or a.fixture or (a.terrain_json and a.terrain_bin)): p.error('terrain input is exclusive with other terrain modes')
@@ -74,6 +74,8 @@ def main():
     patch(f,'if (d < CORE_R && area > 250) return Math.round(4 + r * r * 10); // 4..14, skewed low','if (area > 250) return 1 + (r > 0.65 ? 1 : 0); // conservative rural estimate')
     patch(f,'if (d < CORE_R * 1.6 && area > 150) return Math.round(2 + r * 4); // 2..6','if (area > 150) return 1 + (r > 0.5 ? 1 : 0);')
     patch(f,'if (!sight && !(b && b.h > 40)) continue;','if (!sight && !b) continue;')
+    # Keep measured building heights to centimetres; upstream q() rounds to decimetres.
+    if a.building_preview: patch(f,'const b = { id: el.id, ring: flat(r), h: q(h) };','const b = { id: el.id, ring: flat(r), h: Math.round(h * 100) / 100 };')
     run('node','tools/build-geodata.mjs',cwd=out)
     geo_path=out/'js/nairobi-geodata.js'; gs=geo_path.read_text(); geo=json.loads(gs.split('export const GEO = ',1)[1].strip().removesuffix(';'))
     if not geo['roadGraph']['links'] or not geo['buildings']: raise ValueError('Map has no usable road graph or buildings')
