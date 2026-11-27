@@ -10,7 +10,8 @@ from terrain_grid import to_world
 
 STEP=3.0
 CURVATURE=0.02/3
-MAX_DEVIATION=0.5
+MAX_DEVIATION=1.0
+MAX_MEAN_DEVIATION=0.5
 BERM=2.5
 KINDS={"motorway","trunk","primary","secondary","tertiary","unclassified","residential","living_street","service"}
 
@@ -115,7 +116,7 @@ def network(osm,bounds=None):
             ways.append({"way":e["id"],"name":e["tags"].get("name"),"width_m":road_width(e["tags"]),"ids":ids,"s":dist})
     return np.array(xy),ways,node_index,shared,excluded
 
-def solve(reference,ways):
+def solve(reference,ways,dense=None):
     """Minimax deviation with bounded change of adjacent grades per metre.
     Variables at a junction are literally the same variable, not a post-hoc average.
     """
@@ -127,6 +128,11 @@ def solve(reference,ways):
     for i,y in enumerate(reference):
         constraint([(i,1),(n,-1)],float(y))
         constraint([(i,-1),(n,-1)],-float(y))
+    # Include independent between-station MDT observations in the minimax LP.
+    if dense is not None:
+        for a,b,u,y in zip(dense["a"],dense["b"],dense["u"],dense["reference"]):
+            constraint([(int(a),1-float(u)),(int(b),float(u)),(n,-1)],float(y))
+            constraint([(int(a),float(u)-1),(int(b),-float(u)),(n,-1)],-float(y))
     for way in ways:
         ids,s=way["ids"],way["s"]
         for j in range(1,len(ids)-1):
@@ -138,7 +144,7 @@ def solve(reference,ways):
     obj=np.zeros(n+1);obj[-1]=1
     fit=linprog(obj,A_ub=A,b_ub=rhs,bounds=[(None,None)]*n+[(0,None)],method="highs")
     if not fit.success:raise ValueError("Road profile solver: "+fit.message)
-    # Second stage: choose smallest total residual within minimax optimum.
+    # Second stage: choose smallest total residual at profile stations within dense minimax optimum.
     from scipy.sparse import hstack,vstack,eye
     from scipy.sparse import csr_matrix
     I=eye(n,format="csr")
