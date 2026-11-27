@@ -35,7 +35,7 @@ def fetch(s,url,path,ext):
             with s.get(url,stream=True,timeout=(20,120)) as r:
                 r.raise_for_status()
                 if urlsplit(r.url).scheme!="https" or urlsplit(r.url).hostname not in dgt.DOWNLOAD_HOSTS:
-                    raise ValueError("Unexpected redirect host")
+                    raise ValueError("Unexpected redirect host: "+str(urlsplit(r.url).hostname)+"; content type: "+r.headers.get("Content-Type","").split(";")[0])
                 chunks=r.iter_content(1024*1024)
                 first=next(chunks,b"")
                 if (ext==".tif" and first[:4] not in TIFF) or (ext==".laz" and first[:4]!=b"LASF"):
