@@ -130,6 +130,9 @@ class Corridor:
     def ramp_at(self,segment,u=.5):
         s=self.segment_s0[segment]+u*(self.segment_s1[segment]-self.segment_s0[segment])
         profile=self.segment_profile[segment]
+        if self.parallel_profile is not None and self.way_ids[segment] in self.parallel['ways']:
+            p=float((self.a[segment]+u*self.d[segment])@self.parallel['axis'])
+            profile=self.parallel_profile;s=p
         return profile.in_ramp(s) or any(a<=s<=b for a,b,_ in profile.cores)
 
     def install_strips(self):
@@ -246,6 +249,27 @@ class Corridor:
                 if f:samples.append(p+normal*(f*(self.half+BERM))[:,None])
         return np.concatenate(samples)
 
+def simplify_collinear(cm,edges,y,eligible):
+    """Collapse only degree-two interior nodes on the same 3D constraint line."""
+    from collections import deque
+    adj=[set() for _ in cm]
+    for a,b in edges:adj[a].add(int(b));adj[b].add(int(a))
+    active=np.ones(len(cm),dtype=bool);queue=deque(np.flatnonzero(eligible))
+    removed=0
+    while queue:
+        i=int(queue.popleft())
+        if not active[i] or not eligible[i] or len(adj[i])!=2:continue
+        a,b=sorted(adj[i]);u=cm[i]-cm[a];v=cm[b]-cm[i]
+        if u[0]*v[1]-u[1]*v[0]!=0 or np.dot(u,v)<=0:continue
+        d=cm[b]-cm[a];t=float(np.dot(u,d)/np.dot(d,d))
+        if abs(float(y[i]-(y[a]+t*(y[b]-y[a]))))>.001:continue
+        adj[a].remove(i);adj[b].remove(i);adj[a].add(b);adj[b].add(a)
+        adj[i].clear();active[i]=False;removed+=1
+        queue.extend((a,b))
+    idx=np.flatnonzero(active);rank=np.full(len(cm),-1,dtype=int);rank[idx]=np.arange(len(idx))
+    e=np.asarray([(rank[a],rank[b]) for a in idx for b in sorted(adj[a]) if a<b],dtype=np.int64)
+    return idx,e,removed
+
 def constrained_mesh(points,edges):
     import pythoncdt as cdt
     # Integer centimetres are exactly representable in double precision.
@@ -351,13 +375,20 @@ def deform(t,corridor):
     lookup={p:i for i,p in enumerate(coords)}
     edges=np.array(sorted({tuple(sorted((lookup[a],lookup[b]))) for a,b in edge_pairs}),dtype=np.int64)
     cm=np.asarray(coords,dtype=np.int64)
-    if len(cm)>VERTEX_LIMIT:raise ValueError(f"CDT vertex budget exceeded: {len(cm)}")
-    tri,proof=constrained_mesh(cm,edges)
     xy=cm.astype(float)/100
     sampler=TinSampler(t)
     original_lookup={tuple(p):float(h) for p,h in zip(original_cm,v[:,1])}
     heights=np.array([original_lookup[p] if p in original_lookup else sampler(*q) for p,q in zip(coords,xy)])
     y,weights=corridor.target(xy,heights)
+    # Do not remove original exterior edges or junction anchors.
+    eligible=sh.contains(outer,sh.points(xy)) & (weights>0)
+    if len(corridor.junction_xy):
+        eligible &= corridor.junction_tree.query(xy)[0]>.02
+    idx,edges,removed=simplify_collinear(cm,edges,y,eligible)
+    cm,xy,y,weights,heights=cm[idx],xy[idx],y[idx],weights[idx],heights[idx]
+    coords=[coords[i] for i in idx]
+    if len(cm)>VERTEX_LIMIT:raise ValueError(f"CDT vertex budget exceeded: {len(cm)}")
+    tri,proof=constrained_mesh(cm,edges)
     vv=np.column_stack([xy[:,0],y,xy[:,1]]).astype(np.float32)
     a,b,c=vv[tri[:,0]],vv[tri[:,1]],vv[tri[:,2]]
     signed=(b[:,0]-a[:,0])*(c[:,2]-a[:,2])-(b[:,2]-a[:,2])*(c[:,0]-a[:,0])
@@ -368,7 +399,7 @@ def deform(t,corridor):
     return validate_tin(out),{**proof,"added_vertices":len(cm)-kept,"removed_original_vertices":len(original)-kept,
         "vertices":len(cm),"vertices_changed":int(np.count_nonzero(np.abs(y-heights)>1e-6)),
         "max_vertex_shift_m":float(np.max(np.abs(y-heights))),"unchanged_outside_vertex_count":int(np.count_nonzero(weights==0)),
-        "redundant_strip_edges_removed":corridor.redundant_strip_edges_removed,
+        "redundant_strip_edges_removed":corridor.redundant_strip_edges_removed,"collinear_vertices_removed":removed,
         "platform_count":len(corridor.junction_xy),"paved_area_m2":float(paved.area),"berm_envelope_area_m2":float(outer.area)}
 
 def check_surface(t,original,corridor,legacy=False):
@@ -405,7 +436,9 @@ def check_surface(t,original,corridor,legacy=False):
             u=float(np.clip(np.dot(p-corridor.a[k],corridor.d[k])/corridor.length2[k],0,1))
             dist=float(np.linalg.norm(p-corridor.a[k]-u*corridor.d[k]))
             if dist<=half+corridor.half[k]:competitors.append({"way":corridor.way_ids[k],"station":corridor.segment_stations[k],"distance_m":dist,"same_way":corridor.way_ids[k]==corridor.way_ids[i],"angle_degrees":float(np.degrees(np.arccos(np.clip(np.dot(corridor.d[k],corridor.d[i])/np.sqrt(corridor.length2[k]*corridor.length2[i]),-1,1))))})
-        row={"overlapping_segments":sorted(competitors,key=lambda x:x['distance_m'])[:6],"way":corridor.way_ids[i],"name":corridor.way_names[i],"x_m":float(p[0]),"z_m":float(p[1]),"lat":ORIGIN[0]-float(p[1])/KY,"lon":ORIGIN[1]+float(p[0])/KX,"crossfall_degrees":angle,"junction_distance_m":junction_distance,"near_junction":bool(near_junction),"platform_edge_distance_m":platform_edge_distance,"in_ramp":bool(in_ramp),"inside_platform":bool(inside_core)}
+        wanted,_=corridor.target(np.array([left,right]),np.array([old(*left),old(*right)]),platforms=not legacy)
+        target_crossfall=abs(float(np.degrees(np.arctan2(wanted[1]-wanted[0],1.6*half))))
+        row={"target_crossfall_degrees":target_crossfall,"left_target_delta_m":float(abs(yl-wanted[0])),"right_target_delta_m":float(abs(yr-wanted[1])),"overlapping_segments":sorted(competitors,key=lambda x:x['distance_m'])[:6],"way":corridor.way_ids[i],"name":corridor.way_names[i],"x_m":float(p[0]),"z_m":float(p[1]),"lat":ORIGIN[0]-float(p[1])/KY,"lon":ORIGIN[1]+float(p[0])/KX,"crossfall_degrees":angle,"junction_distance_m":junction_distance,"near_junction":bool(near_junction),"platform_edge_distance_m":platform_edge_distance,"in_ramp":bool(in_ramp),"inside_platform":bool(inside_core)}
         all_slopes.append(row)
         delta=abs(s(*p)-(corridor.y0[i]+corridor.y1[i])/2)
         raw_profile_errors.append(delta)
