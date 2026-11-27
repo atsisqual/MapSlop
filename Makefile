@@ -11,7 +11,7 @@ PY := $(VENV)/bin/python
 setup:
 	$(PYTHON) -m venv "$(VENV)"
 	$(PY) -m pip install -r requirements.txt
-	npm install --ignore-scripts --no-audit --no-fund
+	npm ci --ignore-scripts --no-audit --no-fund
 	$(PY) tools/setup-upstream.py "$(CACHE)"
 
 build:
