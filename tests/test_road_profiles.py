@@ -132,3 +132,28 @@ class ProfileTests(unittest.TestCase):
             for j in range(i):
                 if not any(i in a and j in a for a in g):
                     self.assertLess(r[i]+r[j],np.linalg.norm(xy[i]-xy[j]))
+
+    def test_station_ramp_tangent_continuity(self):
+        from road_sections import SectionProfile
+        s=np.arange(0.,61,3)
+        p=SectionProfile(s,.08*s,[(30.,3.8,2.4)])
+        np.testing.assert_allclose(p.at([27.,30.,33.]),2.4)
+        for a,b in p.ramps:
+            self.assertGreaterEqual(b-a,6)
+            for x in (a,b):
+                h=.0001
+                self.assertLess(abs(float((p.at(x)-p.at(x-h))/h-(p.at(x+h)-p.at(x))/h)),.001)
+    def test_collinear_simplification_preserves_vertical_breaks_and_protected_nodes(self):
+        from road_carve import simplify_collinear
+        p=np.array([[0,0],[100,0],[200,0],[300,0],[400,0],[500,0]])
+        e=np.array([[0,1],[1,2],[2,3],[3,4],[4,5]])
+        h=np.array([0.,.1,.2,.5,.6,.7])
+        idx,edges,n=simplify_collinear(p,e,h,np.array([False,True,True,True,False,False]))
+        self.assertEqual(n,1)
+        np.testing.assert_array_equal(idx,[0,2,3,4,5])
+    def test_coplanar_strip_diagonal_removed(self):
+        xy=np.array([[0.,0.],[3.,0.],[6.,0.]])
+        c=Corridor(xy,np.array([0.,.3,.6]),[{"way":1,"ids":[0,1,2],"width_m":6}])
+        lines=c.strip_breaklines()
+        self.assertEqual(c.redundant_strip_edges_removed,3)
+        self.assertEqual(len(lines),6)
