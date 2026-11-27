@@ -26,7 +26,7 @@ def summarize(manifest,browser_dir):
              "road_mean_abs_m":road["mean_abs_m"],"road_rmse_m":road["rmse_m"],"road_worst_10":road.get("worst_10",[]),
              "refinement":p.get("refinement"),"raster_max_abs_m":p.get("raster_max_abs_m"),
              "library_error_m":p.get("library_error_m"),"target_error_m":p.get("target_error_m"),
-             "distance_m":drive.get("distance_m"),"progress_m":drive.get("progress_m"),
+             "decode_metrics":t.get("decodeMetrics"),"distance_m":drive.get("distance_m"),"progress_m":drive.get("progress_m"),
              "road_name":drive.get("route",{}).get("name"),"road_way":drive.get("route",{}).get("way"),
              "road_grade_20m":drive.get("road_grade_20m"),"driven_heading_range_degrees":drive.get("driven_heading_range_degrees"),
              "contact_samples":drive.get("sample_count"),"contact_max_m":drive.get("contact_max_m"),
