@@ -2,7 +2,30 @@
 import numpy as np
 from scipy.spatial import cKDTree
 from road_profiles import BERM
-from road_surface_policy import RAMP,junction_groups
+from road_surface_policy import RAMP,junction_groups,platform_radii
+
+
+def parts(g,kinds):
+    if g is None or g.is_empty:return []
+    if g.geom_type in kinds:return [g]
+    if hasattr(g,'geoms'):return [p for child in g.geoms for p in parts(child,kinds)]
+    return []
+
+def polygonal(g):
+    import shapely as sh
+    ps=[p for p in parts(g,{'Polygon'}) if p.area>1e-8]
+    # buffer(0) repairs degenerate rings; remove line/point remnants before overlay.
+    ps=[q for p in ps for q in parts(p.buffer(0),{'Polygon'}) if q.area>1e-8]
+    return sh.union_all(ps,grid_size=.01) if ps else sh.Polygon()
+
+def polygon_union(geoms):
+    import shapely as sh
+    ps=[p for g in geoms for p in parts(polygonal(g),{'Polygon'})]
+    return polygonal(sh.union_all(ps,grid_size=.01))
+
+def lines_only(geoms):
+    return np.asarray([p for g in geoms for p in parts(g,{'LineString','LinearRing'}) if p.length>1e-8],dtype=object)
+
 
 class Corridor:
     def __init__(self,xy,y,ways,shared_indices=(),groups=None,parallel=None):
@@ -31,6 +54,7 @@ class Corridor:
         self.junction_radius=np.array([radii[i] for i in shared_indices])
         self.junction_tree=cKDTree(self.junction_xy) if len(self.junction_xy) else None
         self.groups=groups if groups is not None else junction_groups(xy,ways,shared_indices)[0]
+        self.junction_radius=platform_radii(xy,ways,shared_indices,self.groups)
         self.parallel=parallel
         # Use explicit non-overlapping, mitered station strips to define road heights.
         self.strip_vertices,self.strip_heights,self.strip_triangles=self.make_strips()
@@ -62,19 +86,19 @@ class Corridor:
         self.strip_tree=sh.STRtree(sh.buffer(self.strip_polys,0.012))
         self.platform_polys=sh.buffer(sh.points(self.junction_xy),self.junction_radius,quad_segs=4)
         self.platform_tree=sh.STRtree(sh.buffer(self.platform_polys,0.012))
-        self.group_polys=np.asarray([sh.union_all(self.platform_polys[g],grid_size=.01) for g in self.groups],dtype=object)
+        self.group_polys=np.asarray([polygon_union(self.platform_polys[g]) for g in self.groups],dtype=object)
         self.group_y=np.array([self.junction_y[g[0]] for g in self.groups])
         self.parallel_poly=None
         if self.parallel:
             p=self.parallel
             chosen=np.array([w in p["ways"] for w in self.way_ids]).repeat(2)
-            union=sh.union_all(self.strip_polys[chosen],grid_size=.01)
+            union=polygon_union(self.strip_polys[chosen])
             # Close narrow gaps between the parallel carriageways, not the whole median.
-            union=sh.union_all([union,sh.buffer(sh.buffer(union,.6),-.6)],grid_size=.01)
+            union=polygon_union([union,sh.buffer(sh.buffer(union,.6),-.6)])
             axis=p["axis"];normal=axis[::-1]*np.array([-1,1])
             def section(lo,hi):
                 return sh.Polygon([axis*lo+normal*(-2000),axis*hi+normal*(-2000),axis*hi+normal*2000,axis*lo+normal*2000])
-            self.parallel_poly=sh.intersection(union,section(p["lo"],p["hi"]),grid_size=.01)
+            self.parallel_poly=polygonal(sh.intersection(union,section(p["lo"],p["hi"]),grid_size=.01))
             self.parallel_lines=[]
             for s in sorted(set([p["lo"],p["hi"],*p["stations"]])):
                 if p["lo"]<=s<=p["hi"]:
@@ -231,13 +255,13 @@ def deform(t,corridor):
     def envelope(extra):
         segments=sh.buffer(axes,corridor.half+extra,quad_segs=3)
         platforms=sh.buffer(sh.points(corridor.junction_xy),corridor.junction_radius+extra,quad_segs=4)
-        return sh.intersection(sh.union_all(np.concatenate([segments,platforms]),grid_size=0.01),domain,grid_size=0.01)
+        return polygonal(sh.intersection(polygon_union(np.concatenate([segments,platforms])),domain,grid_size=.01))
     corridor.install_strips()
     platform_shapes=corridor.platform_polys
     shapes=list(corridor.strip_polys)+list(platform_shapes)
     if corridor.parallel_poly is not None:shapes.append(corridor.parallel_poly)
-    paved=sh.intersection(sh.union_all(shapes,grid_size=0.01),domain,grid_size=0.01)
-    outer=sh.intersection(sh.union_all([envelope(BERM),sh.buffer(paved,BERM,quad_segs=3)],grid_size=0.01),domain,grid_size=0.01)
+    paved=polygonal(sh.intersection(polygon_union(shapes),domain,grid_size=.01))
+    outer=polygonal(sh.intersection(polygon_union([envelope(BERM),sh.buffer(paved,BERM,quad_segs=3)]),domain,grid_size=.01))
     # Split at stations with transverse lines; no additional midpoint fan or duplicate original interior samples.
     normal=corridor.d[:,::-1]*np.array([-1,1]);normal/=np.sqrt(corridor.length2)[:,None]
     cross=[]
@@ -254,7 +278,7 @@ def deform(t,corridor):
     clipped=sh.difference(old_lines[hit],outer,grid_size=0.01)
     # Node all potentially crossing lines using a centimetre precision model.
     internal=[sh.boundary(paved),sh.boundary(outer),sh.boundary(domain)]
-    platform_union=sh.union_all(platform_shapes,grid_size=0.01)
+    platform_union=polygon_union(platform_shapes)
     internal.append(sh.boundary(platform_union))
     # Add node anchors explicitly, and intermediate ramp contours clipped to pavement.
     for p,r in zip(corridor.junction_xy,corridor.junction_radius):
@@ -266,14 +290,14 @@ def deform(t,corridor):
             internal.append(sh.intersection(sh.boundary(sh.buffer(poly,d,quad_segs=3)),paved,grid_size=.01))
     # No redundant axis or cross-section vertices in flat platforms. Strip
     # triangle boundaries preserve longitudinal planes, with no extra midpoints.
-    strips=sh.difference(sh.boundary(corridor.strip_polys),platform_union,grid_size=0.01)
+    strips=lines_only(sh.difference(lines_only(sh.boundary(corridor.strip_polys)),platform_union,grid_size=.01))
     if corridor.parallel_poly is not None:
-        strips=sh.difference(strips,corridor.parallel_poly,grid_size=.01)
+        strips=lines_only(sh.difference(strips,corridor.parallel_poly,grid_size=.01))
         internal.append(sh.boundary(corridor.parallel_poly))
-        internal.extend(sh.difference(np.asarray(corridor.parallel_lines,dtype=object),platform_union,grid_size=.01))
+        internal.extend(lines_only(sh.difference(lines_only(corridor.parallel_lines),platform_union,grid_size=.01)))
     internal.extend(strips)
-    inside=sh.intersection(np.asarray(internal,dtype=object),domain,grid_size=0.01)
-    noded=sh.union_all(np.concatenate([inside,clipped,old_lines[~hit]]),grid_size=0.01)
+    inside=lines_only(sh.intersection(lines_only(internal),domain,grid_size=.01))
+    noded=sh.union_all(np.concatenate([inside,lines_only(clipped),old_lines[~hit]]),grid_size=.01)
     points=[];edge_pairs=[]
     def collect(g):
         if g.is_empty:return
