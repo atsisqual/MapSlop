@@ -86,6 +86,7 @@ jobs:
             trap 'kill "$server" 2>/dev/null || true' EXIT
             for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
             MAPSLOP_TEST_URL=http://127.0.0.1:8080/?webgl MAPSLOP_RESULTS="$root/$mode" MAPSLOP_EXPECT_TERRAIN='DGT MDT 0.5 m' MAPSLOP_LONG_DRIVE=1 MAPSLOP_ROUTE_REFERENCE="$root/baseline/browser-report.json" node tests/browser-smoke.mjs || echo "::warning::$mode browser test failed; preserve available measurements"
+            MAPSLOP_TEST_URL=http://127.0.0.1:8080/?webgl MAPSLOP_RESULTS="$root/$mode" MAPSLOP_ROUTE_REFERENCE="$root/baseline/browser-report.json" node tests/road-drive-diagnostics.mjs || echo "::warning::$mode drive diagnostics failed"
             kill "$server"
             wait "$server" 2>/dev/null || true
             trap - EXIT
