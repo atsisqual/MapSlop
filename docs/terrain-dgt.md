@@ -14,9 +14,9 @@ O adaptador aceita `--terrain-json`, substitui a grelha gerada pelo Nairobi sem 
 
 ## Execução em cloud
 
-O workflow aceita main ou o branch autorizado do PR #15. GitHub exige que o workflow manual exista na branch predefinida para o registo; antes do merge, pode ser necessário um PR independente mínimo de bootstrap. Não contornar esta regra por push automático. Uma execução testa ambas as resoluções:
+O workflow aceita main ou o branch autorizado do PR #15. Antes de o novo workflow estar registado em main, usar o workflow manual já registado **Pedome real terrain fallback**, selecionando o branch do PR e mode=dgt; este chama a mesma implementação como workflow reutilizável. Não há triggers automáticos. Uma execução testa ambas as resoluções:
 ```sh
-gh workflow run pedome-dgt-terrain.yml --ref agent/dgt-terrain-grid -f archive=true
+gh workflow run pedome-terrain.yml --ref agent/dgt-terrain-grid -f mode=dgt
 ```
 Só execução manual nos branches autorizados com acesso autorizado ao rascunho. Não utiliza segredos DGT nem publica Pages; não envia imagens ou grelhas para artefactos públicos. Se archive=true, guarda grelhas, manifesto e relatório de browser (quando disponíveis) numa **única release em rascunho por branch**, substituindo assets experimentais com checksums; o rascunho pode conter resultados de falha, não é prova de validação. Não publicar sem autorização.
 

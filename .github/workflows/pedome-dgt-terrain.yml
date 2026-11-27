@@ -6,6 +6,11 @@ on:
         description: Preserve both resolutions in one unpublished draft per branch
         type: boolean
         default: true
+  workflow_call:
+    inputs:
+      archive:
+        type: boolean
+        default: true
 permissions:
   contents: write
 concurrency:

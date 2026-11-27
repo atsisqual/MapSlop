@@ -45,8 +45,14 @@ for p in wf.glob("*.yml"):
     workflows[p.name] = content
 manual = {"archive-portugal.yml", "dgt.yml", "expanded-vectors.yml", "pedome-terrain.yml", "reconstruction-archive.yml", "pedome-dgt-terrain.yml"}
 for name in manual:
-    if set(workflows[name]["on"]) != {"workflow_dispatch"}:
+    allowed = {"workflow_dispatch", "workflow_call"} if name == "pedome-dgt-terrain.yml" else {"workflow_dispatch"}
+    if set(workflows[name]["on"]) != allowed:
         errors.append(f"Data workflow not manual: {name}")
+for name, workflow in workflows.items():
+    for job in workflow.get("jobs", {}).values():
+        if job.get("uses") == "./.github/workflows/pedome-dgt-terrain.yml":
+            if name != "pedome-terrain.yml" or set(workflow["on"]) != {"workflow_dispatch"}:
+                errors.append("DGT terrain must be called only by the registered manual launcher")
 if any(n.startswith("dgt-") for n in workflows):
     errors.append("Duplicated DGT workflows")
 if workflows["pages.yml"]["on"]["push"]["branches"] != ["main"]:

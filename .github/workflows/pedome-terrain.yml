@@ -1,10 +1,17 @@
 name: Pedome real terrain fallback
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Terrain source to validate
+        type: choice
+        options: [copernicus, dgt]
+        default: copernicus
 permissions:
   contents: read
 jobs:
   terrain:
+    if: inputs.mode == 'copernicus'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -47,3 +54,11 @@ jobs:
             /tmp/pedome-terrain/tools/data/dem_glo30.json
             /tmp/pedome-terrain/terrain-report.json
             /tmp/pedome-terrain/build-report.json
+
+  dgt:
+    if: inputs.mode == 'dgt' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/agent/dgt-terrain-grid')
+    permissions:
+      contents: write
+    uses: ./.github/workflows/pedome-dgt-terrain.yml
+    with:
+      archive: true
