@@ -84,6 +84,7 @@ def main():
     f=out/'js/city-config.js'; patch(f,"if (SHORT[l.name]) out.push({ name: l.name === 'Uhuru park' ? 'Uhuru Park' : l.name, short: SHORT[l.name], x: l.x, z: l.z });","out.push({ name: l.name, short: l.name, x: l.x, z: l.z });")
     patch(f,"place || roads || 'Nairobi'","place || roads || 'Pedome'")
     s=f.read_text(); s,n=re.subn(r'const TELEPORT_LOCATIONS = Object\.fromEntries\(\[.*?\]\s*\.map\(.*?\)\);',"const TELEPORT_LOCATIONS = {};",s,count=1,flags=re.S); assert n==1; f.write_text(s,encoding='utf-8')
+    shutil.copy2(P(__file__).resolve().parent/'pedome-ui.js',out/'js/pedome-ui.js')
     # Minimal world shell keeps upstream rendering, steering, chase camera and collision routines; no Kenya traffic.
     (out/'js/pedome.js').write_text('''import * as THREE from 'three/webgpu';
 import { GEO } from './nairobi-geodata.js';
@@ -96,6 +97,7 @@ import { buildColliders } from './colliders.js';
 import { ThirdPersonControllerManager, roadSpawn } from './controllers.js';
 import { CameraSystem } from './cameras.js';
 import { GamepadControls } from './gamepad-controls.js';
+import { installPedomeUI } from './pedome-ui.js';
 const status=document.querySelector('#status');
 try {
  const renderer=new THREE.WebGPURenderer({antialias:true,forceWebGL:!navigator.gpu||new URLSearchParams(location.search).has('webgl')});
@@ -107,10 +109,10 @@ try {
  const controllers=new ThirdPersonControllerManager(scene,world); const cameras=new CameraSystem(renderer.domElement,controllers); const camera=cameras.camera; const gamepad=new GamepadControls(controllers,cameras);
  /* P0 renders directly, without upstream screen-space reflection MRT buffers. */
  scene.traverse(o=>{for(const mat of (Array.isArray(o.material)?o.material:[o.material]))if(mat?.mrtNode){mat.mrtNode=null;mat.needsUpdate=true;}});
- window.mapslop={GEO,controllers,camera,world}; const spawn=roadSpawn(null,0,0); controllers.teleportActiveTo(spawn[0],spawn[1],spawn[2]);
+ window.mapslop={GEO,controllers,camera,world}; const spawn=roadSpawn(null,0,0); controllers.teleportActiveTo(spawn[0],spawn[1],spawn[2]); const ui=installPedomeUI(GEO,controllers,spawn,cameras);
  window.addEventListener('keydown',e=>{if(e.code==='KeyR')controllers.teleportActiveTo(spawn[0],spawn[1],spawn[2]);});
  window.addEventListener('resize',()=>{renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();});
- let last=performance.now(); renderer.setAnimationLoop(now=>{const dt=Math.max(0,Math.min(.05,(now-last)/1000));last=now;gamepad.update(dt);controllers.update(dt,now/1000); cameras.update(dt,now/1000);renderer.render(scene,camera);status.textContent=(GEO.frame.testFixture?'TESTE FICTÍCIO — ':GEO.frame.flatTerrain?'PEDOME — relevo plano — ':'PEDOME — ')+Math.round(Math.abs(controllers.getActiveEntity().speed)*3.6)+' km/h | WASD / setas · comando · R reposicionar'; window.mapslop.ready=true;});
+ let last=performance.now(); renderer.setAnimationLoop(now=>{const dt=Math.max(0,Math.min(.05,(now-last)/1000));last=now;gamepad.update(dt);controllers.update(dt,now/1000); cameras.update(dt,now/1000);renderer.render(scene,camera);ui.update(now);status.textContent=(GEO.frame.testFixture?'TESTE FICTÍCIO — ':GEO.frame.flatTerrain?'PEDOME — relevo plano — ':'PEDOME — ')+Math.round(Math.abs(controllers.getActiveEntity().speed)*3.6)+' km/h'; window.mapslop.ready=true;});
 } catch(e){status.textContent='Erro: '+e.message; console.error(e);throw e;}
 ''',encoding='utf-8')
     html=(out/'index.html').read_text(); imp=re.search(r'<script type="importmap">.*?</script>',html,re.S).group()
