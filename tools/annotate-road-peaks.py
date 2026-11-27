@@ -16,7 +16,7 @@ def annotate(root):
     for row in p.get('ramp_sections',[]):ramp_byway.setdefault(row['way'],[]).append(row)
     byway={}
     for w in p['ways']:byway.setdefault(w['way'],[]).append(w)
-    for mode in ('baseline','regression','carved'):
+    for mode in ('baseline','regression','previous','carved'):
         path=root/mode/'browser-report.json'
         if not path.exists():continue
         r=json.loads(path.read_text());d=r.get('longDrive',{});v=d.get('vertical_metrics',{})
