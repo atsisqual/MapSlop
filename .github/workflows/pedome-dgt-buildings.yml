@@ -17,6 +17,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12.10'
@@ -44,8 +47,41 @@ jobs:
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/dgt-roofer-toolchain --pattern roofer-linux-x86_64-v1.0.0.tar.gz
       - name: Measure 527 OSM footprints with paired raster data
+        id: measure
         run: .venv/bin/python tools/build-dgt-buildings.py --input /tmp/dgt-building-input --output /tmp/dgt-building-results
+      - name: Build private preview with verified compact terrain and candidate heights
+        run: |
+          set -euo pipefail
+          tag=geodata-dgt-terrain-agent-tin-compact-binary
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          mkdir -p /tmp/buildings-terrain
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/buildings-terrain --pattern terrain-tin.bin
+          echo 'de37795151e47e5892b4ed8c701968f0bfe60f64f35d9142fc7b89c71ac633d0  /tmp/buildings-terrain/terrain-tin.bin' | sha256sum -c -
+          make setup
+          root=/tmp/dgt-building-results
+          .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi outputs/building-preview --osm-json "$root/height-preview-osm.json" --terrain-bin /tmp/buildings-terrain/terrain-tin.bin --three-vendor .cache/mapslop/three-vendor
+          cp outputs/building-preview/build-report.json "$root/preview-build-report.json"
+          .venv/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('/tmp/dgt-building-results')
+          report=json.loads((root/'building-heights.json').read_text())
+          geo=Path('outputs/building-preview/js/nairobi-geodata.js').read_text().split('export const GEO = ',1)[1].split(';\nGEO.terrain',1)[0]
+          buildings={b['id']:b for b in json.loads(geo)['buildings']}
+          expected={r['osm_id']:r['height_m'] for r in report['rows'] if r.get('preview_policy')=='raster_p90_candidate'}
+          errors=[abs(buildings[i]['h']-h) for i,h in expected.items() if i in buildings]
+          assert len(buildings)==527 and len(errors)==len(expected)>0 and max(errors)<=0.011
+          print(json.dumps({'matched':len(errors),'max_export_height_error_m':max(errors)}))
+          PY
+          npx playwright install --with-deps chromium
+          mkdir -p "$root/browser"
+          make serve OUT=outputs/building-preview PORT=8080 > "$root/browser/http.log" 2>&1 &
+          server=$!
+          trap 'kill "$server" || true' EXIT
+          for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
+          MAPSLOP_TEST_URL=http://127.0.0.1:8080/?webgl MAPSLOP_RESULTS="$root/browser" MAPSLOP_EXPECT_TERRAIN='DGT MDT 0.5 m' MAPSLOP_LONG_DRIVE=1 node tests/browser-smoke.mjs
       - name: Try Roofer LoD2.2 with classified LiDAR and twenty footprints
+        if: always() && steps.measure.outcome == 'success'
         run: .venv/bin/python tools/run-roofer-sample.py --input /tmp/dgt-building-input --measurements /tmp/dgt-building-results --toolchain /tmp/dgt-roofer-toolchain
       - name: Preserve only private derivatives and evidence
         if: always()
@@ -60,7 +96,8 @@ jobs:
           esac
           cd "$root"
           files=(building-heights.json roofer-sample.geojson)
-          for f in roofer.log roofer-summary.json roofer-cityjson.tar.gz; do
+          if [ -f browser/browser-report.json ]; then cp browser/browser-report.json preview-browser-report.json; fi
+          for f in roofer.log roofer-summary.json roofer-cityjson.tar.gz preview-build-report.json preview-browser-report.json; do
             if [ -f "$f" ]; then files+=("$f"); fi
           done
           sha256sum "${files[@]}" > SHA256SUMS.txt
@@ -68,7 +105,7 @@ jobs:
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' > /tmp/buildings-draft 2>/dev/null; then
             test "$(cat /tmp/buildings-draft)" = true
             while IFS= read -r old; do
-              case "$old" in building-heights.json|roofer-sample.geojson|roofer.log|roofer-summary.json|roofer-cityjson.tar.gz|SHA256SUMS.txt) ;;
+              case "$old" in building-heights.json|roofer-sample.geojson|roofer.log|roofer-summary.json|roofer-cityjson.tar.gz|preview-build-report.json|preview-browser-report.json|SHA256SUMS.txt) ;;
                 *) echo "Unexpected asset, refuse update"; exit 1 ;; esac
               if [ ! -f "$old" ]; then gh release delete-asset "$tag" "$old" --repo "$GITHUB_REPOSITORY" --yes; fi
             done < <(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
