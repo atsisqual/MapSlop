@@ -226,7 +226,7 @@ def main():
                 "license_status":"MDT STAC proprietary conflicts with institutional open-data policy; do not publish",
                 "bbox_s_w_n_e":list(BBOX),"origin_lat_lon":list(ORIGIN),"frame":"x east, z south, y up, metres",
                 "source_crs":crs.to_string(),"source_crs_wkt":crs.to_wkt(),"source_resolution_m":0.5,
-                "coverage":coverage,"inputs":metadata,"products":products,"tin_failure":tin_failure,
+                "coverage":coverage,"inputs":metadata,"products":products,"tin_failure":tin_failure,"compact_tin_required":True,
                 "grid_candidate_cell_m":args.primary_cell,"grid_candidate_precision_pass":primary["error"]["max_abs_m"]<=0.5 and primary["roads"]["max_abs_m"]<=0.5,
                 "validation_status":"pending","final_pass":None,"default":None,
                 "command":"python tools/build-dgt-terrain.py --input "+str(args.input)+" --output "+str(args.output)+" --primary-cell "+str(args.primary_cell),
