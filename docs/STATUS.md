@@ -30,7 +30,7 @@
 - Inventário completo de assets upstream por concluir; licenças por coleção DGT inconsistentes (MDT STAC proprietary, MDS CC BY 4.0, ortofoto public; documentação institucional aberta). Confirmar direitos específicos antes de publicar; autorização do utilizador obrigatória.
 - Cadastro OGC zero resultados; Mapa de Construções LiDAR identificado, não descarregado; não prometer cobertura.
 - Não foram executados Roofer com Pedome, City4CFD nem pipeline de reconstrução. Não afirmar desempenho móvel nem qualidade geométrica.
-- Workflows antigos duplicados e acionados por push, ambiente incompleto e issues por criar. Subtree ainda só proposta futura; não executar nesta reorganização.
+- Workflows antigos duplicados e acionados por push (tarefa 7). Backlog em issues; ambiente P0 com versões fixadas. Subtree ainda só proposta futura; não executar nesta reorganização.
 
 ## Próximos passos (por prioridade)
 
@@ -94,3 +94,5 @@ Tamanhos e SHA-256 calculados sobre ficheiros montados em 2026-11-27 (Python has
 - Tarefa 4: ROADMAP P0–P3 com critérios por testar e catálogo de dados, ligando hashes de todos os assets. SHA-256 dos 4 pequenos blobs calculado do conteúdo UTF-8 (autoteste abc, tamanho e comparação com sha256sum local do piloto). Corrigida contagem da toolchain. Links/fences verificados. Sem publicar releases.
 
 - Tarefa 5: três templates Markdown com frontmatter YAML simples e cinco issues correspondentes ao backlog; links e formatação verificados. Issues #6–#10 confirmadas abertas pela API; nenhuma encerrada.
+
+- Tarefa 6: ambiente P0 (Makefile, requirements.txt, package.json/lock, setup upstream e devcontainer). Run inicial 46044106964, job 140658925821, commit d151668a314f2c23900584030060bb5d23fb9515: Python 3.12.10, Node 22.16.0/npm 10.9.2; make setup, pip check sem dependências quebradas, make build e make test (67/67 em cada execução), HTTP make serve OK, relatório real/plano 179 vias, 527 edifícios, 113 nós, 134 ligações. Docker build e python/node/npm/git/make dentro do container OK. Lockfile gerado pelo npm nesse run; make setup passa a exigir npm ci. Segundo run 46044314224 (job 140659613926, commit d990fa790616c9b073f14085dea2fead79ced2e9) concluído success com npm ci: pip check, make build/test (67/67 em cada), make serve HTTP, Docker build e versões verificadas. [Evidência persistente](research/environment-evidence-20261127.md). GDAL/PDAL ficam para P1.
