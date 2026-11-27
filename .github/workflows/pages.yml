@@ -168,14 +168,26 @@ jobs:
             const forward=page.locator('[data-drive="forward"]');
             const bounds=await forward.boundingBox();
             if(!bounds||!(await page.locator('#hud-map canvas').isVisible())||await page.locator('#drive-ui button').count()!==4)throw Error('Missing mobile HUD');
-            await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2);
-            await page.mouse.down();
+            const left=page.locator('[data-drive="left"]');
+            const lb=await left.boundingBox();
+            if(!lb)throw Error('Steering control missing');
+            const cdp=await page.context().newCDPSession(page);
+            await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
+            const pedal={x:Math.round(bounds.x+bounds.width/2),y:Math.round(bounds.y+bounds.height/2),id:1};
+            const steer={x:Math.round(lb.x+lb.width/2),y:Math.round(lb.y+lb.height/2),id:2};
             try {
+              await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[pedal]});
               await page.waitForFunction(()=>window.mapslop.controllers.getActiveEntity().speed>1,{},{timeout:60000});
-              if(await forward.getAttribute('aria-pressed')!=='true')throw Error('Pointer not registered');
-              report.pointerSpeed=await page.evaluate(()=>window.mapslop.controllers.getActiveEntity().speed);
-            } finally {await page.mouse.up();}
-            if(await forward.getAttribute('aria-pressed')!=='false')throw Error('Pointer release failed');
+              await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[pedal,steer]});
+              await page.waitForFunction(()=>['forward','left'].every(a=>document.querySelector('[data-drive="'+a+'"]').getAttribute('aria-pressed')==='true'),{},{timeout:15000});
+              report.touchSpeed=await page.evaluate(()=>window.mapslop.controllers.getActiveEntity().speed);
+              report.multiTouch=true;
+            } finally {
+              await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+            }
+            await page.waitForFunction(()=>['forward','left'].every(a=>document.querySelector('[data-drive="'+a+'"]').getAttribute('aria-pressed')==='false'),{},{timeout:15000});
+            report.touchRelease=true;
+            await cdp.detach();
             await page.locator('#map-toggle').click();
             if(await page.locator('#map-toggle').getAttribute('aria-expanded')!=='true')throw Error('Map expansion failed');
             await page.locator('#map-toggle').click();
