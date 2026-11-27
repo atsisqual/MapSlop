@@ -76,3 +76,32 @@ class ProfileTests(unittest.TestCase):
         c.install_strips()
         out,_=c.target(np.array([[1.5,-3.004],[1.5,0],[1.5,3.004]]),np.ones(3))
         np.testing.assert_allclose(out,0.15,atol=1e-8)
+
+    def test_ramp_cross_section_and_core(self):
+        from road_surface_policy import junction_groups
+        xy=np.array([[i*3.,0.] for i in range(9)]+[[0.,3.],[0.,6.]])
+        ways=[{"way":1,"name":"a","width_m":6,"ids":list(range(9)),"s":list(range(0,25,3))},
+              {"way":2,"name":"b","width_m":6,"ids":[0,9,10],"s":[0,3,6]}]
+        groups,eq=junction_groups(xy,ways,[0])
+        ref=np.array([.04*p[0] for p in xy])
+        y=solve(ref,ways,equalities=eq)
+        c=Corridor(xy,y,ways,[0],groups=groups);c.install_strips()
+        p=np.array([[x,z] for x in (1,5,8,11,15) for z in (-2,0,2)],dtype=float)
+        v,_=c.target(p,np.zeros(len(p)));v=v.reshape(-1,3)
+        np.testing.assert_allclose(v[:,0],v[:,1],atol=.00001)
+        np.testing.assert_allclose(v[:,2],v[:,1],atol=.00001)
+        self.assertAlmostEqual(v[0,1],y[0])
+        self.assertAlmostEqual(v[-1,1],y[5])
+    def test_parallel_way_profile_equalities_and_shared_surface(self):
+        from road_surface_policy import parallel_policy,PARALLEL_IDS
+        xy=np.array([[0.,0.],[3.,0.],[6.,0.],[9.,0.],[12.,0.],
+                     [12.,4.],[9.,4.],[6.,4.],[3.,4.],[0.,4.]])
+        ways=[{"way":PARALLEL_IDS[0],"name":"VIM","width_m":5,"ids":list(range(5)),"s":[0,3,6,9,12]},
+              {"way":PARALLEL_IDS[1],"name":"VIM","width_m":5,"ids":list(range(5,10)),"s":[0,3,6,9,12]}]
+        p,eq=parallel_policy(xy,ways)
+        ref=xy[:,0]*.03+xy[:,1]*.04
+        y=solve(ref,ways,equalities=eq)
+        np.testing.assert_allclose(y[:5],y[5:][::-1],atol=1e-7)
+        c=Corridor(xy,y,ways,parallel=p);c.install_strips()
+        v,_=c.target(np.array([[6.,-1.],[6.,0.],[6.,2.],[6.,4.],[6.,5.]]),np.zeros(5))
+        np.testing.assert_allclose(v,y[2],atol=1e-7)
