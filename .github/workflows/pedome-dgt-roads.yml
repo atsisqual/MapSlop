@@ -101,6 +101,9 @@ jobs:
             wait "$server" 2>/dev/null || true
             trap - EXIT
           done
+      - name: Annotate acceleration peaks with exact OSM junctions and route stations
+        if: always()
+        run: .venv/bin/python tools/annotate-road-peaks.py /tmp/road-results
       - name: Enforce road acceptance and compare baseline
         if: always()
         run: |
