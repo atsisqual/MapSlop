@@ -26,7 +26,7 @@ jobs:
       - name: Setup
         run: |
           make setup
-          .venv/bin/python -m pip install -r requirements-terrain.txt
+          .venv/bin/python -m pip install -r requirements-roads.txt
           .venv/bin/python -m unittest discover -s tests -p 'test_road_profiles.py' -v
       - name: Retrieve fixed original terrain and MDT
         run: |
@@ -40,8 +40,33 @@ jobs:
           tag=geodata-dgt-terrain-agent-tin-compact-binary
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/road-input --pattern terrain-tin.bin
+      - name: Recover previous rejected carve for exact crossfall diagnostics
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/previous-road
+          tag=geodata-dgt-roads-agent-smooth-road-profiles
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' | grep -qx true; then
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/previous-road --pattern terrain-road-preview.bin --pattern road-validation.json
+            if ! echo 'adb2429526dda22c7186a1c1655930970a9eabbc93524a5e969fca79a3e85e73  /tmp/previous-road/terrain-road-preview.bin' | sha256sum -c -; then
+              rm /tmp/previous-road/terrain-road-preview.bin
+              echo 'Previous draft no longer contains run 46067363364 binary; check archived diagnostic.'
+            fi
+          fi
       - name: Generate profile and candidate common mesh
-        run: .venv/bin/python tools/build-road-preview.py --input /tmp/road-input --terrain /tmp/road-input/terrain-tin.bin --output /tmp/road-results
+        run: |
+          .venv/bin/python tools/build-road-preview.py --input /tmp/road-input --terrain /tmp/road-input/terrain-tin.bin --previous-carve /tmp/previous-road/terrain-road-preview.bin --output /tmp/road-results
+          .venv/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('/tmp/road-results/road-validation.json')
+          prev=Path('/tmp/previous-road/road-validation.json')
+          r=json.loads(p.read_text())
+          if 'previous_run_46067363364_crossfall' not in r and prev.exists():
+              old=json.loads(prev.read_text()).get('previous_run_46067363364_crossfall')
+              if old:
+                  r['previous_run_46067363364_crossfall']=old
+                  p.write_text(json.dumps(r,indent=2,allow_nan=False)+'\n')
+          PY
       - name: Compare real browser physics before and after
         run: |
           set -euo pipefail
