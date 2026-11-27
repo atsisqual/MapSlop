@@ -143,7 +143,7 @@ def curvature_limits(reference,ways,adaptive=False):
             out.append((w["way"],j,float(k),float(limit)))
     return out
 
-def solve(reference,ways,dense=None,adaptive=False):
+def solve(reference,ways,dense=None,adaptive=False,equalities=()):
     """Minimax deviation with bounded change of adjacent grades per metre.
     Variables at a junction are literally the same variable, not a post-hoc average.
     """
@@ -160,6 +160,8 @@ def solve(reference,ways,dense=None,adaptive=False):
         for a,b,u,y in zip(dense["a"],dense["b"],dense["u"],dense["reference"]):
             constraint([(int(a),1-float(u)),(int(b),float(u)),(n,-1)],float(y))
             constraint([(int(a),float(u)-1),(int(b),-float(u)),(n,-1)],-float(y))
+    for terms in equalities:
+        constraint(terms,0.0);constraint([(i,-v) for i,v in terms],0.0)
     limits=iter(curvature_limits(reference,ways,adaptive))
     for way in ways:
         ids,s=way["ids"],way["s"]
