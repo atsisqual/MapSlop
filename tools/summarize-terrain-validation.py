@@ -20,13 +20,13 @@ def summarize(manifest,browser_dir):
         road=p["roads"]
         drive=b.get("longDrive",{})
         row={"kind":kind,"cell_m":cell,"file":p["file"],"vertices":p["vertices"],"triangles":p["triangles"],
-             "raw_bytes":p["bytes"],"gzip_bytes":p.get("gzip_bytes"),"gzip_sha256":p.get("gzip_sha256"),"json_bytes":p.get("json_bytes"),"json_gzip_bytes":p.get("json_gzip_bytes"),"sha256":p["sha256"],"points":e["points"],
+             "raw_bytes":p["bytes"],"gzip_bytes":p.get("gzip_bytes"),"encoding":p.get("encoding"),"exact_float32_geometry":p.get("exact_float32_geometry"),"legacy_binary_bytes":p.get("legacy_binary_bytes"),"legacy_binary_gzip_bytes":p.get("legacy_binary_gzip_bytes"),"gzip_sha256":p.get("gzip_sha256"),"json_bytes":p.get("json_bytes"),"json_gzip_bytes":p.get("json_gzip_bytes"),"sha256":p["sha256"],"points":e["points"],
              "max_abs_m":e["max_abs_m"],"mean_abs_m":e["mean_abs_m"],"rmse_m":e["rmse_m"],
              "road_points":road["points"],"road_ways":road["ways"],"road_max_abs_m":road["max_abs_m"],
              "road_mean_abs_m":road["mean_abs_m"],"road_rmse_m":road["rmse_m"],"road_worst_10":road.get("worst_10",[]),
              "refinement":p.get("refinement"),"raster_max_abs_m":p.get("raster_max_abs_m"),
              "library_error_m":p.get("library_error_m"),"target_error_m":p.get("target_error_m"),
-             "distance_m":drive.get("distance_m"),"progress_m":drive.get("progress_m"),
+             "decode_metrics":t.get("decodeMetrics"),"distance_m":drive.get("distance_m"),"progress_m":drive.get("progress_m"),
              "road_name":drive.get("route",{}).get("name"),"road_way":drive.get("route",{}).get("way"),
              "road_grade_20m":drive.get("road_grade_20m"),"driven_heading_range_degrees":drive.get("driven_heading_range_degrees"),
              "contact_samples":drive.get("sample_count"),"contact_max_m":drive.get("contact_max_m"),
@@ -57,7 +57,9 @@ def summarize(manifest,browser_dir):
                     and road["points"]>0 and road["max_abs_m"]<=0.5)
             row["precision_pass"]=common_precision and (
                 (p["vertices"]<150000 and p["raster_max_abs_m"]<=0.5) if kind=="tin" else cell==2)
-            row["pass"]=row["precision_pass"] and drive_ok
+            compact_required=kind=="tin" and manifest.get("compact_tin_required",False)
+            row["compression_pass"]=(p.get("encoding")=="MSLTERR1/compact" and p.get("exact_float32_geometry") is True and 0<(p.get("gzip_bytes") or 0)<1000000) if compact_required else None
+            row["pass"]=row["precision_pass"] and drive_ok and (row["compression_pass"] if compact_required else True)
         rows.append(row)
     near=next((r for r in rows if r["kind"]=="tin" and r["pass"]),None)
     if near is None:

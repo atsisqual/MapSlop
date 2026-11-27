@@ -34,3 +34,7 @@ Uma execução gera e compara as grelhas e TIN, testa os candidatos próximos 2 
 ## Testes e próximos passos
 
 CI read-only usa raster e malha sintéticos, testes de orientação e interpolação/refinamento, round-trip binário e truncagem, regressão de fallback, build/render/drape de TIN binária e teste longo. Não confundir CI com teste real DGT. Registar novo run, SHA-256, cobertura, métricas e motivo de seleção no STATUS e ADR 0010 antes de merge. Android real: 5 min, FPS mediana/percentil baixo, pico de memória/método e comparação com fallback; pendente. Não fechar #6 antes de critérios. Subtree não executado.
+
+## Contrato manifesto e compressão em revisão (#18/#16)
+
+O manifesto schema 2 distingue grid_candidate_precision_pass da seleção final; final_pass é null antes da agregação. Seleção verificada por SHA-256 e tamanho, alias terrain-default.bin, final_pass igual ao validation.json. A revisão compacta usa MSLTERR1 com encoding tin-morton-cm-f32bits-varint: preserva geometria Float32 por comparação canónica de vértices e faces orientadas. Mantém compatibilidade de leitura antiga, testa o decoder Python/Node e Chromium. Meta de gzip determinístico inferior a 1 MB decimal, não implica compressão HTTP já ativa. Workflow de compressão requer TIN aprovada com gate de tamanho além dos gates de precisão/condução anteriores. Métricas reais pendentes. Ver ADR 0010. Não publicar.
