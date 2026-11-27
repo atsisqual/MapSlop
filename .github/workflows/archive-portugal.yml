@@ -1,9 +1,6 @@
 name: Archive Portugal geographic source
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/archive-portugal.yml'
 permissions:
   contents: write
 concurrency:
@@ -11,6 +8,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   archive:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

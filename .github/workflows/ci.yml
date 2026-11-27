@@ -1,0 +1,64 @@
+name: MapSlop PR CI
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-and-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Reproducible setup
+        run: make setup
+      - name: Offline repository and data workflow tests
+        run: |
+          .venv/bin/python -m pip check
+          .venv/bin/python tools/check-repo.py
+          .venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
+          .venv/bin/python -m compileall -q tools
+          node --check tools/pedome-ui.js
+          node --check tools/import-osm.mjs
+          node --check tests/browser-smoke.mjs
+      - name: Fixture and real Pedome builds
+        run: |
+          .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi outputs/fixture --fixture --three-vendor .cache/mapslop/three-vendor
+          make build
+          make test
+          .venv/bin/python -c 'import json; d=json.load(open("pedome/build-report.json")); assert not d["fixture"] and d["flat"] and d["roads"]==179 and d["buildings"]==527, d; print("BUILD_REPORT",json.dumps(d))'
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Desktop and two-finger touch smoke test
+        shell: bash
+        env:
+          MAPSLOP_TEST_URL: http://127.0.0.1:8080/?webgl
+          MAPSLOP_RESULTS: /tmp/pedome-results
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/pedome-results
+          make serve PORT=8080 > /tmp/pedome-results/http.log 2>&1 &
+          server=$!
+          trap 'kill "$server" || true' EXIT
+          for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
+          node tests/browser-smoke.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pr-evidence
+          path: |
+            /tmp/pedome-results/
+            pedome/build-report.json
+          if-no-files-found: warn
