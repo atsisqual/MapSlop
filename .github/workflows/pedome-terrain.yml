@@ -5,7 +5,7 @@ on:
       mode:
         description: Terrain source to validate
         type: choice
-        options: [copernicus, dgt, buildings]
+        options: [copernicus, dgt, buildings, roofs]
         default: copernicus
 permissions:
   contents: read
@@ -68,3 +68,9 @@ jobs:
     permissions:
       contents: write
     uses: ./.github/workflows/pedome-dgt-buildings.yml
+
+  roofs:
+    if: inputs.mode == 'roofs' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/agent/building-roofs-facades')
+    permissions:
+      contents: write
+    uses: ./.github/workflows/pedome-dgt-roofs.yml

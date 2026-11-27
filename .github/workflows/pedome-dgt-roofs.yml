@@ -1,0 +1,119 @@
+name: Pedome private roof and facade preview
+on:
+  workflow_call:
+permissions:
+  contents: write
+concurrency:
+  group: roof-preview-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  roofs:
+    if: github.ref == 'refs/heads/agent/building-roofs-facades' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Setup pinned tools
+        run: |
+          make setup
+          .venv/bin/python -m pip install -r requirements-buildings.txt mapbox-earcut==1.0.3
+          .venv/bin/python -m pip check
+      - name: Retrieve reviewed private derivatives and archived cjio
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/roof-input /tmp/roof-tool /tmp/roof-results
+          tag=geodata-dgt-buildings-agent-dgt-building-heights
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/roof-input --pattern roofer-cityjson.tar.gz --pattern roofer-summary.json --pattern building-heights.json --pattern preview-height-verification.json --pattern SHA256SUMS.txt
+          cd /tmp/roof-input
+          for f in roofer-cityjson.tar.gz roofer-summary.json building-heights.json preview-height-verification.json; do
+            grep -E "^[0-9a-f]{64}  $f$" SHA256SUMS.txt | sha256sum -c -
+          done
+          tag=geodata-dgt-terrain-agent-tin-compact-binary
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/roof-input --pattern terrain-tin.bin
+          echo 'de37795151e47e5892b4ed8c701968f0bfe60f64f35d9142fc7b89c71ac633d0  terrain-tin.bin' | sha256sum -c -
+          tag=reconstruction-toolchain-20261127
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/roof-tool --pattern cjio-master.zip
+          cd /tmp/roof-tool
+          echo '9e02df04a4c7d37403eeaf7bee27fb0ad9a4947bfae8661d1d1755bbd316700e  cjio-master.zip' | sha256sum -c -
+          unzip -q cjio-master.zip
+      - name: Recover prior building report and diagnose all original failures
+        run: .venv/bin/python tools/recover-roof-regression.py
+      - name: Verify and recreate private height preview
+        run: |
+          .venv/bin/python - <<'PY'
+          import json,hashlib
+          from pathlib import Path
+          root=Path('/tmp/roof-input')
+          report=json.loads((root/'preview-height-verification.json').read_text())
+          assert report['pass'] and report['matched']==370 and report['excluded_count']==1
+          r=json.loads((root/'building-heights.json').read_text())
+          p=Path('data/pedome/pedome-osm.json')
+          assert hashlib.sha256(p.read_bytes()).hexdigest()==r['osm_sha256']
+          osm=json.loads(p.read_text())
+          h={row['osm_id']:row['height_m'] for row in r['rows'] if row.get('preview_policy')=='raster_p90_candidate'}
+          assert len(h)==371
+          for e in osm['elements']:
+              if e['type']=='way' and e['id'] in h:e['tags']['height']=str(h[e['id']])
+          (root/'height-preview-osm.json').write_text(json.dumps(osm,allow_nan=False))
+          PY
+      - name: Convert 18 measured LoD2.2 envelopes via cjio plus explicit fallbacks
+        run: |
+          set -euo pipefail
+          export PYTHONPATH=/tmp/roof-tool/cjio-master
+          .venv/bin/python tools/convert-roofer-preview.py --archive /tmp/roof-input/roofer-cityjson.tar.gz --summary /tmp/roof-input/roofer-summary.json --terrain /tmp/roof-input/terrain-tin.bin --output /tmp/roof-results/converted
+      - name: Attempt bounded terrain cut for building 223354671
+        run: .venv/bin/python tools/cut-roof-terrain.py --terrain /tmp/roof-input/terrain-tin.bin --roofs /tmp/roof-results/converted/roof-preview.json --osm /tmp/roof-input/height-preview-osm.json --output /tmp/roof-results/terrain-building-preview.bin
+      - name: Build and render private preview
+        run: |
+          set -euo pipefail
+          root=/tmp/roof-results
+          .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi outputs/roof-preview --osm-json /tmp/roof-input/height-preview-osm.json --terrain-bin "$root/terrain-building-preview.bin" --building-preview --roof-preview "$root/converted/roof-preview.json" --three-vendor .cache/mapslop/three-vendor
+          npx playwright install --with-deps chromium
+          make serve OUT=outputs/roof-preview PORT=8080 > "$root/http.log" 2>&1 &
+          server=$!
+          trap 'kill "$server" || true' EXIT
+          for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
+          export MAPSLOP_TEST_URL=http://127.0.0.1:8080/?webgl MAPSLOP_RESULTS="$root" MAPSLOP_EXPECT_TERRAIN='DGT MDT 0.5 m' MAPSLOP_LONG_DRIVE=1
+          status=0
+          node tests/browser-smoke.mjs || status=1
+          node tests/building-detail-browser.mjs || status=1
+          exit "$status"
+      - name: Retain only private conversion and diagnostics
+        if: always()
+        run: |
+          set -euo pipefail
+          root=/tmp/roof-results
+          if [ ! -d "$root/converted" ]; then exit 0; fi
+          case "$GITHUB_REF" in
+            refs/heads/agent/building-roofs-facades) tag=geodata-dgt-roofs-agent-building-roofs-facades ;;
+            refs/heads/main) tag=geodata-dgt-roofs-main ;;
+            *) exit 1 ;;
+          esac
+          cd "$root"
+          tar -czf converted-roofs.tar.gz converted
+          files=(converted-roofs.tar.gz)
+          for f in converted/roof-conversion-report.json building-detail-report.json browser-report.json roof-preview.png pedome-mobile.png terrain-building-preview.bin roof-terrain-cut-report.json regression-46070425792-buildings.json regression-46070425792-diagnostics.json; do
+            if [ -f "$f" ]; then files+=("$f"); fi
+          done
+          sha256sum "${files[@]}" > SHA256SUMS.txt
+          files+=(SHA256SUMS.txt)
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' > /tmp/roofs-draft 2>/dev/null; then
+            test "$(cat /tmp/roofs-draft)" = true
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Private roof and facade experiment" --notes "Experimental derivatives. Never publish without explicit approval."
+          fi
+          gh release upload "$tag" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
