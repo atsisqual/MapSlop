@@ -4,6 +4,10 @@
 export async function driveTerrainRoute({reference=null,minGrade=0.02}={}){
   const {heightAt}=await import(new URL('js/terrain.js',location.href).href);
   const {GEO,controllers:c}=window.mapslop;
+  // Actual OSM road graph link endpoints, counted across distinct ways.
+  const junctions=[]; const seen=new Map();
+  for(const road of GEO.roads){for(let i=0;i<road.pts.length;i+=2){const x=road.pts[i],z=road.pts[i+1],key=x.toFixed(1)+','+z.toFixed(1);if(!seen.has(key))seen.set(key,{x,z,ways:new Set()});seen.get(key).ways.add(road.id);}}
+  for(const p of seen.values())if(p.ways.size>1)junctions.push(p);
   const e=c.getActiveEntity();
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const angle=(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b));
@@ -84,7 +88,7 @@ export async function driveTerrainRoute({reference=null,minGrade=0.02}={}){
     let distanceM=0,progress=0,maxCross=0,maxGround=0,maxSurface=0,sumGround=0,samples=0;
     let last=[e.position.x,e.position.z],prevHeading=e.heading,headingAccum=0,hmin=0,hmax=0;
     let minY=Infinity,maxY=-Infinity,collisions=0,reason='Timeout';
-    const trace=[],vertical=[],rollStraight=[],dt=1/60;
+    const trace=[],vertical=[],rollStraight=[],bodyRoll=[],wheelDelta=[],dt=1/60;
     c.setCollisionListener(()=>collisions++);
     try {
       for(let i=0;i<60*55;i++){
@@ -109,10 +113,22 @@ export async function driveTerrainRoute({reference=null,minGrade=0.02}={}){
         distanceM+=distance(last,[pos.x,pos.z]);last=[pos.x,pos.z];
         maxGround=Math.max(maxGround,ge);maxSurface=Math.max(maxSurface,se);sumGround+=ge;samples++;
         minY=Math.min(minY,raw);maxY=Math.max(maxY,raw);
-        vertical.push({ground:surface,car:pos.y,speed:e.speed});
+        const station=project(a,pos.x,pos.z,progress).s;
+        const near=junctions.reduce((m,j)=>{const d=Math.hypot(pos.x-j.x,pos.z-j.z);return d<m?d:m;},Infinity);
+        vertical.push({ground:surface,terrain:raw,car:pos.y,speed:e.speed,station_m:station,x_m:pos.x,z_m:pos.z,way:route.way,junction_distance_m:Number.isFinite(near)?near:null,step:i});
         if(Math.abs(steer)<0.04&&Math.abs(e.speed)>3){
           const roll=(e.mesh.rotation.z||0)+(e.chassisPivot?.rotation.z||0);
-          rollStraight.push(Math.abs(roll*180/Math.PI));
+          bodyRoll.push(Math.abs(roll*180/Math.PI));
+          // The model's actual four wheel offsets, yaw transformed onto the common collision surface.
+          const wheels=e.wheels.map(w=>{const v=w.steerPivot.position,si=Math.sin(e.heading),co=Math.cos(e.heading);
+            const x=pos.x+co*v.x+si*v.z,z=pos.z-si*v.x+co*v.z;
+            return {side:Math.sign(v.x),axle:Math.sign(v.z),offset:v.x,y:c.getGroundHeight(x,z,'car',pos.y)};});
+          for(const axle of [-1,1]){
+            const left=wheels.find(w=>w.axle===axle&&w.side<0),right=wheels.find(w=>w.axle===axle&&w.side>0);
+            if(!left||!right)continue;
+            const dy=right.y-left.y,track=right.offset-left.offset;
+            if(Number.isFinite(dy)&&track>0){wheelDelta.push(Math.abs(dy));rollStraight.push(Math.abs(Math.atan2(dy,track)*180/Math.PI));}
+          }
         }
         headingAccum+=angle(e.heading,prevHeading);prevHeading=e.heading;
         hmin=Math.min(hmin,headingAccum);hmax=Math.max(hmax,headingAccum);
@@ -123,17 +139,23 @@ export async function driveTerrainRoute({reference=null,minGrade=0.02}={}){
     }finally{c.resetInput();c.setCollisionListener(null);}
     const headingRange=(hmax-hmin)*180/Math.PI;
     function acceleration(key,k){
-      let max=0,count=0;
+      let max=0,count=0;const peaks=[];
       for(let i=k;i<vertical.length-k;i++){
         if(vertical[i].speed<3)continue;
         const a=Math.abs(vertical[i+k][key]-2*vertical[i][key]+vertical[i-k][key])/(k*dt)**2;
         max=Math.max(max,a);count++;
+        peaks.push({...vertical[i],acceleration_m_s2:a,previous_y_m:vertical[i-k][key],next_y_m:vertical[i+k][key],sample_interval_s:k*dt});
       }
-      return {max_m_s2:count?max:null,samples:count};
+      peaks.sort((a,b)=>b.acceleration_m_s2-a.acceleration_m_s2);
+      const top=[];for(const p of peaks){if(top.every(q=>Math.abs(p.station_m-q.station_m)>.5))top.push(p);if(top.length===10)break;}
+      return {max_m_s2:count?max:null,samples:count,peaks:top};
     }
     const verticalMetrics={surface_raw:acceleration('ground',1),surface_window_0_2s:acceleration('ground',6),
       vehicle_raw:acceleration('car',1),vehicle_window_0_2s:acceleration('car',6),
-      straight_roll_max_degrees:rollStraight.length?Math.max(...rollStraight):null,straight_roll_samples:rollStraight.length};
+      terrain_raw:acceleration('terrain',1),terrain_window_0_2s:acceleration('terrain',6),
+      straight_roll_max_degrees:rollStraight.length?Math.max(...rollStraight):null,straight_roll_samples:rollStraight.length,
+      straight_wheel_height_delta_max_m:wheelDelta.length?Math.max(...wheelDelta):null,
+      chassis_dynamic_roll_max_degrees:bodyRoll.length?Math.max(...bodyRoll):null,roll_method:'left/right collision-surface height at actual axle offsets; front and rear, max'};
     const result={route,reason,distance_m:distanceM,progress_m:progress,sample_count:samples,
       contact_max_m:maxGround,contact_mean_m:samples?sumGround/samples:null,surface_contact_max_m:maxSurface,
       max_cross_track_m:maxCross,road_grade_20m:m.grade,road_turn_degrees:m.turnDegrees,
