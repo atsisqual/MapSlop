@@ -32,3 +32,7 @@ Ver [catálogo](data-catalog.md), [STATUS](STATUS.md), [evidência histórica](r
 O workflow manual `pedome-dgt-terrain.yml` (main ou branch agent/dgt-terrain-grid autorizado) lê os quatro MDT arquivados, converte e testa num browser local do runner; por omissão preserva resultados numa única release em rascunho por branch, nunca Pages. Não tem segredos DGT nem redistribui artefactos publicamente. Ver [pipeline](terrain-dgt.md). O CI usa apenas terreno sintético.
 
 Antes do merge do PR #15, executar o workflow manual já registado pedome-terrain.yml com branch agent/dgt-terrain-grid e mode=dgt. Chama o workflow reutilizável DGT sem triggers push/PR; copernicus mantém o fallback. Ver [pipeline](terrain-dgt.md).
+
+## P1 — alturas de edifícios
+
+Workflow manual pedome-building-heights.yml, antes do merge através de pedome-terrain.yml mode=buildings no branch agent/mds-building-heights. Lê oito TIFF e TIN aprovada; relatório e render/colisões em privado. Um rascunho de evidência separado por branch. Ver [pipeline](building-heights.md).
