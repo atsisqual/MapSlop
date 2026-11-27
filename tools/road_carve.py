@@ -107,6 +107,8 @@ class Corridor:
             # Paved triangles take precedence over a nearby berm. Barycentric
             # interpolation uses the very same triangles supplied to the CDT.
             points=sh.points(q)
+            # Longitudinal station shared by both edges of each mitered cross-section.
+            centre_ref=q.copy();half_ref=np.zeros(len(q));strip_assigned=np.zeros(len(q),dtype=bool)
             pp,tt=self.strip_tree.query(points,predicate="intersects")
             choices={}
             for i,j in zip(pp,tt):
@@ -123,21 +125,36 @@ class Corridor:
                 u=(v[0]*e[1]-v[1]*e[0])/det;w=(d[0]*v[1]-d[1]*v[0])/det
                 out[i]=(1-u-w)*self.strip_heights[ids[0]]+u*self.strip_heights[ids[1]]+w*self.strip_heights[ids[2]]
                 weights[i]=1
+                seg=j//2
+                fraction=float(np.clip(w if j%2==0 else 1-u,0,1))
+                centre_ref[i]=self.a[seg]+fraction*self.d[seg];half_ref[i]=self.half[seg]
+                strip_assigned[i]=True
             if self.parallel_poly is not None:
                 mask=sh.intersects(sh.buffer(self.parallel_poly,.012),points)
                 p=self.parallel
                 out[mask]=np.interp(q[mask]@p["axis"],p["stations"],self.y[p["ids"]])
                 weights[mask]=1
+                # The common cross-section uses the reference lane's centre projected on its axis.
+                station=q[mask]@p['axis'];normal=p['axis'][::-1]*np.array([-1,1])
+                ref_xz=self.xy[p['ids']]
+                centre_ref[mask]=station[:,None]*p['axis']+np.interp(station,p['stations'],ref_xz@normal)[:,None]*normal
+                half_ref[mask]=np.linalg.norm(q[mask]-centre_ref[mask],axis=1)+.02
+                strip_assigned[mask]=True
             # Apply ramps AFTER assigning the road plane. Each merged core has a
             # single LP height; C1 smoothstep over six metres on the road.
             # Outside the pavement the natural berm remains 2.5m.
             road=weights>=1-1e-9
+            centres=sh.points(centre_ref)
             total=np.zeros(len(q));summed=np.zeros(len(q));maxw=np.zeros(len(q))
             for poly,h in zip(self.group_polys,self.group_y):
                 dist=sh.distance(poly,points)
+                # Start the 6m ramp only once the full cross-section clears the core.
+                along=np.maximum(0,sh.distance(poly,centres)-half_ref)
+                dist=np.where(strip_assigned,along,dist)
                 reach=np.where(road,RAMP,BERM)
                 v=1-np.clip(dist/reach,0,1);v=v*v*(3-2*v)
-                total+=v;summed+=v*h;maxw=np.maximum(maxw,v)
+                dominance=v/np.maximum(1-v,1e-9)
+                total+=dominance;summed+=dominance*h;maxw=np.maximum(maxw,v)
             mask=total>0
             out[mask]=(1-maxw[mask])*out[mask]+maxw[mask]*summed[mask]/total[mask]
             weights=np.maximum(weights,maxw)
@@ -241,7 +258,9 @@ def deform(t,corridor):
     for p,r in zip(corridor.junction_xy,corridor.junction_radius):
         for d in (np.array([1.,0.]),np.array([0.,1.])):internal.append(sh.LineString([p-d*r*.5,p,p+d*r*.5]))
     for poly in corridor.group_polys:
-        for d in (1.5,3.,4.5,6.):
+        # Include inner and outer stations in the paved transition; original strip
+        # boundaries already sample cross sections at about 3m.
+        for d in (1.5,3.,4.5,6.,9.):
             internal.append(sh.intersection(sh.boundary(sh.buffer(poly,d,quad_segs=3)),paved,grid_size=.01))
     # No redundant axis or cross-section vertices in flat platforms. Strip
     # triangle boundaries preserve longitudinal planes, with no extra midpoints.
