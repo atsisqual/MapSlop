@@ -105,6 +105,8 @@ try {
  scene.add(buildGround(renderer)); scene.add(await buildBuildings()); const bridges=buildBridges(); scene.add(bridges);
  const world=buildColliders(bridges.userData.piers); const network=buildRoadNetwork(); buildStreets(scene,network,[]);
  const controllers=new ThirdPersonControllerManager(scene,world); const cameras=new CameraSystem(renderer.domElement,controllers); const camera=cameras.camera; const gamepad=new GamepadControls(controllers,cameras);
+ /* P0 renders directly, without upstream screen-space reflection MRT buffers. */
+ scene.traverse(o=>{for(const mat of (Array.isArray(o.material)?o.material:[o.material]))if(mat?.mrtNode){mat.mrtNode=null;mat.needsUpdate=true;}});
  window.mapslop={GEO,controllers,camera,world}; const spawn=roadSpawn(null,0,0); controllers.teleportActiveTo(spawn[0],spawn[1],spawn[2]);
  window.addEventListener('keydown',e=>{if(e.code==='KeyR')controllers.teleportActiveTo(spawn[0],spawn[1],spawn[2]);});
  window.addEventListener('resize',()=>{renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();});
