@@ -5,6 +5,7 @@ No PortoSlop code or data is used. Default downloads real OSM; fixture is testin
 import argparse, json, math, pathlib, re, shutil, subprocess, urllib.request, urllib.parse
 from terrain_grid import validate as validate_terrain
 from terrain_binary import decode as decode_terrain
+from building_heights import apply as apply_heights, digest as file_digest
 P=pathlib.Path
 BBOX=(41.4105,-8.395,41.4195,-8.383)
 LAT,LON=41.41501,-8.38809 # church; OSM way 149406360
@@ -36,11 +37,13 @@ def flat_dem():
     s,w,n,e=BBOX; step=.00025; nx=math.ceil((e-w+.02)/step); ny=math.ceil((n-s+.02)/step)
     return dict(source='SYNTHETIC FLAT TEST TERRAIN',west=w-.01,north=n+.01,dx=step,dy=-step,nx=nx,ny=ny,values=[0]*(nx*ny))
 def main():
-    p=argparse.ArgumentParser(); p.add_argument('upstream',type=P); p.add_argument('output',type=P); p.add_argument('--osm-json',type=P); p.add_argument('--dem-json',type=P); p.add_argument('--terrain-json',type=P,help='Legacy precomputed JSON terrain'); p.add_argument('--terrain-bin',type=P,help='MSLTERR1 binary terrain'); p.add_argument('--flat',action='store_true'); p.add_argument('--fixture',action='store_true'); p.add_argument('--three-vendor',type=P,help='Optional local Three.js tree (experimental version compatibility)'); a=p.parse_args()
+    p=argparse.ArgumentParser(); p.add_argument('upstream',type=P); p.add_argument('output',type=P); p.add_argument('--osm-json',type=P); p.add_argument('--dem-json',type=P); p.add_argument('--terrain-json',type=P,help='Legacy precomputed JSON terrain'); p.add_argument('--terrain-bin',type=P,help='MSLTERR1 binary terrain'); p.add_argument('--building-heights',type=P); p.add_argument('--export-footprints',type=P); p.add_argument('--flat',action='store_true'); p.add_argument('--fixture',action='store_true'); p.add_argument('--three-vendor',type=P,help='Optional local Three.js tree (experimental version compatibility)'); a=p.parse_args()
     if a.output.exists(): p.error('output must not exist; no existing files overwritten')
     if a.fixture and a.osm_json: p.error('fixture and osm-json are mutually exclusive')
     if (a.terrain_json or a.terrain_bin) and (a.dem_json or a.flat or a.fixture or (a.terrain_json and a.terrain_bin)): p.error('terrain input is exclusive with other terrain modes')
     terrain=validate_terrain(decode_terrain(a.terrain_bin.read_bytes())) if a.terrain_bin else validate_terrain(json.loads(a.terrain_json.read_text(encoding='utf-8'))) if a.terrain_json else None
+    if a.building_heights and (not a.terrain_bin or not a.osm_json or a.fixture): p.error('building heights require explicit binary terrain and OSM')
+    if a.export_footprints and not a.osm_json: p.error('export footprints requires explicit OSM')
     src=a.upstream.resolve(); out=a.output.resolve()
     data=fixture() if a.fixture else json.loads(a.osm_json.read_text(encoding='utf-8-sig')) if a.osm_json else get_osm()
     els=data.get('elements');
@@ -74,9 +77,17 @@ def main():
     patch(f,'if (d < CORE_R && area > 250) return Math.round(4 + r * r * 10); // 4..14, skewed low','if (area > 250) return 1 + (r > 0.65 ? 1 : 0); // conservative rural estimate')
     patch(f,'if (d < CORE_R * 1.6 && area > 150) return Math.round(2 + r * 4); // 2..6','if (area > 150) return 1 + (r > 0.5 ? 1 : 0);')
     patch(f,'if (!sight && !(b && b.h > 40)) continue;','if (!sight && !b) continue;')
+    patch(f,'const b = { id: el.id, ring: flat(r), h: q(h) };','const b = { id: el.id, osmType: el.type, ring: flat(r), h: q(h) };')
     run('node','tools/build-geodata.mjs',cwd=out)
     geo_path=out/'js/nairobi-geodata.js'; gs=geo_path.read_text(); geo=json.loads(gs.split('export const GEO = ',1)[1].strip().removesuffix(';'))
     if not geo['roadGraph']['links'] or not geo['buildings']: raise ValueError('Map has no usable road graph or buildings')
+    if a.export_footprints:
+        if a.export_footprints.exists(): raise ValueError('Footprint export already exists')
+        write(a.export_footprints,dict(schema=1,osm_sha256=file_digest(a.osm_json),buildings=geo['buildings']))
+    measured=0
+    if a.building_heights:
+        report=json.loads(a.building_heights.read_text(encoding='utf-8'))
+        measured=apply_heights(geo['buildings'],report,file_digest(a.osm_json),file_digest(a.terrain_bin))
     if terrain: geo['terrain']=terrain
     if terrain and terrain.get('kind')=='tin':
         shutil.copy2(P(__file__).resolve().parent/'tin-runtime.mjs',out/'js/tin-runtime.mjs')
@@ -176,7 +187,7 @@ try {
     (out/'index.html').write_text('''<!doctype html><html lang="pt"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MapSlop | Pedome P0</title>'''+imp+'''<style>html,body{margin:0;overflow:hidden;background:#202b36;font:15px system-ui;color:#fff}canvas{display:block}#status,#credits{position:fixed;z-index:1;background:#15202bdc;padding:10px;border-radius:6px;left:10px}#status{top:10px}#credits{bottom:10px;font-size:12px}a{color:white}</style><div id="status">A construir mapa…</div><div id="credits">MapSlop P0 · <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a> · Slop Nairobi / Mr.doob · Copernicus (quando usado)</div><script type="module" src="./js/pedome.js"></script></html>''',encoding='utf-8')
     if terrain:
         page=out/'index.html'; page.write_text(page.read_text(encoding='utf-8').replace('Copernicus (quando usado)', 'DGT — MDT 0,5 m (uso experimental)' if terrain['source'].startswith('DGT') else 'Terreno sintético de teste'),encoding='utf-8')
-    write(out/'build-report.json',dict(fixture=a.fixture,flat=geo['frame']['flatTerrain'],terrainSource=geo['frame']['demSource'],terrainCell=geo['terrain']['cell'],terrainKind=geo['terrain'].get('kind','grid'),bbox=BBOX,roads=len(geo['roads']),buildings=len(geo['buildings']),nodes=len(geo['roadGraph']['nodes']),links=len(geo['roadGraph']['links']),estimatedBuildings=sum(b.get('est',0) for b in geo['buildings'])))
+    write(out/'build-report.json',dict(fixture=a.fixture,flat=geo['frame']['flatTerrain'],terrainSource=geo['frame']['demSource'],terrainCell=geo['terrain']['cell'],terrainKind=geo['terrain'].get('kind','grid'),bbox=BBOX,roads=len(geo['roads']),buildings=len(geo['buildings']),nodes=len(geo['roadGraph']['nodes']),links=len(geo['roadGraph']['links']),measuredBuildings=measured,estimatedBuildings=sum(b.get('est',0) for b in geo['buildings'])))
     shutil.copytree(src/'tests',out/'tests')
     # Update only the stub fixture, not controller assertions.
     testfile=out/'tests/controllers.test.cjs'; patch(testfile,"name: 'Kenyatta Avenue', oneway:","name: 'TESTE', kind: 'residential', oneway:")
