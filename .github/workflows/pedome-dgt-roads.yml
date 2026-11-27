@@ -125,6 +125,10 @@ jobs:
           roll=v.get('straight_roll_max_degrees')
           r['regression_46070423399_drive']=regression.get('longDrive',{})
           r['baseline_drive']=b
+          r['drive_50kmh']={mode:report.get('longDrive50',{}) for mode,report in [('baseline',base),('regression',regression),('carved',carved)]}
+          r['drive_50kmh_status']={mode:('measured' if d.get('vertical_metrics') else 'unavailable') for mode,d in r['drive_50kmh'].items()}
+          r['fixed_station_comparison']={mode:{'20kmh':report.get('longDrive',{}).get('fixed_regression_probes',[]),'50kmh':report.get('longDrive50',{}).get('fixed_regression_probes',[])} for mode,report in [('baseline',base),('regression',regression),('carved',carved)]}
+          r['straight_collision_comparison']={mode:{'wheel_worst':report.get('longDrive',{}).get('straight_wheel_worst',[]),'sections':report.get('longDrive',{}).get('straight_cross_sections',[])} for mode,report in [('baseline',base),('regression',regression),('carved',carved)]}
           r['carved_drive']=c
           r['drive_measurement_status']={mode:('measured' if d.get('vertical_metrics') else 'unavailable') for mode,d in [('baseline',b),('regression',r['regression_46070423399_drive']),('carved',c)]}
           r['drive_pass']=bool(base.get('success') and carved.get('success') and b.get('success') and c.get('success')
@@ -133,8 +137,13 @@ jobs:
               and roll is not None and roll<=1 and v.get('straight_roll_samples',0)>=30)
           r['pass']=bool(r.get('pass') and r['drive_pass'])
           p.write_text(json.dumps(r,indent=2,allow_nan=False)+'\n')
-          print(json.dumps({k:v for k,v in r.items() if k not in ('way_metrics','baseline_drive','carved_drive','regression_46070423399_drive')}))
+          print(json.dumps({k:v for k,v in r.items() if k not in ('way_metrics','baseline_drive','carved_drive','regression_46070423399_drive','drive_50kmh','fixed_station_comparison','straight_collision_comparison')}))
           print(json.dumps({'baseline_vertical':b.get('vertical_metrics'),'regression_46070423399_vertical':r['regression_46070423399_drive'].get('vertical_metrics'),'carved_vertical':v,'route':c.get('route',{}).get('name'),'status':r['drive_measurement_status']}),flush=True)
+          print('FIXED_STATION_COMPARISON',json.dumps(r['fixed_station_comparison']),flush=True)
+          for mode,d in r['drive_50kmh'].items():
+              print('DRIVE_50KMH',mode,json.dumps({k:d.get(k) for k in ('success','reason','distance_m','max_speed_m_s','reached_target_speed','vertical_metrics')}),flush=True)
+          for mode,d in r['straight_collision_comparison'].items():
+              print('STRAIGHT_COLLISION_COMPARISON',mode,json.dumps({'wheel_worst':d['wheel_worst'][:3],'worst_sections':sorted(d['sections'],key=lambda x:-x['collision_roll_degrees'])[:5]}),flush=True)
           if not r['pass']:raise SystemExit('Road acceptance not met')
           PY
       - name: Preserve derivatives and evidence in an unpublished draft
