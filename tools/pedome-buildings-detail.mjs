@@ -53,6 +53,44 @@ function wallRing(b,low,high,material){
     quad(material,[x,low,z],[u,low,v],[u,high,v],[x,high,z]);
   }
 }
+function terrainSkirt(b,min,m){
+  for(const r of [b.ring,...(b.holes||[])])for(let i=0;i<r.length;i+=2){
+    const j=(i+2)%r.length,ax=r[i],az=r[i+1],bx=r[j],bz=r[j+1];
+    const n=Math.max(1,Math.ceil(Math.hypot(bx-ax,bz-az)/.5));
+    for(let k=0;k<n;k++){
+      const a=k/n,t=(k+1)/n,x=ax+(bx-ax)*a,z=az+(bz-az)*a,u=ax+(bx-ax)*t,v=az+(bz-az)*t;
+      quad(m,[x,min,z],[u,min,v],[u,heightAt(u,v),v],[x,heightAt(x,z),z]);
+    }
+  }
+}
+function clipTerrain(p){
+  const out=[];
+  const signed=a=>a[1]-heightAt(a[0],a[2]);
+  for(let i=0;i<p.length;i++){
+    const a=p[i],b=p[(i+1)%p.length],da=signed(a),db=signed(b),ia=da>=0,ib=db>=0;
+    if(ia)out.push(a);
+    if(ia!==ib){let lo=0,hi=1;for(let k=0;k<16;k++){const t=(lo+hi)/2,q=a.map((v,j)=>v+t*(b[j]-v));if((signed(q)>=0)===ia)lo=t;else hi=t;}out.push(a.map((v,j)=>v+(lo+hi)/2*(b[j]-v)));}
+  }
+  return out;
+}
+function measuredFoundation(walls,min,stone){
+  // Use lower boundary edges from the actual wall mesh, not an unrelated global eave.
+  const edges=new Map(),bottom=new Map(),key=p=>p.map(v=>Math.round(v*1000)).join(','),xz=p=>[p[0],p[2]].map(v=>Math.round(v*1000)).join(',');
+  for(let i=0;i<walls.length;i+=3){const p=walls.slice(i,i+3),k=xz(p);bottom.set(k,Math.min(bottom.get(k)??Infinity,p[1]));}
+  for(let i=0;i<walls.length;i+=9){const p=[walls.slice(i,i+3),walls.slice(i+3,i+6),walls.slice(i+6,i+9)];for(let j=0;j<3;j++){
+    const a=p[j],b=p[(j+1)%3],k=[key(a),key(b)].sort().join('|');
+    if(edges.has(k))edges.get(k).count++;else edges.set(k,{a,b,count:1});
+  }}
+  let count=0;
+  for(const {a,b,count:n} of edges.values()){
+    if(n!==1||Math.hypot(a[0]-b[0],a[2]-b[2])<.01||a[1]>bottom.get(xz(a))+.002||b[1]>bottom.get(xz(b))+.002)continue;
+    const ya=Math.max(min,Math.min(a[1],heightAt(a[0],a[2]))),yb=Math.max(min,Math.min(b[1],heightAt(b[0],b[2])));
+    // Stone skirt starts at the minimum; cap follows local ground or the actual wall bottom.
+    quad(stone,[a[0],min,a[2]],[b[0],min,b[2]],[b[0],Math.max(yb,b[1]),b[2]],[a[0],Math.max(ya,a[1]),a[2]]);
+    count++;
+  }
+  return count;
+}
 function flatRoof(b,y,m){
   const p=ringPoints(b.ring),holes=(b.holes||[]).map(ringPoints),all=p.concat(...holes);
   for(const ids of THREE.ShapeUtils.triangulateShape(p,holes))tri(m,...ids.map(i=>[all[i].x,y,all[i].y]));
@@ -97,26 +135,44 @@ export function buildDetailedBuildings(){
   for(const b of GEO.buildings){
     const {min,max}=bounds(b),r=hash(b.id),fm=facade[Math.floor(r*facade.length)],rm=roof[Math.floor(hash(String(b.id)+'r')*roof.length)];
     detailBases.set(b,min);
-    let top=min+b.h,base=Math.max(min,max),eave=top,policy='procedural_fallback',reason=null;
+    const inputHeight=b.h,inputMinH=b.minH??0;
+    const sourceHeight=Number(inputHeight),sourceMinH=Number(inputMinH);
+    let top=min+(Number.isFinite(sourceHeight)&&sourceHeight>0?sourceHeight:3),base=Math.max(min,max),eave=top,policy='procedural_fallback',reason=null;
+    const foundationIssues=[],adjustments=[],measuredChecks={};
+    if(!Number.isFinite(min)||!Number.isFinite(max)||max<min)foundationIssues.push('nonfinite_or_reversed_terrain_bounds');
+    if(!Number.isFinite(sourceHeight)||sourceHeight<=0)adjustments.push('invalid_input_height_default_3m');
     const src=sample[String(b.id)];
-    const elevated=!!(b.minH||b.part);
-    if(elevated)base=min+(b.minH||0);
-    else if(top-base<1.6)top=base+1.6;
-    if(!elevated&&base>min+.01)wallRing(b,min,base,stone);
+    const elevated=Number.isFinite(sourceMinH)&&sourceMinH>0;
+    if(!Number.isFinite(sourceMinH)||sourceMinH<0)adjustments.push('invalid_min_height_reset');
+    b.minH=elevated?sourceMinH:0;
+    if(elevated){base=min+sourceMinH;if(top<base+.5){top=base+.5;adjustments.push('elevated_part_top_below_min_height_raised_to_minimum_thickness');}}
+    else if(top-base<1.6){top=base+1.6;adjustments.push('procedural_height_extended_to_clear_terrain');}
     if(src?.policy==='roofer_lod22_candidate'&&!elevated){
       // Verify correspondence to OSM footprint and the approved TIN in the actual runtime frame.
       const xs=b.ring.filter((_,i)=>i%2===0),zs=b.ring.filter((_,i)=>i%2===1);
       const coords=src.roof.concat(src.walls);
-      let ok=src.roof_min_y>base+1.0&&src.roof_max_y>max+1&&src.wall_min_y>=min-1&&src.wall_min_y<=base+.15;
-      for(let i=0;i<coords.length;i+=3)if(coords[i]<Math.min(...xs)-1.5||coords[i]>Math.max(...xs)+1.5||coords[i+2]<Math.min(...zs)-1.5||coords[i+2]>Math.max(...zs)+1.5)ok=false;
-      if(ok){
+      let envelopeMax=0,clearance=Infinity,roofGroundMin=Infinity,roofGroundMax=-Infinity,wallGroundMin=Infinity,wallGroundMax=-Infinity;
+      for(let i=0;i<coords.length;i+=3)envelopeMax=Math.max(envelopeMax,Math.min(...xs)-coords[i],coords[i]-Math.max(...xs),Math.min(...zs)-coords[i+2],coords[i+2]-Math.max(...zs));
+      for(let i=0;i<src.roof.length;i+=3){const g=heightAt(src.roof[i],src.roof[i+2]);clearance=Math.min(clearance,src.roof[i+1]-g);roofGroundMin=Math.min(roofGroundMin,g);roofGroundMax=Math.max(roofGroundMax,g);}
+      for(let i=0;i<src.walls.length;i+=3){const g=heightAt(src.walls[i],src.walls[i+2]);wallGroundMin=Math.min(wallGroundMin,g);wallGroundMax=Math.max(wallGroundMax,g);}
+      const failures=[];
+      if(envelopeMax>1.5)failures.push('roof_or_wall_outside_osm_envelope');
+      if(!Number.isFinite(clearance)||clearance<.15)failures.push('roof_intersects_local_terrain');
+      if(!Number.isFinite(src.wall_min_y)||!Number.isFinite(src.roof_max_y)||src.wall_min_y>src.roof_max_y)failures.push('invalid_wall_roof_order');
+      if(src.wall_min_y>wallGroundMax+2)failures.push('whole_wall_base_above_local_terrain_by_over_2m');
+      Object.assign(measuredChecks,{envelope_excess_m:envelopeMax,roof_clearance_min_m:clearance,roof_ground_min_y:roofGroundMin,roof_ground_max_y:roofGroundMax,wall_ground_min_y:wallGroundMin,wall_ground_max_y:wallGroundMax,source_wall_min_y:src.wall_min_y,source_roof_min_y:src.roof_min_y,source_roof_max_y:src.roof_max_y,old_global_platform_rejection:!(src.roof_min_y>base+1&&src.roof_max_y>max+1&&src.wall_min_y>=min-1&&src.wall_min_y<=base+.15),failures});
+      if(!failures.length){
         for(let i=0;i<src.roof.length;i+=9)tri(rm,src.roof.slice(i,i+3),src.roof.slice(i+3,i+6),src.roof.slice(i+6,i+9));
-        for(let i=0;i<src.walls.length;i+=9){const q=clipAbove([src.walls.slice(i,i+3),src.walls.slice(i+3,i+6),src.walls.slice(i+6,i+9)],base);for(let j=1;j<q.length-1;j++)tri(fm,q[0],q[j],q[j+1]);}
+        for(let i=0;i<src.walls.length;i+=9){const q=clipTerrain([src.walls.slice(i,i+3),src.walls.slice(i+3,i+6),src.walls.slice(i+6,i+9)]);for(let j=1;j<q.length-1;j++)tri(fm,q[0],q[j],q[j+1]);}
+        terrainSkirt(b,min,stone);
+        measuredChecks.foundation_edges=measuredFoundation(src.walls,min,stone);
         top=src.roof_max_y;eave=src.roof_min_y;policy='roofer_lod22';
-        if(src.wall_min_y>base+.02)wallRing(b,base,src.wall_min_y,stone);
-      }else reason='measured_geometry_frame_or_ground_mismatch';
-    }
+        // There is no single measured horizontal floor; base is the lowest visible wall/support.
+        base=Math.max(min,Math.min(src.wall_min_y,wallGroundMin));
+      }else reason=failures.join(';');
+    }else if(src?.policy==='roofer_lod22_candidate'){reason='explicit_elevated_part';measuredChecks.failures=[reason];}
     if(policy!=='roofer_lod22'){
+      if(!elevated&&base>min+.01)wallRing(b,min,base,stone);
       const result=simpleRoof(b,base,top,rm,fm);eave=result.eave;
       reason=reason||src?.reason||'no_measured_roof';
       policy=result.shape;
@@ -139,7 +195,12 @@ export function buildDetailedBuildings(){
         }
       }
     }
-    rows.push({osm_id:b.id,policy,reason,foundation_min_m:min,terrain_max_m:max,habitable_base_m:base,roof_top_m:top});
+    if(![min,max,base,top].every(Number.isFinite))foundationIssues.push('nonfinite_foundation_or_roof');
+    if(top<base)foundationIssues.push('roof_below_base');
+    if(!elevated&&base<min)foundationIssues.push('base_below_foundation_min');
+    rows.push({osm_id:b.id,policy,reason,foundation_min_m:min,terrain_max_m:max,habitable_base_m:base,roof_top_m:top,
+      foundation_mode:elevated?'explicit_elevated_part':policy==='roofer_lod22'?'terrain_following_measured':'platform',foundation_issues:foundationIssues,
+      input_height_m:inputHeight,input_min_height_m:inputMinH,adjustments,measured_requested:src?.policy==='roofer_lod22_candidate',measured_checks:measuredChecks});
   }
   let shell=0;
   for(const [m,pos] of buckets){
@@ -151,6 +212,8 @@ export function buildDetailedBuildings(){
   instances(group,windows,box,mat(0x3f4c50),'Portuguese windows');
   instances(group,doors,box,mat(0x6e4934),'Portuguese doors');
   const report={buildings:rows.length,measured:rows.filter(r=>r.policy==='roofer_lod22').length,
+    terrain_base_absolute_m:GEO.terrain.base,terrain_origin_y_m:heightAt(0,0),
+    foundation_failures:rows.filter(r=>r.foundation_issues.length),measured_diagnostics:rows.filter(r=>r.measured_requested),
     shell_triangles:shell,window_instances:windows.length,door_instances:doors.length,
     all_triangles:shell+12*(windows.length+doors.length),building_draw_calls:group.children.length,rows};
   group.userData.buildingDetailReport=report;
