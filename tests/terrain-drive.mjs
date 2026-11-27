@@ -84,7 +84,7 @@ export async function driveTerrainRoute({reference=null,minGrade=0.02}={}){
     let distanceM=0,progress=0,maxCross=0,maxGround=0,maxSurface=0,sumGround=0,samples=0;
     let last=[e.position.x,e.position.z],prevHeading=e.heading,headingAccum=0,hmin=0,hmax=0;
     let minY=Infinity,maxY=-Infinity,collisions=0,reason='Timeout';
-    const trace=[],dt=1/60;
+    const trace=[],vertical=[],rollStraight=[],dt=1/60;
     c.setCollisionListener(()=>collisions++);
     try {
       for(let i=0;i<60*55;i++){
@@ -109,6 +109,11 @@ export async function driveTerrainRoute({reference=null,minGrade=0.02}={}){
         distanceM+=distance(last,[pos.x,pos.z]);last=[pos.x,pos.z];
         maxGround=Math.max(maxGround,ge);maxSurface=Math.max(maxSurface,se);sumGround+=ge;samples++;
         minY=Math.min(minY,raw);maxY=Math.max(maxY,raw);
+        vertical.push({ground:surface,car:pos.y,speed:e.speed});
+        if(Math.abs(steer)<0.04&&Math.abs(e.speed)>3){
+          const roll=(e.mesh.rotation.z||0)+(e.chassisPivot?.rotation.z||0);
+          rollStraight.push(Math.abs(roll*180/Math.PI));
+        }
         headingAccum+=angle(e.heading,prevHeading);prevHeading=e.heading;
         hmin=Math.min(hmin,headingAccum);hmax=Math.max(hmax,headingAccum);
         if(i%30===0)trace.push({distance_m:distanceM,progress_m:progress,ground_m:ge,surface_m:se,terrain_y_m:raw});
@@ -117,11 +122,23 @@ export async function driveTerrainRoute({reference=null,minGrade=0.02}={}){
       }
     }finally{c.resetInput();c.setCollisionListener(null);}
     const headingRange=(hmax-hmin)*180/Math.PI;
+    function acceleration(key,k){
+      let max=0,count=0;
+      for(let i=k;i<vertical.length-k;i++){
+        if(vertical[i].speed<3)continue;
+        const a=Math.abs(vertical[i+k][key]-2*vertical[i][key]+vertical[i-k][key])/(k*dt)**2;
+        max=Math.max(max,a);count++;
+      }
+      return {max_m_s2:count?max:null,samples:count};
+    }
+    const verticalMetrics={surface_raw:acceleration('ground',1),surface_window_0_2s:acceleration('ground',6),
+      vehicle_raw:acceleration('car',1),vehicle_window_0_2s:acceleration('car',6),
+      straight_roll_max_degrees:rollStraight.length?Math.max(...rollStraight):null,straight_roll_samples:rollStraight.length};
     const result={route,reason,distance_m:distanceM,progress_m:progress,sample_count:samples,
       contact_max_m:maxGround,contact_mean_m:samples?sumGround/samples:null,surface_contact_max_m:maxSurface,
       max_cross_track_m:maxCross,road_grade_20m:m.grade,road_turn_degrees:m.turnDegrees,
       driven_heading_range_degrees:headingRange,elevation_range_m:samples?maxY-minY:null,collisions,trace,
-      simulation_step_s:dt,method:'live browser controller, fixed-step physics (rendered smoke separate)'};
+      vertical_metrics:verticalMetrics,simulation_step_s:dt,method:'live browser controller, fixed-step physics (rendered smoke separate)'};
     result.success=reason==='Reached target'&&distanceM>=100&&progress>=100&&samples>=100&&
       headingRange>=15&&m.grade>=minGrade&&maxGround<=0.5&&maxSurface<=0.5&&collisions===0;
     return result;
