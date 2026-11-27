@@ -113,15 +113,19 @@ def main():
     print(json.dumps({k:v for k,v in report.items() if k not in ("way_metrics","over_1m_samples","platform_group_details")}),flush=True)
     # Keep candidate evidence even when the profile criteria fail; never approve it.
     corr=Corridor(xy,y,ways,shared_indices,groups=groups,parallel=parallel)
-    if a.previous_carve and a.previous_carve.exists():
-        if dt.digest(a.previous_carve)!="adb2429526dda22c7186a1c1655930970a9eabbc93524a5e969fca79a3e85e73":
-            raise ValueError("Previous carve hash mismatch")
-        old_xy,old_ways,old_nodes,old_shared,_=network(osm,(x0,z0,x1,z1),legacy=True)
-        old_corr=Corridor(old_xy,np.zeros(len(old_xy)),old_ways,[old_nodes[n] for n in sorted(old_shared) if n in old_nodes])
-        previous=check_surface(decode(a.previous_carve.read_bytes()),original,old_corr,legacy=True)
-        report["previous_run_46067363364_crossfall"]={k:v for k,v in previous.items() if "crossfall" in k or k=="transverse_samples"}
-        write(a.output/"road-validation.json",report)
-        print(json.dumps({"previous_run_46067363364_crossfall":report["previous_run_46067363364_crossfall"]}),flush=True)
+    try:
+        if a.previous_carve and a.previous_carve.exists():
+            if dt.digest(a.previous_carve)!="adb2429526dda22c7186a1c1655930970a9eabbc93524a5e969fca79a3e85e73":
+                raise ValueError("Previous carve hash mismatch")
+            old_xy,old_ways,old_nodes,old_shared,_=network(osm,(x0,z0,x1,z1),legacy=True)
+            old_corr=Corridor(old_xy,np.zeros(len(old_xy)),old_ways,[old_nodes[n] for n in sorted(old_shared) if n in old_nodes])
+            previous=check_surface(decode(a.previous_carve.read_bytes()),original,old_corr,legacy=True)
+            report["previous_run_46067363364_crossfall"]={k:v for k,v in previous.items() if "crossfall" in k or k=="transverse_samples"}
+            write(a.output/"road-validation.json",report)
+            print(json.dumps({"previous_run_46067363364_crossfall":report["previous_run_46067363364_crossfall"]}),flush=True)
+    except Exception as exc:
+        report['optional_historical_diagnostics_error']=f'{type(exc).__name__}: {exc}'
+        print(report['optional_historical_diagnostics_error'],flush=True)
     try:
         t,carve=deform(original,corr)
         t,storage=save(a.output/"terrain-road-preview.bin",t,compact=True)
