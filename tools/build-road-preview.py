@@ -10,7 +10,7 @@ from rasterio.merge import merge
 from terrain_binary import decode,save
 from road_profiles import network,solve,metrics,CURVATURE,MAX_DEVIATION,MAX_MEAN_DEVIATION
 from road_carve import Corridor,deform,check_surface
-from road_surface_policy import junction_groups,parallel_policy,RAMP
+from road_surface_policy import junction_groups,parallel_policy,platform_radii,RAMP
 
 spec=importlib.util.spec_from_file_location("dgt_terrain",Path(__file__).with_name("build-dgt-terrain.py"))
 dt=importlib.util.module_from_spec(spec);spec.loader.exec_module(dt)
@@ -35,9 +35,7 @@ def main():
     z1=z0+(original["nz"]-1)*original["cell"]
     xy,ways,nodes,shared,excluded=network(osm,(x0,z0,x1,z1))
     shared_indices=[nodes[n] for n in sorted(shared) if n in nodes]
-    groups,equalities=junction_groups(xy,ways,shared_indices)
     parallel,parallel_eq=parallel_policy(xy,ways)
-    equalities+=parallel_eq
     with ExitStack() as stack:
         ds=[]
         for asset in dt.expected_assets():
@@ -48,6 +46,8 @@ def main():
         mosaic,affine=merge(ds,nodata=-9999.,dtype="float32",masked=True)
         dt.check_coverage(mosaic[0],affine,crs)
         reference=dt.sample(mosaic[0],affine,crs,xy[:,0],xy[:,1])-original["base"]
+        groups,group_eq=junction_groups(xy,ways,shared_indices,reference)
+        equalities=group_eq+parallel_eq
         dense=[];aa=[];bb=[];uu=[];way_ids=[]
         for w in ways:
             for i,j in zip(w["ids"],w["ids"][1:]):
@@ -57,6 +57,12 @@ def main():
         dense=np.asarray(dense);aa=np.array(aa);bb=np.array(bb);uu=np.array(uu);way_ids=np.array(way_ids)
         actual=dt.sample(mosaic[0],affine,crs,dense[:,0],dense[:,1])-original["base"]
         observations={"a":aa,"b":bb,"u":uu,"reference":actual}
+        # Quantify independently which constraints cause the displacement.
+        constraint_trials={}
+        for label,eq in (("unconstrained",[]),("groups_only",group_eq),("parallel_only",parallel_eq)):
+            trial=solve(reference,ways,observations,adaptive=True,equalities=eq)
+            er=np.abs(actual-(trial[aa]*(1-uu)+trial[bb]*uu))
+            constraint_trials[label]={"dense_max_m":float(er.max()),"max_way_mean_m":max(float(er[way_ids==w].mean()) for w in set(way_ids))}
         strict=solve(reference,ways,observations,equalities=equalities)
         strict_err=np.abs(actual-(strict[aa]*(1-uu)+strict[bb]*uu))
         adaptive=bool(strict_err.max()>MAX_DEVIATION+1e-7 or any(strict_err[way_ids==w].mean()>MAX_MEAN_DEVIATION+1e-7 for w in set(way_ids)))
@@ -71,6 +77,24 @@ def main():
                 "lat":ORIGIN[0]-float(dense[i,1])/KY,"lon":ORIGIN[1]+float(dense[i,0])/KX,
                 "mdt_m":float(actual[i]),"profile_m":float(pred[i]),"deviation_m":float(err[i])}
     exceptions=[probe(i) for i in np.flatnonzero(err>MAX_DEVIATION+1e-7)]
+    worst=[];seen=set()
+    for i in np.argsort(-err):
+        row=probe(i);key=(row["way"],round(row["x_m"],2),round(row["z_m"],2))
+        if key in seen:continue
+        seen.add(key)
+        row["name"]=next(w.get("name") for w in ways if w["way"]==row["way"])
+        if shared_indices:
+            j=int(np.argmin(np.linalg.norm(xy[shared_indices]-dense[i],axis=1)))
+            row["junction_distance_m"]=float(np.linalg.norm(xy[shared_indices[j]]-dense[i]))
+            row["platform_group"]=next(k for k,g in enumerate(groups) if j in g)
+        worst.append(row)
+        if len(worst)==10:break
+    radii=platform_radii(xy,ways,shared_indices,groups)
+    group_report=[{"group":k,"node_indices":[shared_indices[j] for j in g],
+                   "osm_nodes":[next((n for n,i in nodes.items() if i==shared_indices[j]),None) for j in g],
+                   "diameter_m":max((float(np.linalg.norm(xy[shared_indices[i]]-xy[shared_indices[j]])) for i in g for j in g),default=0.),
+                   "mdt_span_m":float(np.ptp(reference[[shared_indices[j] for j in g]])),
+                   "radius_m":[float(radii[j]) for j in g],"height_m":float(y[shared_indices[g[0]]])} for k,g in enumerate(groups)]
     for row in m:
         ee=err[way_ids==row["way"]]
         row["dense_mean_abs_m"]=float(ee.mean())
@@ -82,11 +106,11 @@ def main():
     report={"schema":1,"ways":len(ways),"samples":len(xy),"shared_nodes":len(shared),
             "junction_identity_max_m":max((abs(sum(y[i]*v for i,v in terms)) for terms in equalities),default=0.0),"platform_groups":len(groups),"ramp_length_m":RAMP,"parallel_ways":parallel["ways"] if parallel else [],"excluded_structures":[e for e in excluded if e["reason"]!=["low_priority_access_no_carve"]],"excluded_accesses":[e for e in excluded if e["reason"]==["low_priority_access_no_carve"]],"strict_dense_max_deviation_m":float(strict_err.max()),"adaptive_enabled":adaptive,"adaptive_station_count":sum(len(w["adaptive_stations"]) for w in m),"max_deviation_m":maxdev,
             "max_grade_change_per_3m":maxgrade,"dense_samples":len(dense),"dense_max_deviation_m":dense_error,"max_way_mean_abs_m":max_mean,"over_1m_count":len(exceptions),"over_1m_samples":exceptions,"profile_pass":maxdev<=MAX_DEVIATION+1e-7 and dense_error<=MAX_DEVIATION+1e-7 and max_mean<=MAX_MEAN_DEVIATION+1e-7 and all(row["grade_limit_pass"] for row in m),
-            "way_metrics":m}
+            "way_metrics":m,"constraint_trials":constraint_trials,"platform_group_details":group_report,"worst_10_mdt_deviation":worst}
     write(a.output/"road-profiles.json",{"schema":1,"xy":xy.tolist(),"height_m":y.tolist(),"mdt_m":reference.tolist(),
-        "ways":ways,"junction_nodes":{str(n):nodes[n] for n in shared if n in nodes},"excluded_structures":excluded})
+        "ways":ways,"platform_group_details":group_report,"junction_nodes":{str(n):nodes[n] for n in shared if n in nodes},"excluded_structures":excluded})
     write(a.output/"road-validation.json",report)
-    print(json.dumps({k:v for k,v in report.items() if k not in ("way_metrics","over_1m_samples")}),flush=True)
+    print(json.dumps({k:v for k,v in report.items() if k not in ("way_metrics","over_1m_samples","platform_group_details")}),flush=True)
     # Keep candidate evidence even when the profile criteria fail; never approve it.
     corr=Corridor(xy,y,ways,shared_indices,groups=groups,parallel=parallel)
     if a.previous_carve and a.previous_carve.exists():
@@ -118,6 +142,8 @@ def main():
             and surface["dense_mesh_max_mdt_deviation_m"]<=1.0 and surface["dense_mesh_max_way_mean_mdt_deviation_m"]<=0.5
             and storage["gzip_bytes"]<1000000 and carve["missing_mandatory_edges"]==0)
     except Exception as exc:
+        import traceback
+        traceback.print_exc()
         report.update(surface_pass=False,carve_failure=f"{type(exc).__name__}: {exc}")
     report["pass"]=bool(report["profile_pass"] and report["surface_pass"])
     write(a.output/"road-validation.json",report)
