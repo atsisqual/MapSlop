@@ -7,6 +7,9 @@ on:
       - '.github/workflows/pages.yml'
       - 'tools/prepare-pedome.py'
       - 'tools/pedome-ui.js'
+      - 'tools/terrain-binary.mjs'
+      - 'tools/terrain_binary.py'
+      - 'tools/tin-runtime.mjs'
       - 'tests/browser-smoke.mjs'
       - 'package-lock.json'
       - 'data/pedome/pedome-osm.json'
@@ -20,6 +23,8 @@ concurrency:
 jobs:
   build:
     if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write # GitHub requires write access to retrieve draft release assets
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -43,9 +48,19 @@ jobs:
           git -C /tmp/three checkout --detach FETCH_HEAD
           mkdir -p /tmp/three-vendor
           cp -r /tmp/three/build /tmp/three/examples /tmp/three/LICENSE /tmp/three-vendor/
-      - name: Build actual Pedome map without external map services
-        run: python tools/prepare-pedome.py /tmp/nairobi /tmp/pedome --osm-json data/pedome/pedome-osm.json --flat --three-vendor /tmp/three-vendor
-      - name: Stage only runtime and public OSM source
+      - name: Retrieve only the approved immutable TIN derivative
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=geodata-dgt-terrain-agent-tin-compact-binary
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          mkdir -p /tmp/pages-terrain
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/pages-terrain --pattern terrain-tin.bin --pattern validation.json
+          python tools/verify-pages-terrain.py /tmp/pages-terrain
+      - name: Build actual Pedome map with the approved compact TIN
+        run: python tools/prepare-pedome.py /tmp/nairobi /tmp/pedome --osm-json data/pedome/pedome-osm.json --terrain-bin /tmp/pages-terrain/terrain-tin.bin --three-vendor /tmp/three-vendor
+      - name: Stage only runtime, public OSM source and verified compressed TIN
         shell: bash
         run: |
           set -euo pipefail
@@ -67,13 +82,20 @@ jobs:
               out=dst/rel
               out.parent.mkdir(parents=True,exist_ok=True)
               shutil.copy2(f,out)
-              if not rel.endswith('.js'): continue
+              if not rel.endswith(('.js','.mjs')): continue
               for name in re.findall(r"""(?:\bfrom\s*|\bimport\s*\(?\s*)['"]([^'"]+)['"]""",f.read_text(encoding='utf-8')):
                   if name.startswith('.'):
                       target=(f.parent/name).resolve()
                       if target.is_relative_to(src): pending.append(str(target.relative_to(src)))
                   elif name in aliases: pending.append(aliases[name])
                   elif name.startswith('three/addons/'): pending.append('vendor/three/examples/jsm/'+name[len('three/addons/'):])
+          # Serve the exact deterministic gzip payload, even if the CDN does not gzip .bin.
+          shutil.copy2('/tmp/pages-terrain/terrain-tin.bin.gz',dst/'js/terrain.bin.gz')
+          geodata=dst/'js/nairobi-geodata.js'
+          g=geodata.read_text(encoding='utf-8')
+          assert g.count("./terrain.bin'")==1
+          geodata.write_text(g.replace("./terrain.bin'","./terrain.bin.gz'"),encoding='utf-8')
+          assert not (dst/'js/terrain.bin').exists()
           shutil.copy2(src/'vendor/three/LICENSE',dst/'THREE-LICENSE.txt')
           shutil.copy2(src/'UPSTREAM-README.md',dst/'UPSTREAM-README.md')
           shutil.copy2('data/pedome/pedome-osm.json',dst/'pedome-osm.json')
@@ -114,14 +136,16 @@ jobs:
           <h1>MapSlop — prévia experimental de Pedome</h1>
           <p>Dados geográficos © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>, <a href="https://opendatacommons.org/licenses/odbl/1-0/">ODbL 1.0</a>. <a href="pedome-osm.json">Dados de origem</a> e <a href="js/nairobi-geodata.js">base derivada</a>. <a href="OSM-DATA.md">Proveniência</a>.</p>
           <p>Código adaptado de Slop Cities Nairobi (MIT declarado no README upstream) e Slop New York. <a href="LICENSE-CODE.txt">Licença</a> · <a href="UPSTREAM-README.md">README upstream</a> · <a href="THREE-LICENSE.txt">Three.js MIT</a> · <a href="https://github.com/atsisqual/MapSlop">Projeto e código de adaptação</a>.</p>
-          <p>Relevo plano provisório; alturas de edifícios maioritariamente estimadas. Sem rasters DGT, assets capturados de PortoSlop ou Nairobi, ou credenciais.</p>
+          <p>Terreno: <a href="https://www.dgterritorio.gov.pt/dados-abertos">© Direção-Geral do Território</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Derivado do MDT LiDAR de 0,5 m, recortado, reamostrado, triangulado e comprimido por MapSlop. <a href="https://dados.gov.pt/pt/datasets/dados-lidar-de-portugal-continental/">Fonte e licença</a>. Run de validação <a href="https://github.com/atsisqual/MapSlop/actions/runs/46063386111">46063386111</a>.</p>
+          <p>Alturas de edifícios maioritariamente estimadas. Sem rasters ou LAZ originais DGT, assets capturados de PortoSlop ou Nairobi, ou credenciais.</p>
           <p><a href="./?webgl">Voltar ao jogo</a></p></html>
           EOF
           python - <<'PY'
           from pathlib import Path
           p=Path('/tmp/site/MapSlop/index.html')
           s=p.read_text()
-          s=s.replace(' · Copernicus (quando usado)', ' · <a href="./ATTRIBUTION.html">Créditos e dados</a>')
+          assert 'DGT — MDT 0,5 m (uso experimental)' in s
+          s=s.replace('DGT — MDT 0,5 m (uso experimental)', '<a href="https://creativecommons.org/licenses/by/4.0/">© Direção-Geral do Território, CC BY 4.0</a> · <a href="./ATTRIBUTION.html">Créditos e dados</a>')
           # Give each release a new entry-point URL, including the HUD module.
           import os
           root=p.parent
@@ -148,6 +172,8 @@ jobs:
         env:
           MAPSLOP_TEST_URL: http://127.0.0.1:8080/MapSlop/mobile.html?webgl
           MAPSLOP_RESULTS: /tmp/pedome-results
+          MAPSLOP_EXPECT_TERRAIN: DGT MDT 0.5 m
+          MAPSLOP_LONG_DRIVE: '1'
         run: |
           set -euo pipefail
           mkdir -p /tmp/pedome-results
@@ -156,13 +182,10 @@ jobs:
           trap 'kill "$server" || true' EXIT
           for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/MapSlop/ >/dev/null; then break; fi; sleep 1; done
           node tests/browser-smoke.mjs
-      - name: Upload diagnostics and screenshots
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pedome-browser-evidence
-          path: /tmp/pedome-results/
-          if-no-files-found: warn
+          grep -Fq '© Direção-Geral do Território, CC BY 4.0' /tmp/site/MapSlop/mobile.html
+          grep -Fq '© Direção-Geral do Território, CC BY 4.0' /tmp/site/MapSlop/index.html
+          test "$(sha256sum /tmp/site/MapSlop/js/terrain.bin.gz | cut -d' ' -f1)" = 9009db14b6808e36f3457db525eef2589328ac2769fe1899a8d53598efc0758d
+      # No public diagnostics upload: deploy only the tested, curated site.
       - name: Upload tested static site
         uses: actions/upload-pages-artifact@v3
         with:
@@ -184,7 +207,7 @@ jobs:
           base="https://atsisqual.github.io/MapSlop"
           version="${GITHUB_SHA:0:12}"
           for i in {1..24}; do
-            if curl -fsSL --max-time 15 "$base/mobile.html?build=$version" -o /tmp/mobile.html && grep -Fq "pedome-$version.js" /tmp/mobile.html && curl -fsSL --max-time 15 "$base/js/pedome-ui-$version.js" -o /tmp/hud.js && grep -Fq 'data-drive="forward"' /tmp/hud.js; then
+            if curl -fsSL --max-time 15 "$base/mobile.html?build=$version" -o /tmp/mobile.html && grep -Fq "pedome-$version.js" /tmp/mobile.html && curl -fsSL --max-time 15 "$base/js/pedome-ui-$version.js" -o /tmp/hud.js && grep -Fq 'data-drive="forward"' /tmp/hud.js && grep -Fq '© Direção-Geral do Território, CC BY 4.0' /tmp/mobile.html && curl -fsSL --max-time 30 "$base/js/terrain.bin.gz?build=$version" -o /tmp/public-terrain.gz && test "$(sha256sum /tmp/public-terrain.gz | cut -d' ' -f1)" = 9009db14b6808e36f3457db525eef2589328ac2769fe1899a8d53598efc0758d; then
               echo "Public mobile entry and versioned HUD verified: $version"
               exit 0
             fi
