@@ -59,7 +59,7 @@ jobs:
           echo 'de37795151e47e5892b4ed8c701968f0bfe60f64f35d9142fc7b89c71ac633d0  /tmp/buildings-terrain/terrain-tin.bin' | sha256sum -c -
           make setup
           root=/tmp/dgt-building-results
-          .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi outputs/building-preview --osm-json "$root/height-preview-osm.json" --terrain-bin /tmp/buildings-terrain/terrain-tin.bin --three-vendor .cache/mapslop/three-vendor
+          .venv/bin/python tools/prepare-pedome.py .cache/mapslop/nairobi outputs/building-preview --osm-json "$root/height-preview-osm.json" --building-preview --terrain-bin /tmp/buildings-terrain/terrain-tin.bin --three-vendor .cache/mapslop/three-vendor
           cp outputs/building-preview/build-report.json "$root/preview-build-report.json"
           .venv/bin/python tools/verify-building-preview.py "$root/building-heights.json" outputs/building-preview/js/nairobi-geodata.js "$root/preview-height-verification.json"
           npx playwright install --with-deps chromium
