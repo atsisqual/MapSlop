@@ -8,3 +8,4 @@ click-plugins==1.1.1.2
 cligj==0.7.2
 pyparsing==3.2.3
 pydelatin==0.4.0
+scipy==1.15.3
