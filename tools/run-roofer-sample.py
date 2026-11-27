@@ -5,6 +5,8 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import os
+import stat
 import tarfile
 import tempfile
 import laspy
@@ -65,7 +67,17 @@ def main():
         candidates=[p for p in td.rglob("roofer") if p.is_file()]
         if len(candidates)!=1:raise ValueError("Unexpected Roofer archive layout")
         exe=candidates[0]
-        version=subprocess.check_output([str(exe),"--version"],text=True).strip()
+        # The archive may have been transferred without executable mode.
+        exe.chmod(exe.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        for lib in td.rglob("*.so*"):
+            if lib.is_file() and not lib.is_symlink():
+                lib.chmod(lib.stat().st_mode | stat.S_IRUSR | stat.S_IXUSR)
+        env=os.environ.copy()
+        libdirs=sorted({str(p.parent) for p in td.rglob("*.so*") if p.is_file()})
+        if libdirs:
+            env["LD_LIBRARY_PATH"]=os.pathsep.join(libdirs+([env["LD_LIBRARY_PATH"]] if env.get("LD_LIBRARY_PATH") else []))
+        version=subprocess.check_output([str(exe),"--version"],text=True,stderr=subprocess.STDOUT,env=env).strip()
+        print("ROOFER_VERSION",version,flush=True)
         output=root/"roofer-output"
         output.mkdir()
         command=[str(exe),"--id-attribute","osm_id","--h-terrain-attribute","h_ground","--lod22",
@@ -75,7 +87,7 @@ def main():
         cloud.mkdir()
         for name in names:(cloud/name).symlink_to((a.input/name).resolve())
         with (root/"roofer.log").open("w") as log:
-            rc=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,timeout=1800).returncode
+            rc=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,timeout=1800,env=env).returncode
         report={"roofer_version":version,"exit_code":rc,"inputs":inputs,"toolchain":assets,
                 "headers":headers,**summarize(output,ids)}
         (root/"roofer-summary.json").write_text(json.dumps(report,indent=2,allow_nan=False)+"\n")
