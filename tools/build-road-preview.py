@@ -91,9 +91,18 @@ def main():
         t,carve=deform(original,corr)
         t,storage=save(a.output/"terrain-road-preview.bin",t,compact=True)
         surface=check_surface(t,original,corr)
+        from terrain_tin import TinSampler
+        sampler=TinSampler(t)
+        mesh_err=np.abs(np.array([sampler(*p) for p in dense])-actual)
+        surface["dense_mesh_max_mdt_deviation_m"]=float(mesh_err.max())
+        surface["dense_mesh_max_way_mean_mdt_deviation_m"]=max(float(mesh_err[way_ids==way].mean()) for way in set(way_ids))
+        surface["dense_mesh_over_1m_count"]=int(np.count_nonzero(mesh_err>MAX_DEVIATION+1e-7))
+        surface["dense_mesh_over_1m_samples"]=[{**probe(i),"mesh_deviation_m":float(mesh_err[i])} for i in np.flatnonzero(mesh_err>MAX_DEVIATION+1e-7)]
         report.update(carve=carve,storage=storage,surface=surface,
             surface_pass=surface["transverse_samples"]>0 and surface["max_crossfall_degrees"]<=1
             and surface["max_centre_mesh_profile_delta_m"]<=0.1 and surface["max_junction_mesh_delta_m"]<=0.02 and surface["outside_max_change_m"]<=0.1
+            and surface["junction_platform_crossfall_samples"]>0 and surface["max_junction_platform_crossfall_degrees"]<=1
+            and surface["near_berm_outside_max_change_m"]<=0.1
             and storage["gzip_bytes"]<1000000 and carve["missing_mandatory_edges"]==0)
     except Exception as exc:
         report.update(surface_pass=False,carve_failure=f"{type(exc).__name__}: {exc}")
