@@ -126,6 +126,13 @@ def main():
     except Exception as exc:
         report['optional_historical_diagnostics_error']=f'{type(exc).__name__}: {exc}'
         print(report['optional_historical_diagnostics_error'],flush=True)
+    ramp_sections=[{"way":w["way"],"start_xz":xy[w["ids"][0]].tolist(),
+                    "ramps":[{"start_m":a,"end_m":b,"length_m":b-a} for a,b in p.ramps],
+                    "cores":[{"start_m":a,"end_m":b,"height_m":h} for a,b,h in p.cores]}
+                    for w,p in zip(ways,corr.profiles)]
+    report["ramp_sections"]=ramp_sections
+    p=a.output/"road-profiles.json"
+    profiles=json.loads(p.read_text());profiles["ramp_sections"]=ramp_sections;write(p,profiles)
     try:
         t,carve=deform(original,corr)
         t,storage=save(a.output/"terrain-road-preview.bin",t,compact=True)
@@ -151,7 +158,7 @@ def main():
         report.update(surface_pass=False,carve_failure=f"{type(exc).__name__}: {exc}")
     report["pass"]=bool(report["profile_pass"] and report["surface_pass"])
     write(a.output/"road-validation.json",report)
-    print(json.dumps({k:v for k,v in report.items() if k!="way_metrics"}),flush=True)
+    print(json.dumps({k:v for k,v in report.items() if k not in ("way_metrics","ramp_sections")}),flush=True)
     # Browser workflow evaluates the candidate even if an offline gate failed.
     return 0
 
