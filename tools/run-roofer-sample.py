@@ -31,6 +31,9 @@ def summarize(output,ids):
                         "roof_type":attrs.get("rf_roof_type"),"rmse_lod22":attrs.get("rf_rmse_lod22"),
                         "point_density":attrs.get("rf_pt_density"),"val3dity_lod22":attrs.get("rf_val3dity_lod22")}
     rows=[{"osm_id":key,**by_id.get(key,{"lod22_geometries":0,"reason":"missing_feature"})} for key in sorted(ids)]
+    for row in rows:
+        row["geometry_policy"]="roofer_lod22_candidate" if row["lod22_geometries"]>0 else "procedural_fallback"
+        if row["geometry_policy"]=="procedural_fallback":row["fallback_reason"]=row.get("roof_type") or row.get("reason") or "no_lod22_geometry"
     return {"requested":len(ids),"features_found":len(by_id),
             "with_lod22_geometry":sum(r["lod22_geometries"]>0 for r in rows),"rows":rows}
 
