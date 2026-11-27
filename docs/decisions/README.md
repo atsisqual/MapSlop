@@ -22,3 +22,4 @@ Modelo:
 - [0006 — Toolchain e licenças](0006-toolchain-reconstrucao-licencas.md)
 - [0007 — Pages e HUD](0007-pages-e-hud-tatil.md)
 - [0008 — PortoSlop como referência](0008-investigacao-portoslop-sem-reutilizacao.md)
+- [0009 — Motor local por git subtree (proposta)](0009-motor-subtree-proposta.md)
