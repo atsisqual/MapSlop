@@ -2,9 +2,10 @@
 import numpy as np
 from scipy.spatial import cKDTree
 from road_profiles import BERM
+from road_surface_policy import RAMP,junction_groups
 
 class Corridor:
-    def __init__(self,xy,y,ways,shared_indices=()):
+    def __init__(self,xy,y,ways,shared_indices=(),groups=None,parallel=None):
         pairs=[];widths=[];self.way_ids=[];self.way_names=[];self.segment_stations=[];self.ways=ways;self.xy=xy;self.y=y
         for w in ways:
             ids=w["ids"]
@@ -29,6 +30,8 @@ class Corridor:
                 radii[i]=max(radii.get(i,0),w["width_m"]/2)
         self.junction_radius=np.array([radii[i] for i in shared_indices])
         self.junction_tree=cKDTree(self.junction_xy) if len(self.junction_xy) else None
+        self.groups=groups if groups is not None else junction_groups(xy,ways,shared_indices)[0]
+        self.parallel=parallel
         # Use explicit non-overlapping, mitered station strips to define road heights.
         self.strip_vertices,self.strip_heights,self.strip_triangles=self.make_strips()
 
@@ -59,6 +62,23 @@ class Corridor:
         self.strip_tree=sh.STRtree(sh.buffer(self.strip_polys,0.012))
         self.platform_polys=sh.buffer(sh.points(self.junction_xy),self.junction_radius,quad_segs=4)
         self.platform_tree=sh.STRtree(sh.buffer(self.platform_polys,0.012))
+        self.group_polys=np.asarray([sh.union_all(self.platform_polys[g],grid_size=.01) for g in self.groups],dtype=object)
+        self.group_y=np.array([self.junction_y[g[0]] for g in self.groups])
+        self.parallel_poly=None
+        if self.parallel:
+            p=self.parallel
+            chosen=np.array([w in p["ways"] for w in self.way_ids]).repeat(2)
+            union=sh.union_all(self.strip_polys[chosen],grid_size=.01)
+            # Close narrow gaps between the parallel carriageways, not the whole median.
+            union=sh.union_all([union,sh.buffer(sh.buffer(union,.6),-.6)],grid_size=.01)
+            axis=p["axis"];normal=axis[::-1]*np.array([-1,1])
+            def section(lo,hi):
+                return sh.Polygon([axis*lo+normal*(-2000),axis*hi+normal*(-2000),axis*hi+normal*2000,axis*lo+normal*2000])
+            self.parallel_poly=sh.intersection(union,section(p["lo"],p["hi"]),grid_size=.01)
+            self.parallel_lines=[]
+            for s in sorted(set([p["lo"],p["hi"],*p["stations"]])):
+                if p["lo"]<=s<=p["hi"]:
+                    self.parallel_lines.append(sh.intersection(sh.LineString([axis*s-normal*2000,axis*s+normal*2000]),self.parallel_poly,grid_size=.01))
 
     def target(self,q,natural,platforms=True):
         out=np.asarray(natural,dtype=float).copy();weights=np.zeros(len(q))
@@ -75,7 +95,7 @@ class Corridor:
             height=self.y0[k[j]]+u[j]*(self.y1[k[j]]-self.y0[k[j]])
             out[i]=natural[i]+blend*(height-natural[i]);weights[i]=blend
         # Blend toward the single common junction elevation inside its footprint.
-        if self.junction_tree is not None:
+        if self.junction_tree is not None and (not platforms or not hasattr(self,'group_polys')):
             d,idx=self.junction_tree.query(q)
             radius=self.junction_radius[idx]
             v=1-np.clip((d-radius)/BERM,0,1) if platforms else 1-np.clip((d-radius*0.5)/np.maximum(radius*0.5,0.01),0,1)
@@ -103,15 +123,28 @@ class Corridor:
                 u=(v[0]*e[1]-v[1]*e[0])/det;w=(d[0]*v[1]-d[1]*v[0])/det
                 out[i]=(1-u-w)*self.strip_heights[ids[0]]+u*self.strip_heights[ids[1]]+w*self.strip_heights[ids[2]]
                 weights[i]=1
-            # Explicit platform polygons win over strips. A shared vertex is flat
-            # inside a junction; transition uses the existing outer berm only.
-            pp,jj=self.platform_tree.query(points,predicate="intersects")
-            chosen={}
-            for i,j in zip(pp,jj):
-                rank=(float(np.linalg.norm(q[i]-self.junction_xy[j])),int(j))
-                if i not in chosen or rank<chosen[i][0]:chosen[i]=(rank,j)
-            for i,(_,j) in chosen.items():
-                out[i]=self.junction_y[j];weights[i]=1
+            if self.parallel_poly is not None:
+                mask=sh.intersects(sh.buffer(self.parallel_poly,.012),points)
+                p=self.parallel
+                out[mask]=np.interp(q[mask]@p["axis"],p["stations"],self.y[p["ids"]])
+                weights[mask]=1
+            # Apply ramps AFTER assigning the road plane. Each merged core has a
+            # single LP height; C1 smoothstep over six metres on the road.
+            # Outside the pavement the natural berm remains 2.5m.
+            road=weights>=1-1e-9
+            total=np.zeros(len(q));summed=np.zeros(len(q));maxw=np.zeros(len(q))
+            for poly,h in zip(self.group_polys,self.group_y):
+                dist=sh.distance(poly,points)
+                reach=np.where(road,RAMP,BERM)
+                v=1-np.clip(dist/reach,0,1);v=v*v*(3-2*v)
+                total+=v;summed+=v*h;maxw=np.maximum(maxw,v)
+            mask=total>0
+            out[mask]=(1-maxw[mask])*out[mask]+maxw[mask]*summed[mask]/total[mask]
+            weights=np.maximum(weights,maxw)
+            # No averaging with a different ramp inside a core.
+            for poly,h in zip(self.group_polys,self.group_y):
+                mask=sh.intersects(sh.buffer(poly,.012),points)
+                out[mask]=h;weights[mask]=1
         return out,weights
 
     def cross_points(self):
@@ -182,7 +215,9 @@ def deform(t,corridor):
         return sh.intersection(sh.union_all(np.concatenate([segments,platforms]),grid_size=0.01),domain,grid_size=0.01)
     corridor.install_strips()
     platform_shapes=corridor.platform_polys
-    paved=sh.intersection(sh.union_all(np.concatenate([corridor.strip_polys,platform_shapes]),grid_size=0.01),domain,grid_size=0.01)
+    shapes=list(corridor.strip_polys)+list(platform_shapes)
+    if corridor.parallel_poly is not None:shapes.append(corridor.parallel_poly)
+    paved=sh.intersection(sh.union_all(shapes,grid_size=0.01),domain,grid_size=0.01)
     outer=sh.intersection(sh.union_all([envelope(BERM),sh.buffer(paved,BERM,quad_segs=3)],grid_size=0.01),domain,grid_size=0.01)
     # Split at stations with transverse lines; no additional midpoint fan or duplicate original interior samples.
     normal=corridor.d[:,::-1]*np.array([-1,1]);normal/=np.sqrt(corridor.length2)[:,None]
@@ -202,9 +237,19 @@ def deform(t,corridor):
     internal=[sh.boundary(paved),sh.boundary(outer),sh.boundary(domain)]
     platform_union=sh.union_all(platform_shapes,grid_size=0.01)
     internal.append(sh.boundary(platform_union))
+    # Add node anchors explicitly, and intermediate ramp contours clipped to pavement.
+    for p,r in zip(corridor.junction_xy,corridor.junction_radius):
+        for d in (np.array([1.,0.]),np.array([0.,1.])):internal.append(sh.LineString([p-d*r*.5,p,p+d*r*.5]))
+    for poly in corridor.group_polys:
+        for d in (1.5,3.,4.5,6.):
+            internal.append(sh.intersection(sh.boundary(sh.buffer(poly,d,quad_segs=3)),paved,grid_size=.01))
     # No redundant axis or cross-section vertices in flat platforms. Strip
     # triangle boundaries preserve longitudinal planes, with no extra midpoints.
     strips=sh.difference(sh.boundary(corridor.strip_polys),platform_union,grid_size=0.01)
+    if corridor.parallel_poly is not None:
+        strips=sh.difference(strips,corridor.parallel_poly,grid_size=.01)
+        internal.append(sh.boundary(corridor.parallel_poly))
+        internal.extend(sh.difference(np.asarray(corridor.parallel_lines,dtype=object),platform_union,grid_size=.01))
     internal.extend(strips)
     inside=sh.intersection(np.asarray(internal,dtype=object),domain,grid_size=0.01)
     noded=sh.union_all(np.concatenate([inside,clipped,old_lines[~hit]]),grid_size=0.01)
@@ -252,12 +297,14 @@ def check_surface(t,original,corridor,legacy=False):
     mask=(centre[:,0]>x0+15)&(centre[:,0]<x1-15)&(centre[:,1]>z0+15)&(centre[:,1]<z1-15)
     # Exclude intersections/overlapping roads from straight transverse check; report how many.
     candidates=np.flatnonzero(mask)
-    slopes=[];profile_error=[];all_slopes=[];centre_rows=[]
+    slopes=[];profile_error=[];all_slopes=[];centre_rows=[];target_errors=[]
     from terrain_grid import ORIGIN,KX,KY
     for i in candidates:
         p=centre[i];half=corridor.half[i]
         junction_distance=float(corridor.junction_tree.query(p)[0]) if corridor.junction_tree is not None else None
         near_junction=junction_distance is not None and junction_distance<2*half
+        target=float(corridor.target(np.array([p]),np.array([old(*p)]))[0][0])
+        target_errors.append(abs(s(*p)-target))
         left=p-normal[i]*half*0.8;right=p+normal[i]*half*0.8
         yl=s(*left);yr=s(*right)
         angle=abs(float(np.degrees(np.arctan2(yr-yl,1.6*half))))
@@ -272,7 +319,8 @@ def check_surface(t,original,corridor,legacy=False):
         if near_junction:continue
         slopes.append(row)
         delta=abs(s(*p)-(corridor.y0[i]+corridor.y1[i])/2)
-        profile_error.append(delta)
+        # Keep original longitudinal delta in row; gate the ramp-adjusted surface target.
+        profile_error.append(abs(s(*p)-target))
         centre_rows.append({**row,"centre_profile_delta_m":float(delta),"target_delta_m":float(abs(s(*p)-corridor.target(np.array([p]),np.array([old(*p)]))[0][0]))})
     # Check a deterministic set away from the corridor, where a retriangulation may still change the surface.
     xx,zz=np.meshgrid(np.linspace(x0,x1,101),np.linspace(z0,z1,101))
@@ -306,5 +354,6 @@ def check_surface(t,original,corridor,legacy=False):
             "worst_10_crossfall":sorted(slopes,key=lambda r:-r["crossfall_degrees"])[:10],
             "all_crossfall_samples":len(all_slopes),"worst_10_all_crossfall":sorted(all_slopes,key=lambda r:-r["crossfall_degrees"])[:10],
             "max_centre_mesh_profile_delta_m":max(profile_error,default=None),
+            "max_centre_mesh_target_delta_m":max(target_errors,default=None),
             "worst_10_centre_delta":sorted(centre_rows,key=lambda r:-r["centre_profile_delta_m"])[:10],
             "outside_samples":len(outside),"outside_max_change_m":float(delta.max(initial=0))}
