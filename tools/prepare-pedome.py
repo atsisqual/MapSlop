@@ -74,6 +74,8 @@ def main():
     patch(f,'if (d < CORE_R && area > 250) return Math.round(4 + r * r * 10); // 4..14, skewed low','if (area > 250) return 1 + (r > 0.65 ? 1 : 0); // conservative rural estimate')
     patch(f,'if (d < CORE_R * 1.6 && area > 150) return Math.round(2 + r * 4); // 2..6','if (area > 150) return 1 + (r > 0.5 ? 1 : 0);')
     patch(f,'if (!sight && !(b && b.h > 40)) continue;','if (!sight && !b) continue;')
+    # Keep measured building heights to centimetres; upstream q() rounds to decimetres.
+    patch(f,'const b = { id: el.id, ring: flat(r), h: q(h) };','const b = { id: el.id, ring: flat(r), h: Math.round(h * 100) / 100 };')
     run('node','tools/build-geodata.mjs',cwd=out)
     geo_path=out/'js/nairobi-geodata.js'; gs=geo_path.read_text(); geo=json.loads(gs.split('export const GEO = ',1)[1].strip().removesuffix(';'))
     if not geo['roadGraph']['links'] or not geo['buildings']: raise ValueError('Map has no usable road graph or buildings')
