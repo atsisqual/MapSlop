@@ -52,6 +52,9 @@ def parallel_policy(xy,ways):
     if not a or not b:return None,[]
     aa=np.array(a["ids"]);bb=np.array(b["ids"]);axis=xy[aa[-1]]-xy[aa[0]]
     axis/=np.linalg.norm(axis)
+    other=xy[bb[-1]]-xy[bb[0]];other/=np.linalg.norm(other)
+    if np.dot(other,axis)<0:other=-other
+    axis=axis+other;axis/=np.linalg.norm(axis)
     s=xy[aa]@axis
     if np.any(np.diff(s)<=0):raise ValueError("Parallel reference station not monotonic")
     t=xy[bb]@axis
