@@ -50,7 +50,7 @@ try {
       const points=recorder.samples;
       const summarize=key=>({max:points.reduce((m,p)=>Math.max(m,p[key]),0),mean:points.reduce((s,p)=>s+p[key],0)/points.length});
       const values=t.kind==='tin'?t.vertices.filter((v,i)=>i%3===1):t.heights;
-      return {source:t.source,kind:t.kind||'grid',cell:t.cell,flat:window.mapslop.GEO.frame.flatTerrain,
+      return {source:t.source,kind:t.kind||'grid',cell:t.cell,decodeMetrics:t.decodeMetrics||null,flat:window.mapslop.GEO.frame.flatTerrain,
         spread:values.reduce((r,v)=>[Math.min(r[0],v),Math.max(r[1],v)],[Infinity,-Infinity]),
         contact:[before,after].map(s=>Math.abs(s.y-heightAt(s.x,s.z))),contactSamples:points.length,contactDuringDrive:summarize('terrain'),collisionSurfaceDuringDrive:summarize('surface')};
     },{before:report.before,after:report.after});
