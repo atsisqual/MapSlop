@@ -19,6 +19,8 @@ API = BASE + "/dgt-be/v1"
 AUTH = "https://auth.cdd.dgterritorio.gov.pt"
 AUTH_PATH = AUTH + "/realms/dgterritorio/protocol/openid-connect/auth"
 ASSET_HOSTS = {"cdd.dgterritorio.gov.pt", "stratus.d.incd.pt"}
+# Observed legitimate authenticated DGT redirect to ACNCA object storage.
+DOWNLOAD_HOSTS = ASSET_HOSTS | {"stor-002.a.acnca.pt"}
 TILES = ("178494", "178495", "179494", "179495")
 ITEMS = [(c, f"{c}-{n}-07-2025") for c in ("MDT-50cm", "MDS-50cm") for n in TILES]
 ITEMS += [("ORTOS-2025", f"ORTOS-2025-cog-25cm-{n}") for n in ("084-4", "084-2")]
@@ -105,7 +107,7 @@ def download(session,url,dest):
     try:
         with session.get(url,stream=True,timeout=(20,120)) as r:
             r.raise_for_status()
-            if urlsplit(r.url).scheme != "https" or urlsplit(r.url).hostname not in ASSET_HOSTS:
+            if urlsplit(r.url).scheme != "https" or urlsplit(r.url).hostname not in DOWNLOAD_HOSTS:
                 raise RuntimeError("Destino não autorizado pelo cliente: "+str(urlsplit(r.url).hostname)+"; tipo: "+r.headers.get("Content-Type","").split(";")[0])
             chunks=r.iter_content(1024*1024)
             first=next(chunks,b"")
