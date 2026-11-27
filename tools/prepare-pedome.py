@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""MapSlop P0 adapter for the inspected Nairobi archive. Python 3 + Node 22.
+No PortoSlop code or data is used. Default downloads real OSM; fixture is testing only.
+"""
+import argparse, json, math, pathlib, re, shutil, subprocess, urllib.request, urllib.parse
+P=pathlib.Path
+BBOX=(41.4105,-8.395,41.4195,-8.383)
+LAT,LON=41.41501,-8.38809 # church; OSM way 149406360
+ROAD='motorway|trunk|primary|secondary|tertiary|unclassified|residential|service|living_street|pedestrian|footway|path|cycleway|steps|track'
+B=','.join(map(str,BBOX))
+CLAUSES=[f'way["highway"~"^({ROAD})(_link)?$"]({B})',f'nwr["building"]({B})',f'nwr["building:part"]({B})',f'relation["type"="building"]({B})',f'nwr["landuse"]({B})',f'nwr["natural"]({B})',f'nwr["leisure"]({B})',f'nwr["amenity"]({B})',f'nwr["tourism"]({B})',f'nwr["historic"]({B})',f'node["highway"]({B})',f'way["waterway"]({B})',f'nwr["railway"]({B})',f'way["footway"="crossing"]({B})']
+QUERY='[out:json][timeout:90];('+';'.join(CLAUSES)+';);out geom;'
+
+def run(*cmd,cwd=None): subprocess.run(cmd,cwd=cwd,check=True)
+def write(path,obj): path.write_text(json.dumps(obj,ensure_ascii=False),encoding='utf-8')
+def patch(path,old,new):
+    s=path.read_text(encoding='utf-8')
+    if s.count(old)!=1: raise ValueError(f'Upstream changed: {path.name}: {old[:90]}')
+    path.write_text(s.replace(old,new,1),encoding='utf-8')
+def fixture():
+    def way(i,t,pts,ids): return dict(type='way',id=i,tags=t,nodes=ids,geometry=[dict(lat=a,lon=b) for a,b in pts])
+    return {'elements':[
+      way(1,{'highway':'residential','name':'TESTE — via fictícia'},[(LAT-.002,LON),(LAT,LON),(LAT+.002,LON+.001)],[1,2,3]),
+      way(2,{'highway':'residential','name':'TESTE — cruzamento'},[(LAT,LON-.002),(LAT,LON),(LAT,LON+.002)],[4,2,5]),
+      way(3,{'building':'house','building:levels':'2'},[(LAT+.0004,LON+.0002),(LAT+.0004,LON+.0004),(LAT+.0006,LON+.0004),(LAT+.0006,LON+.0002),(LAT+.0004,LON+.0002)],[6,7,8,9,6]) ]}
+def get_osm():
+    for endpoint in ['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter']:
+        try:
+            req=urllib.request.Request(endpoint,data=urllib.parse.urlencode({'data':QUERY}).encode(),headers={'User-Agent':'MapSlop/0.1 (interactive geographic prototype)'})
+            with urllib.request.urlopen(req,timeout=120) as r: return json.load(r)
+        except Exception as e: print(endpoint,e)
+    raise RuntimeError('Não foi possível obter OSM. Guarda a resposta Overpass JSON e usa --osm-json.')
+def flat_dem():
+    s,w,n,e=BBOX; step=.00025; nx=math.ceil((e-w+.02)/step); ny=math.ceil((n-s+.02)/step)
+    return dict(source='SYNTHETIC FLAT TEST TERRAIN',west=w-.01,north=n+.01,dx=step,dy=-step,nx=nx,ny=ny,values=[0]*(nx*ny))
+def main():
+    p=argparse.ArgumentParser(); p.add_argument('upstream',type=P); p.add_argument('output',type=P); p.add_argument('--osm-json',type=P); p.add_argument('--dem-json',type=P); p.add_argument('--flat',action='store_true'); p.add_argument('--fixture',action='store_true'); p.add_argument('--three-vendor',type=P,help='Optional local Three.js tree (experimental version compatibility)'); a=p.parse_args()
+    if a.output.exists(): p.error('output must not exist; no existing files overwritten')
+    if a.fixture and a.osm_json: p.error('fixture and osm-json are mutually exclusive')
+    src=a.upstream.resolve(); out=a.output.resolve()
+    data=fixture() if a.fixture else json.loads(a.osm_json.read_text(encoding='utf-8-sig')) if a.osm_json else get_osm()
+    els=data.get('elements');
+    if not isinstance(els,list) or data.get('remark'): raise ValueError('Invalid/partial Overpass result')
+    def t(e): return e.get('tags',{})
+    def road(e): return e['type']=='way' and t(e).get('highway','').removesuffix('_link') in ROAD.split('|') and len(e.get('geometry',[]))>=2 and len(e.get('nodes',[]))==len(e['geometry'])
+    def area(e): return e['type']!='node' and (t(e).get('leisure') in ['park','garden','pitch','stadium'] or t(e).get('landuse') in ['grass','forest','recreation_ground','cemetery'] or t(e).get('natural') in ['water','wood','scrub','grassland'] or t(e).get('amenity')=='parking')
+    groups={'roads':road,'buildings':lambda e:'building' in t(e),'building_parts':lambda e:'building:part' in t(e) or t(e).get('type')=='building','areas':area,'landmarks':lambda e:bool(t(e).get('name')) and any(k in t(e) for k in ['tourism','historic','amenity','building']),'street':lambda e:t(e).get('highway') in ['traffic_signals','crossing','street_lamp'] or t(e).get('crossing')=='traffic_signals' or t(e).get('footway')=='crossing' or t(e).get('natural') in ['tree','tree_row'],'water_rail':lambda e:bool(t(e).get('waterway') or t(e).get('railway') in ['rail','light_rail','platform','station','halt'] or t(e).get('highway')=='bus_stop' or t(e).get('amenity')=='bus_station')}
+    selected={k:[e for e in els if fn(e)] for k,fn in groups.items()}
+    if not selected['roads'] or not selected['buildings']: raise ValueError('Empty roads/buildings; check coverage')
+    for folder in ['js','css','tools']:
+        shutil.copytree(src/folder,out/folder,ignore=shutil.ignore_patterns('data','nairobi-models.bin','nairobi-geodata.js','nairobi-models.js'))
+    for f in ['index.html','README.md','package.json','package-lock.json']:
+        shutil.copy2(src/f,out/f)
+    shutil.copy2(src/'README.md',out/'UPSTREAM-README.md')
+    if (src/'LICENSE').exists(): shutil.copy2(src/'LICENSE',out/'LICENSE.upstream')
+    (out/'tools/data').mkdir()
+    for k,v in selected.items(): write(out/f'tools/data/osm_{k}.json',{'elements':v})
+    write(out/'tools/bbox.json',dict(zip(['south','west','north','east'],BBOX)))
+    if a.dem_json: shutil.copy2(a.dem_json,out/'tools/data/dem_glo30.json')
+    elif a.flat or a.fixture: write(out/'tools/data/dem_glo30.json',flat_dem())
+    else:
+        run('npm.cmd' if __import__('os').name=='nt' else 'npm','ci',cwd=out)
+        run('node','tools/fetch-terrain.mjs',cwd=out)
+    dem=json.loads((out/'tools/data/dem_glo30.json').read_text()); vals=dem['values']; nx=dem['nx']; ny=dem['ny']
+    if nx<2 or ny<2 or len(vals)!=nx*ny or any(not math.isfinite(v) or abs(v)>9000 for v in vals): raise ValueError('Invalid DEM')
+    if not (dem['dx']>0 and dem['dy']<0 and dem['west']<=BBOX[1] and dem['west']+dem['dx']*nx>=BBOX[3] and dem['north']>=BBOX[2] and dem['north']+dem['dy']*ny<=BBOX[0]): raise ValueError('DEM does not cover Pedome')
+    f=out/'tools/build-geodata.mjs'
+    patch(f,'const LAT0 = -1.28866;',f'const LAT0 = {LAT};'); patch(f,'const LON0 = 36.82307;',f'const LON0 = {LON};')
+    patch(f,"origin: 'Kenyatta International Convention Centre'","origin: 'Pedome — Igreja de São Pedro'"); patch(f,"drivesOn: 'left'","drivesOn: 'right'")
+    patch(f,'if (d < CORE_R && area > 250) return Math.round(4 + r * r * 10); // 4..14, skewed low','if (area > 250) return 1 + (r > 0.65 ? 1 : 0); // conservative rural estimate')
+    patch(f,'if (d < CORE_R * 1.6 && area > 150) return Math.round(2 + r * 4); // 2..6','if (area > 150) return 1 + (r > 0.5 ? 1 : 0);')
+    patch(f,'if (!sight && !(b && b.h > 40)) continue;','if (!sight && !b) continue;')
+    run('node','tools/build-geodata.mjs',cwd=out)
+    geo_path=out/'js/nairobi-geodata.js'; gs=geo_path.read_text(); geo=json.loads(gs.split('export const GEO = ',1)[1].strip().removesuffix(';'))
+    if not geo['roadGraph']['links'] or not geo['buildings']: raise ValueError('Map has no usable road graph or buildings')
+    geo['frame']['testFixture']=a.fixture; geo['frame']['flatTerrain']=bool(a.flat or a.fixture); geo['frame']['demSource']=dem.get('source','unknown');
+    geo_path.write_text('// Geographic data © OpenStreetMap contributors, ODbL 1.0 (real mode). See upstream README for terrain attribution.\nexport const GEO = '+json.dumps(geo,ensure_ascii=False)+';\n',encoding='utf-8')
+    (out/'js/nairobi-models.js').write_text('export const MODEL_HEIGHTS = {};\nexport const MODEL_BUILDINGS = [];\n')
+    f=out/'js/controllers.js'; patch(f,'if (l.name !== name) continue;',"if (name && l.name !== name) continue;\n    if (l.tunnel || l.bridge || (l.layer || 0) !== 0 || !['residential','unclassified','tertiary','secondary','living_street'].includes(l.kind)) continue;")
+    patch(f,'const len = Math.hypot(best.dx, best.dz);',"if (!best && name) return roadSpawn(null, x, z);\n  if (!best) throw new Error('No surface road for spawn');\n  const len = Math.hypot(best.dx, best.dz);")
+    patch(f,'const fx = best.dx / len, fz = best.dz / len;', 'const dir = best.l.oneway === -1 ? -1 : 1;\n  const fx = dir * best.dx / len, fz = dir * best.dz / len;')
+    patch(f,'const off = best.l.oneway ? -best.l.w / 4 : best.l.w / 4;', 'const off = best.l.oneway ? 0 : -best.l.w / 4;'); patch(f,"const SPAWN = roadSpawn('Kenyatta Avenue', -110, -505);","const SPAWN = roadSpawn(null, 0, 0);")
+    patch(f,'const [x, z] = [-560, 80];','const [x, z] = [SPAWN[0], SPAWN[1]];')
+    f=out/'js/city-config.js'; patch(f,"if (SHORT[l.name]) out.push({ name: l.name === 'Uhuru park' ? 'Uhuru Park' : l.name, short: SHORT[l.name], x: l.x, z: l.z });","out.push({ name: l.name, short: l.name, x: l.x, z: l.z });")
+    patch(f,"place || roads || 'Nairobi'","place || roads || 'Pedome'")
+    s=f.read_text(); s,n=re.subn(r'const TELEPORT_LOCATIONS = Object\.fromEntries\(\[.*?\]\s*\.map\(.*?\)\);',"const TELEPORT_LOCATIONS = {};",s,count=1,flags=re.S); assert n==1; f.write_text(s,encoding='utf-8')
+    # Minimal world shell keeps upstream rendering, steering, chase camera and collision routines; no Kenya traffic.
+    (out/'js/pedome.js').write_text('''import * as THREE from 'three/webgpu';
+import { GEO } from './nairobi-geodata.js';
+import { buildGround } from './ground.js';
+import { buildBuildings } from './buildings.js';
+import { buildBridges } from './bridges.js';
+import { buildStreets } from './streets.js';
+import { buildRoadNetwork } from './road-network.js';
+import { buildColliders } from './colliders.js';
+import { ThirdPersonControllerManager, roadSpawn } from './controllers.js';
+import { CameraSystem } from './cameras.js';
+import { GamepadControls } from './gamepad-controls.js';
+const status=document.querySelector('#status');
+try {
+ const renderer=new THREE.WebGPURenderer({antialias:true,forceWebGL:!navigator.gpu||new URLSearchParams(location.search).has('webgl')});
+ renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); renderer.setSize(innerWidth,innerHeight); document.body.append(renderer.domElement); await renderer.init();
+ const scene=new THREE.Scene(); scene.background=new THREE.Color(0xb8d4ef); scene.fog=new THREE.Fog(0xb8d4ef,350,1100);
+ scene.add(new THREE.HemisphereLight(0xffffff,0x77805d,2.2)); const sun=new THREE.DirectionalLight(0xfff0d8,2.4); sun.position.set(90,140,50); scene.add(sun);
+ scene.add(buildGround(renderer)); scene.add(await buildBuildings()); const bridges=buildBridges(); scene.add(bridges);
+ const world=buildColliders(bridges.userData.piers); const network=buildRoadNetwork(); buildStreets(scene,network,[]);
+ const controllers=new ThirdPersonControllerManager(scene,world); const cameras=new CameraSystem(renderer.domElement,controllers); const camera=cameras.camera; const gamepad=new GamepadControls(controllers,cameras);
+ window.mapslop={GEO,controllers,camera,world}; const spawn=roadSpawn(null,0,0); controllers.teleportActiveTo(spawn[0],spawn[1],spawn[2]);
+ window.addEventListener('keydown',e=>{if(e.code==='KeyR')controllers.teleportActiveTo(spawn[0],spawn[1],spawn[2]);});
+ window.addEventListener('resize',()=>{renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();});
+ let last=performance.now(); renderer.setAnimationLoop(now=>{const dt=Math.max(0,Math.min(.05,(now-last)/1000));last=now;gamepad.update(dt);controllers.update(dt,now/1000); cameras.update(dt,now/1000);renderer.render(scene,camera);status.textContent=(GEO.frame.testFixture?'TESTE FICTÍCIO — ':GEO.frame.flatTerrain?'PEDOME — relevo plano — ':'PEDOME — ')+Math.round(Math.abs(controllers.getActiveEntity().speed)*3.6)+' km/h | WASD / setas · comando · R reposicionar'; window.mapslop.ready=true;});
+} catch(e){status.textContent='Erro: '+e.message; console.error(e);throw e;}
+''',encoding='utf-8')
+    html=(out/'index.html').read_text(); imp=re.search(r'<script type="importmap">.*?</script>',html,re.S).group()
+    if a.three_vendor:
+        shutil.copytree(a.three_vendor,out/'vendor/three')
+        imp=re.sub(r'https://cdn\.jsdelivr\.net/gh/mrdoob/three\.js@[^/]+/', './vendor/three/',imp)
+    (out/'index.html').write_text('''<!doctype html><html lang="pt"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MapSlop | Pedome P0</title>'''+imp+'''<style>html,body{margin:0;overflow:hidden;background:#202b36;font:15px system-ui;color:#fff}canvas{display:block}#status,#credits{position:fixed;z-index:1;background:#15202bdc;padding:10px;border-radius:6px;left:10px}#status{top:10px}#credits{bottom:10px;font-size:12px}a{color:white}</style><div id="status">A construir mapa…</div><div id="credits">MapSlop P0 · <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a> · Slop Nairobi / Mr.doob · Copernicus (quando usado)</div><script type="module" src="./js/pedome.js"></script></html>''',encoding='utf-8')
+    write(out/'build-report.json',dict(fixture=a.fixture,flat=geo['frame']['flatTerrain'],bbox=BBOX,roads=len(geo['roads']),buildings=len(geo['buildings']),nodes=len(geo['roadGraph']['nodes']),links=len(geo['roadGraph']['links']),estimatedBuildings=sum(b.get('est',0) for b in geo['buildings'])))
+    shutil.copytree(src/'tests',out/'tests')
+    # Update only the stub fixture, not controller assertions.
+    testfile=out/'tests/controllers.test.cjs'; patch(testfile,"name: 'Kenyatta Avenue', oneway:","name: 'TESTE', kind: 'residential', oneway:")
+    run('npm.cmd' if __import__('os').name=='nt' else 'npm','test',cwd=out)
+    run('node','--input-type=module','-e',"import {buildRoadNetwork} from './js/road-network.js'; import {layoutStreets,streetSoups} from './js/street-geometry.js'; const net=buildRoadNetwork(); const l=layoutStreets(net.streets); const s=streetSoups(l); if(!s.asphalt.index.length) throw Error('No road geometry'); console.log('Road geometry:',net.streets.edges.length,'edges',s.asphalt.index.length/3,'triangles');",cwd=out)
+    print('BUILD:',out, (out/'build-report.json').read_text()); print('Serve: python -m http.server 8080 --directory',out)
+if __name__=='__main__': main()
