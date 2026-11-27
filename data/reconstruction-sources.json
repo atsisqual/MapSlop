@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "source": "User-provided GitHub source snapshots; ZIP comments inspected for exact commit IDs.",
+  "archives": [
+    {
+      "repo": "3DBAG/roofer",
+      "branch": "main",
+      "commit": "4c7e18312c4eb90ad31be1b8e523726ba646b333",
+      "name": "roofer-main.zip",
+      "bytes": 3434109,
+      "sha256": "0a64fcd19410be4e92ca211b347e9e0b2b3b43753f55b44a01a77d3f04503e56",
+      "license": "GPL-3.0"
+    },
+    {
+      "repo": "tudelft3d/City4CFD",
+      "branch": "main",
+      "commit": "b0763985b03b90d3e58665a9632ae543f725e17d",
+      "name": "City4CFD-main.zip",
+      "bytes": 131761175,
+      "sha256": "36e496106b6590338e04e6594c25eacf1806fa1717359052e6f0c8fdbb67d469",
+      "license": "AGPL-3.0"
+    },
+    {
+      "repo": "tudelft3d/City3D",
+      "branch": "main",
+      "commit": "4e91afb85b7678ea34d6c1346e42f91264b42ba0",
+      "name": "City3D-main.zip",
+      "bytes": 69497555,
+      "sha256": "9bf4b4c89fa2ac4cc49ae3ca2af9b0bf241b2557fbd2f97587ae45f0d0aa3f04",
+      "license": "GPL-3.0"
+    },
+    {
+      "repo": "tordanik/OSM2World",
+      "branch": "master",
+      "commit": "8a1c17e6a25f5238ca532c9460f69401151b4fd7",
+      "name": "OSM2World-master.zip",
+      "bytes": 3915929,
+      "sha256": "e0ac980281a27a40e38eca176202ae6685e16371a0ffed350ae82167b45b49e0",
+      "license": "MIT"
+    },
+    {
+      "repo": "tudelft3d/3dfier",
+      "branch": "master",
+      "commit": "9f7fece6bb2624095dc7e7059defa1a9dbd4276e",
+      "name": "3dfier-master.zip",
+      "bytes": 36402288,
+      "sha256": "2515cdce3572b0d2b3649555c4a1d7504f47602370ef3eb98cc11e2511fad3d6",
+      "license": "GPL-3.0"
+    },
+    {
+      "repo": "cityjson/cjio",
+      "branch": "master",
+      "commit": "35728539127f71b1d5ae458169ff84050e5e20ad",
+      "name": "cjio-master.zip",
+      "bytes": 8001075,
+      "sha256": "9e02df04a4c7d37403eeaf7bee27fb0ad9a4947bfae8661d1d1755bbd316700e",
+      "license": "MIT"
+    },
+    {
+      "repo": "domlysz/BlenderGIS",
+      "branch": "master",
+      "commit": "2add45ffec547f419cc77563a7fe976fd6c8f0c4",
+      "name": "BlenderGIS-master.zip",
+      "bytes": 422742,
+      "sha256": "62fe4c73c1fee2d825580500b77b9adc85b5b9b891ec829831cced0f7ae6316b",
+      "license": "GPL-3.0"
+    }
+  ],
+  "binary": {
+    "repo": "3DBAG/roofer",
+    "tag": "v1.0.0",
+    "name": "roofer-linux-x86_64-v1.0.0.tar.gz",
+    "bytes": 20291139,
+    "sha256": "85834b289467b0e583e2b9c59a725c97ef39dc03c0c0a12417a8a0666e1aa0a1"
+  }
+}
