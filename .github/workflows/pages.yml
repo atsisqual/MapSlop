@@ -9,6 +9,7 @@ on:
       - 'tools/pedome-ui.js'
       - 'tools/terrain-binary.mjs'
       - 'tools/terrain_binary.py'
+      - 'tools/verify-pages-terrain.py'
       - 'tools/tin-runtime.mjs'
       - 'tests/browser-smoke.mjs'
       - 'package-lock.json'
@@ -182,6 +183,19 @@ jobs:
           trap 'kill "$server" || true' EXIT
           for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/MapSlop/ >/dev/null; then break; fi; sleep 1; done
           node tests/browser-smoke.mjs
+          node --input-type=module - <<'JS'
+          import { chromium } from 'playwright';
+          const browser=await chromium.launch({headless:true});
+          try {
+            for (const entry of ['index.html','mobile.html']) {
+              const page=await browser.newPage({viewport:{width:823,height:384}});
+              await page.goto('http://127.0.0.1:8080/MapSlop/'+entry+'?webgl');
+              const credit=page.locator('#credits').getByText('© Direção-Geral do Território, CC BY 4.0',{exact:true});
+              await credit.waitFor({state:'visible'});
+              await page.close();
+            }
+          } finally { await browser.close(); }
+          JS
           grep -Fq '© Direção-Geral do Território, CC BY 4.0' /tmp/site/MapSlop/mobile.html
           grep -Fq '© Direção-Geral do Território, CC BY 4.0' /tmp/site/MapSlop/index.html
           test "$(sha256sum /tmp/site/MapSlop/js/terrain.bin.gz | cut -d' ' -f1)" = 9009db14b6808e36f3457db525eef2589328ac2769fe1899a8d53598efc0758d
