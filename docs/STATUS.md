@@ -11,7 +11,7 @@
 - Copernicus GLO-30: build alternativo concluído (5 670 amostras, 81,5–284,9 m no recorte com margem); DSM aproximado, não DTM de 0,5 m. Artefacto temporário, não integrado na demo nem preservado como original permanente. Pode ser reobtido pelo workflow.
 - DGT `geodata-dgt-pedome-20261127`: 15 ficheiros, 222723518 bytes MDT 0,5 m; 15 ficheiros, 230314564 bytes MDS 0,5 m; 15 ficheiros, 15237327 bytes MDT 2 m; 15 ficheiros, 15443335 bytes MDS 2 m; 15 ficheiros, 1902990934 bytes LAZ; 2 ficheiros, 1102550931 bytes ortofotos atuais 25 cm. LAZ anteriormente falhou por allowlist de redirecionamento; recuperado. `geodata-dgt-history-20261127`: 16 ficheiros, 3588836327 bytes (1995–2021, duas folhas por cobertura).
 - OSM nacional 429 648 916 bytes e extrato alargado guardados; vetores OGC: 8 freguesias, 239 COS2025, 86 CRUS, 2 municípios, **0** objetos cadastro (não é cobertura cadastral). CAOP/COS do piloto no Git.
-- Toolchain `reconstruction-toolchain-20261127`: sete ZIPs byte-idênticos e binário Roofer v1.0.0, 0 ficheiros, 0 bytes. `roofer --help` executado com sucesso em Linux; não reconstruímos ainda edifícios reais. Outras ferramentas não executadas.
+- Toolchain `reconstruction-toolchain-20261127`: sete ZIPs byte-idênticos e binário Roofer v1.0.0, 8 ficheiro(s), 273726012 bytes. `roofer --help` executado com sucesso em Linux; não reconstruímos ainda edifícios reais. Outras ferramentas não executadas.
 - README, MIT/avisos upstream, .gitignore e CLAUDE.md (symlink) integrados no PR #2. PR #1 integrou governação; ver [proposta](PROPOSTA-PROCESSO.md).
 
 ## Histórico e problemas encontrados
@@ -88,3 +88,5 @@ Tamanhos e SHA-256 calculados sobre ficheiros montados em 2026-11-27 (Python has
 - Tarefa 2: STATUS e evidências corrigidos a partir de logs dos sete runs, metadados das releases e hashes de ficheiros montados; links relativos, fences, JSON e formato dos digests verificados. Não executa novo build do jogo.
 
 - Tarefa 3: ADRs 0003–0008 registam decisões já tomadas (piloto, fallback, DGT, ferramentas/licenças, Pages/HUD e não reutilização PortoSlop). Verificação de links relativos e fences executada; sem alteração do jogo. Subtree fica para ADR de proposta separado.
+
+- Tarefa 4: ROADMAP P0–P3 com critérios por testar e catálogo de dados, ligando hashes de todos os assets. SHA-256 dos 4 pequenos blobs calculado do conteúdo UTF-8 (autoteste abc, tamanho e comparação com sha256sum local do piloto). Corrigida contagem da toolchain. Links/fences verificados. Sem publicar releases.
