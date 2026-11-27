@@ -105,3 +105,30 @@ class ProfileTests(unittest.TestCase):
         c=Corridor(xy,y,ways,parallel=p);c.install_strips()
         v,_=c.target(np.array([[6.,-1.],[6.,0.],[6.,2.],[6.,4.],[6.,5.]]),np.zeros(5))
         np.testing.assert_allclose(v,y[2],atol=1e-7)
+
+    def test_mixed_geometry_overlay_cleanup(self):
+        from shapely.geometry import Polygon,LineString,Point,GeometryCollection,box
+        from road_carve import polygonal,polygon_union,lines_only
+        g=GeometryCollection([box(0,0,2,2),LineString([(3,3),(4,4)]),Point(5,5)])
+        p=polygonal(g)
+        self.assertEqual(p.geom_type,"Polygon")
+        self.assertAlmostEqual(p.area,4)
+        self.assertAlmostEqual(polygon_union([g,box(1,1,3,3)]).area,7)
+        ls=lines_only([g,GeometryCollection([LineString([(0,0),(1,0)]),Point(2,2)])])
+        self.assertEqual(len(ls),2)
+        self.assertTrue(all(x.geom_type=="LineString" for x in ls))
+
+    def test_platform_groups_cannot_chain_or_flatten_unrelated_station(self):
+        from road_surface_policy import junction_groups,platform_radii
+        xy=np.array([[0.,0.],[4.,0.],[8.,0.],[0.,1.],[4.,1.]])
+        ways=[{"way":1,"ids":[0,1,2],"width_m":8},{"way":2,"ids":[3,4],"width_m":8}]
+        ref=np.array([0.,.1,.2,8.,8.])
+        g,eq=junction_groups(xy,ways,[0,1,2,3],ref)
+        self.assertTrue(all(len(x)<=2 for x in g))
+        self.assertEqual(sum(len(x) for x in g),4)
+        self.assertFalse(any(i in (3,4) for terms in eq for i,_ in terms))
+        r=platform_radii(xy,ways,[0,1,2,3],g)
+        for i in range(4):
+            for j in range(i):
+                if not any(i in a and j in a for a in g):
+                    self.assertLess(r[i]+r[j],np.linalg.norm(xy[i]-xy[j]))
