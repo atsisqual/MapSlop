@@ -72,7 +72,7 @@ def main():
         surface=check_surface(t,original,corr)
         report.update(carve=carve,storage=storage,surface=surface,
             surface_pass=surface["transverse_samples"]>0 and surface["max_crossfall_degrees"]<=1
-            and surface["max_centre_mesh_profile_delta_m"]<=0.1 and surface["outside_max_change_m"]<=0.1)
+            and surface["max_centre_mesh_profile_delta_m"]<=0.1 and surface["max_junction_mesh_delta_m"]<=0.02 and surface["outside_max_change_m"]<=0.1)
     except Exception as exc:
         report.update(surface_pass=False,carve_failure=f"{type(exc).__name__}: {exc}")
     report["pass"]=bool(report["profile_pass"] and report["surface_pass"])
