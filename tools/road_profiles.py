@@ -13,7 +13,10 @@ CURVATURE=0.02/3
 MAX_DEVIATION=1.0
 MAX_MEAN_DEVIATION=0.5
 BERM=2.5
-KINDS={"motorway","trunk","primary","secondary","tertiary","unclassified","residential","living_street","service"}
+KINDS={"motorway","trunk","primary","secondary","tertiary","unclassified","residential","living_street"}
+LIGHT_KINDS={"service","track","driveway"}
+ADAPTIVE_MAX_CURVATURE=0.06/3
+ADAPTIVE_MDT_CURVATURE=0.035/3
 
 def eligible(e):
     t=e.get("tags",{})
@@ -69,9 +72,19 @@ def clip_ways(e,bounds):
     flush()
     return pieces
 
-def network(osm,bounds=None):
-    roads=[e for e in osm["elements"] if eligible(e)]
+def network(osm,bounds=None,legacy=False):
+    roads=[e for e in osm["elements"] if eligible(e) or (legacy and e.get("type")=="way" and e.get("tags",{}).get("highway")=="service" and e["tags"].get("access")!="private" and e["tags"].get("area")!="yes")]
     excluded=[]; valid=[]
+    if not legacy:
+        for e in osm["elements"]:
+            t=e.get("tags",{})
+            if e.get("type")=="way" and (t.get("highway","").removesuffix("_link") in LIGHT_KINDS or t.get("service")=="driveway"):
+                if len(e.get("geometry",[]))<2:continue
+                if not clip_ways(e,bounds):continue
+                excluded.append({"way":e["id"],"name":t.get("name"),"highway":t.get("highway"),"service":t.get("service"),
+                                 "access":t.get("access"),"reason":["low_priority_access_no_carve"]})
+        excluded_ids={e["way"] for e in excluded}
+        roads=[e for e in roads if e["id"] not in excluded_ids]
     for e in roads:
         tags=e["tags"];why=structural(tags)
         if why:
@@ -116,7 +129,21 @@ def network(osm,bounds=None):
             ways.append({"way":e["id"],"name":e["tags"].get("name"),"width_m":road_width(e["tags"]),"ids":ids,"s":dist})
     return np.array(xy),ways,node_index,shared,excluded
 
-def solve(reference,ways,dense=None):
+def curvature_limits(reference,ways,adaptive=False):
+    out=[]
+    for w in ways:
+        ids=np.asarray(w["ids"]);s=np.asarray(w["s"]);ds=np.diff(s)
+        curv=np.abs(np.diff(np.diff(reference[ids])/ds))/((ds[:-1]+ds[1:])/2)
+        for j,k in enumerate(curv,1):
+            limit=CURVATURE
+            # Local relaxation only when the original MDT actually changes grade rapidly.
+            # Do not relax shared-junction continuity or the 1 m / 0.5 m height limits.
+            if adaptive and k>ADAPTIVE_MDT_CURVATURE:
+                limit=min(ADAPTIVE_MAX_CURVATURE,max(CURVATURE,float(k)))
+            out.append((w["way"],j,float(k),float(limit)))
+    return out
+
+def solve(reference,ways,dense=None,adaptive=False):
     """Minimax deviation with bounded change of adjacent grades per metre.
     Variables at a junction are literally the same variable, not a post-hoc average.
     """
@@ -133,12 +160,14 @@ def solve(reference,ways,dense=None):
         for a,b,u,y in zip(dense["a"],dense["b"],dense["u"],dense["reference"]):
             constraint([(int(a),1-float(u)),(int(b),float(u)),(n,-1)],float(y))
             constraint([(int(a),float(u)-1),(int(b),-float(u)),(n,-1)],-float(y))
+    limits=iter(curvature_limits(reference,ways,adaptive))
     for way in ways:
         ids,s=way["ids"],way["s"]
         for j in range(1,len(ids)-1):
             a,b,c=ids[j-1:j+2];d1=s[j]-s[j-1];d2=s[j+1]-s[j]
             terms=[(a,1/d1),(b,-1/d1-1/d2),(c,1/d2)]
-            limit=CURVATURE*(d1+d2)/2
+            _,_,_,local_limit=next(limits)
+            limit=local_limit*(d1+d2)/2
             constraint(terms,limit);constraint([(i,-v) for i,v in terms],limit)
     A=coo_matrix((values,(rows,cols)),shape=(len(rhs),n+1)).tocsr()
     obj=np.zeros(n+1);obj[-1]=1
@@ -157,14 +186,18 @@ def solve(reference,ways,dense=None):
     if not fit2.success:raise ValueError("Road profile residual solver: "+fit2.message)
     return fit2.x[:n]
 
-def metrics(reference,y,ways):
+def metrics(reference,y,ways,adaptive=False):
+    limits=iter(curvature_limits(reference,ways,adaptive))
     result=[]
     for w in ways:
         ids=np.array(w["ids"]);s=np.array(w["s"]);h=y[ids]
         grades=np.diff(h)/np.diff(s)
         delta=np.abs(np.diff(grades))
         curvature=delta/((np.diff(s)[:-1]+np.diff(s)[1:])/2)
-        result.append({"way":w["way"],"name":w["name"],"samples":len(ids),
+        local=list(next(limits) for _ in curvature)
+        allowed=np.array([v[3] for v in local])
+        result.append({"adaptive_stations":[{"sample_index":v[1],"mdt_grade_change_per_3m":v[2]*3,"allowed_grade_change_per_3m":v[3]*3,"actual_grade_change_per_3m":float(curvature[v[1]-1]*3)} for v in local if v[3]>CURVATURE+1e-9],
+                       "grade_limit_pass":bool(np.all(curvature<=allowed+1e-7)), "way":w["way"],"name":w["name"],"samples":len(ids),
                        "max_deviation_m":float(np.max(np.abs(h-reference[ids]))),
                        "max_grade_change":float(delta.max(initial=0)),
                        "max_grade_change_per_3m":float(curvature.max(initial=0)*3)})
