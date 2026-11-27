@@ -78,5 +78,12 @@ export async function loadTerrain(url){
   }
   const response=await fetch(url);
   if(!response.ok)throw Error('Terrain download '+response.status);
-  return decodeMeasured(await response.arrayBuffer());
+  const data=await response.arrayBuffer();
+  // A static .gz asset can be served either as gzip bytes or already decoded by HTTP.
+  const magic=new Uint8Array(data,0,Math.min(2,data.byteLength));
+  if(magic[0]===0x1f&&magic[1]===0x8b){
+    const stream=new Blob([data]).stream().pipeThrough(new DecompressionStream('gzip'));
+    return decodeMeasured(await new Response(stream).arrayBuffer());
+  }
+  return decodeMeasured(data);
 }
