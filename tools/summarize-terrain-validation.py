@@ -57,8 +57,9 @@ def summarize(manifest,browser_dir):
                     and road["points"]>0 and road["max_abs_m"]<=0.5)
             row["precision_pass"]=common_precision and (
                 (p["vertices"]<150000 and p["raster_max_abs_m"]<=0.5) if kind=="tin" else cell==2)
-            row["compression_pass"]=(p.get("encoding")=="MSLTERR1/compact" and p.get("exact_float32_geometry") is True and 0<p.get("gzip_bytes",0)<1000000) if kind=="tin" else None
-            row["pass"]=row["precision_pass"] and drive_ok and (row["compression_pass"] if kind=="tin" else True)
+            compact_required=kind=="tin" and manifest.get("compact_tin_required",False)
+            row["compression_pass"]=(p.get("encoding")=="MSLTERR1/compact" and p.get("exact_float32_geometry") is True and 0<(p.get("gzip_bytes") or 0)<1000000) if compact_required else None
+            row["pass"]=row["precision_pass"] and drive_ok and (row["compression_pass"] if compact_required else True)
         rows.append(row)
     near=next((r for r in rows if r["kind"]=="tin" and r["pass"]),None)
     if near is None:
