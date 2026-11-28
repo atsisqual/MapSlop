@@ -54,6 +54,30 @@ jobs:
             /tmp/local-3d/*.json
             /tmp/local-3d/*.png
             /tmp/local-3d/*.log
+  material-source:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Verify real CC0 maps on synthetic geometry
+        run: |
+          python -m pip install -r requirements-vegetation.txt Pillow==11.3.0 PyYAML==6.0.3
+          python tools/fetch-cc0-materials.py /tmp/cc0-materials
+          python tools/build-local-church.py --fixture --materials /tmp/cc0-materials --output /tmp/cc0-fixture
+          jq -e '.pass and .pbr_geometry_unchanged and .pbr_measured_roof_unchanged and .materials.license == "CC0-1.0"' /tmp/cc0-fixture/church-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cc0-pbr-source-evidence
+          path: |
+            /tmp/cc0-materials/*.json
+            /tmp/cc0-fixture/church-report.json
   real:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/agent/local-photogrammetry'
     needs: fixture
