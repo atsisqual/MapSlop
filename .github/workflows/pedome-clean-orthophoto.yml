@@ -1,0 +1,114 @@
+name: Pedome private cleaned orthophoto validation
+on:
+  workflow_call:
+permissions:
+  contents: write
+concurrency:
+  group: clean-orthophoto-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/agent/clean-orthophoto'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MAPSLOP_RESULTS: /tmp/clean-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Install offline dependencies and run synthetic cleanup tests
+        run: |
+          python -m pip install -r requirements-vegetation.txt Pillow==11.3.0
+          python -m unittest discover -s tests -p 'test_clean_orthophoto.py' -v
+      - name: Retrieve approved runtime and exact terrain
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/combined /tmp/pedome-before /tmp/ortho-terrain /tmp/clean-results /tmp/clean-input
+          tag=geodata-dgt-orthophoto-46098427966-1
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/combined --pattern combined-runtime.tar.gz --pattern combined-report.json --pattern combined-inputs.json --pattern SHA256SUMS.txt
+          (cd /tmp/combined; for f in combined-runtime.tar.gz combined-report.json combined-inputs.json; do grep -E "^[0-9a-f]{64}  $f$" SHA256SUMS.txt | sha256sum -c -; done)
+          echo 'f9f574945cfe74923076b3d430fefb2848e0cad5a1b0ce67bcbd787b7fe0f57c  /tmp/combined/combined-runtime.tar.gz' | sha256sum -c -
+          python tools/verify-combined-pages.py /tmp/combined /tmp/pedome-before
+          tag=geodata-dgt-pages-road-46085062868
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/ortho-terrain --pattern terrain-road-preview.bin --pattern road-validation.json
+          python tools/verify-pages-terrain.py /tmp/ortho-terrain
+          cmp /tmp/pedome-before/js/terrain.bin /tmp/ortho-terrain/terrain-tin.bin
+      - name: Retrieve inventoried LiDAR and MDT only
+        run: |
+          set -euo pipefail
+          tag=geodata-dgt-pedome-20261127
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          for tile in 178494 178495 179494 179495; do
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/clean-input --pattern "LO-$tile-07-2025_v05.laz" --pattern "MDT-50cm-$tile-07-2025_v02.tif"
+          done
+      - name: Generate masked and filled tile pyramid
+        run: |
+          set -euo pipefail
+          python tools/clean-orthophoto.py --input /tmp/clean-input --runtime /tmp/pedome-before --output /tmp/clean-tiles --evidence /tmp/clean-results
+          cp -a /tmp/pedome-before /tmp/pedome-after
+          rm -r /tmp/pedome-after/ortho
+          cp -a /tmp/clean-tiles /tmp/pedome-after/ortho
+          diff -qr /tmp/pedome-before/js /tmp/pedome-after/js
+          cmp /tmp/pedome-before/index.html /tmp/pedome-after/index.html
+          cmp /tmp/pedome-before/build-report.json /tmp/pedome-after/build-report.json
+      - name: Fetch pinned Three.js and install browser
+        run: |
+          set -euo pipefail
+          git init /tmp/three
+          git -C /tmp/three remote add origin https://github.com/mrdoob/three.js.git
+          git -C /tmp/three sparse-checkout set build examples/jsm
+          git -C /tmp/three fetch --depth=1 --filter=blob:none origin f17eb5d689094a3fbd4cd0d64d54729a48036ce0
+          git -C /tmp/three checkout --detach FETCH_HEAD
+          for variant in before after; do
+            mkdir -p "/tmp/pedome-$variant/vendor/three"
+            cp -r /tmp/three/build /tmp/three/examples /tmp/three/LICENSE "/tmp/pedome-$variant/vendor/three/"
+          done
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Real before and after render and 104 m physics replay
+        run: |
+          set -euo pipefail
+          python -m http.server 8080 --bind 127.0.0.1 --directory /tmp/pedome-before > /tmp/clean-results/before.log 2>&1 &
+          before=$!
+          python -m http.server 8081 --bind 127.0.0.1 --directory /tmp/pedome-after > /tmp/clean-results/after.log 2>&1 &
+          after=$!
+          trap 'kill "$before" "$after" || true' EXIT
+          for port in 8080 8081; do
+            for i in {1..30}; do if curl -fsS "http://127.0.0.1:$port/" >/dev/null; then break; fi; sleep 1; done
+          done
+          node tests/clean-orthophoto-real.mjs
+      - name: Retain candidate only after both gates pass
+        run: |
+          tar -C /tmp/clean-tiles -czf /tmp/clean-results/clean-tiles.tar.gz .
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('/tmp/clean-results')
+          a=json.loads((root/'clean-mask-report.json').read_text());b=json.loads((root/'clean-browser-report.json').read_text())
+          assert a['pass'] and b['pass']
+          (root/'clean-acceptance.json').write_text(json.dumps({'pass':True,'base_runtime_sha256':'f9f574945cfe74923076b3d430fefb2848e0cad5a1b0ce67bcbd787b7fe0f57c','mask':a['mask_m2'],'checks':b['checks']},indent=2))
+          PY
+      - name: Archive private evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/clean-results
+          cd /tmp/clean-results
+          shopt -s nullglob
+          files=(*.json *.png *.log *.tar.gz)
+          if [ "${#files[@]}" -eq 0 ]; then echo 'No evidence generated'; exit 1; fi
+          sha256sum "${files[@]}" > SHA256SUMS.txt
+          tag=geodata-dgt-clean-orthophoto-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Private cleaned orthophoto evidence $GITHUB_RUN_ID" --notes "Synthetic replacement ground; no raw LAZ or TIFF. Review fixed camera comparisons before publication." "${files[@]}" SHA256SUMS.txt
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          echo "PRIVATE_EVIDENCE $tag"
