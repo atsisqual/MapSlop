@@ -1,0 +1,104 @@
+{
+  "provider": "Poly Haven",
+  "license": "CC0-1.0",
+  "license_url": "https://polyhaven.com/license",
+  "api_terms": "https://polyhaven.com/our-api",
+  "assets": {
+    "granite": {
+      "asset": "granite_wall",
+      "url": "https://polyhaven.com/a/granite_wall",
+      "authors": {
+        "Dimitrios Savva": "All"
+      },
+      "dimensions": [
+        1899.9998569488525,
+        1899.9998569488525
+      ],
+      "metadata_sha256": "af88e19752924990c31350105150f904b6f73388cbc6ec080297ee03cc9460f1",
+      "files_sha256": "0de83a1c27c71ef650b9028549f9c5391cd262ec1cf5102e8f7a6d55f3e34585",
+      "maps": {
+        "base": {
+          "file": "granite-base.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/granite_wall/granite_wall_diff_1k.jpg",
+          "bytes": 957272,
+          "sha256": "a971fd7ad16322fb8731cfacb593224ceca24dd2eaf77724a5a84a1de50d17f1",
+          "provider_md5": "9f9883bcb534a840ad29f4e26c0b3589",
+          "size_px": [
+            1024,
+            1024
+          ]
+        },
+        "normal": {
+          "file": "granite-normal.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/granite_wall/granite_wall_nor_gl_1k.jpg",
+          "bytes": 1145994,
+          "sha256": "ff57f9aebe854895b5b69c44d8725451c06da59b32c15e9457df8994130a7c53",
+          "provider_md5": "d092f22db76388680e9de19832d355a2",
+          "size_px": [
+            1024,
+            1024
+          ]
+        },
+        "rough": {
+          "file": "granite-rough.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/granite_wall/granite_wall_rough_1k.jpg",
+          "bytes": 380892,
+          "sha256": "e158fffb5af9e30ec181237fe8063a33c7eaa6fe1b74518b35daec54a1b1f3b9",
+          "provider_md5": "14707c440dd8d6e3373144b82767c4c1",
+          "size_px": [
+            1024,
+            1024
+          ]
+        }
+      }
+    },
+    "plaster": {
+      "asset": "white_plaster_rough_01",
+      "url": "https://polyhaven.com/a/white_plaster_rough_01",
+      "authors": {
+        "Rob Tuytel": "All"
+      },
+      "dimensions": [
+        1000,
+        1000
+      ],
+      "metadata_sha256": "a406e6fd1de03616ceb07021c352dae995ad9104e81da95d7dc4a2e39c29887f",
+      "files_sha256": "0f3157a795b65e20cd977eacc85fbd50fe192d75e759dcdb4455cd7dc8255388",
+      "maps": {
+        "base": {
+          "file": "plaster-base.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/white_plaster_rough_01/white_plaster_rough_01_diff_1k.jpg",
+          "bytes": 628421,
+          "sha256": "8d3b209ec5bbcee3db7a883c6c2eee982b7c18a268e6f43766ee540c7c28ebcb",
+          "provider_md5": "c0964b0628920619f0364f19f2d9973d",
+          "size_px": [
+            1024,
+            1024
+          ]
+        },
+        "normal": {
+          "file": "plaster-normal.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/white_plaster_rough_01/white_plaster_rough_01_nor_gl_1k.jpg",
+          "bytes": 384190,
+          "sha256": "f9d15f0adb27a3cbcffe11bea7a14d486d036b0251e01ec24c3ca0ae05aef54b",
+          "provider_md5": "a45f7354cab5014e5167e63ddbf9c571",
+          "size_px": [
+            1024,
+            1024
+          ]
+        },
+        "rough": {
+          "file": "plaster-rough.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/white_plaster_rough_01/white_plaster_rough_01_rough_1k.jpg",
+          "bytes": 594450,
+          "sha256": "459ab1eec7395a4617b4e043760be51eaac87828aae8816b6bf2c6030907225a",
+          "provider_md5": "6a4f00696f958e42ad7bf3b1d48794d5",
+          "size_px": [
+            1024,
+            1024
+          ]
+        }
+      }
+    }
+  }
+}
