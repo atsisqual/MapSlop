@@ -16,7 +16,7 @@ scene.add(new THREE.HemisphereLight(0xffffff,0x777366,2));
 const sun=new THREE.DirectionalLight(0xffffff,2.4);sun.position.set(-30,55,35);scene.add(sun);
 const state={mode,ready:false,error:null,report,models:0,bounds:null};
 window.localMesh=state;
-const measure=o=>{o.updateMatrixWorld(true);const box=new THREE.Box3().setFromObject(o);state.bounds=[box.min.toArray(),box.max.toArray()];let count=0;o.traverse(n=>{if(n.isMesh)count++});state.meshes=count;state.ready=count>0&&state.bounds.flat().every(Number.isFinite);status.textContent=(report.fixture?'SINTÉTICO — ':'DGT / OSM — ')+mode+' · '+(report.roof_triangles+report.wall_triangles)+' triângulos · fachadas estimadas';};
+const measure=o=>{o.updateMatrixWorld(true);const box=new THREE.Box3().setFromObject(o);state.bounds=[box.min.toArray(),box.max.toArray()];let count=0;const pbr=[];o.traverse(n=>{if(n.isMesh){count++;for(const mat of (Array.isArray(n.material)?n.material:[n.material]))if(mat.normalMap&&mat.roughnessMap&&mat.map)pbr.push({name:mat.name,uv:!!n.geometry.attributes.uv,normal:!!mat.normalMap,roughness:!!mat.roughnessMap,base:!!mat.map});}});state.pbr=pbr;state.meshes=count;state.ready=count>0&&state.bounds.flat().every(Number.isFinite);status.textContent=(report.fixture?'SINTÉTICO — ':'DGT / OSM — ')+mode+' · '+(report.roof_triangles+report.wall_triangles)+' triângulos · fachadas estimadas';};
 let tiles=null;
 try{
  if(mode==='glb'){
