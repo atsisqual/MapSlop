@@ -59,19 +59,35 @@ def exclusions(osm):
             areas.append(Polygon(pts).buffer(0))
     return sh.union_all(areas)
 
-def candidates(high,count,x0,z0,blocked,cos):
+def accumulate_peaks(high,peak_x,peak_z,idx,dh,x,z):
+    # Highest actual class-5 return in each cell; stable across chunks and tiles.
+    dh=np.asarray(dh,dtype=np.float32)
+    x=np.asarray(x,dtype=np.float64);z=np.asarray(z,dtype=np.float64)
+    order=np.lexsort((z,x,-dh,idx))
+    if not len(order):return
+    order=order[np.r_[True,idx[order][1:]!=idx[order][:-1]]]
+    k=idx[order];h=dh[order];xx=x[order];zz=z[order]
+    use=(h>high[k])|((h==high[k])&((xx<peak_x[k])|((xx==peak_x[k])&(zz<peak_z[k]))))
+    k=k[use];high[k]=h[use];peak_x[k]=xx[use];peak_z[k]=zz[use]
+
+def candidates(high,count,x0,z0,blocked,cos,peak_x=None,peak_z=None):
     # Local peaks of the high-vegetation return envelope, not individual
     # surveyed trees. Radius is a bounded occupancy proxy.
     occupied=(high>=2.5)&(count>=3)
-    support=maximum_filter(high,size=5)
+    yy,xx=np.ogrid[-2:3,-2:3]
+    support=maximum_filter(np.where(occupied,high,0),footprint=xx*xx+yy*yy<=6.25)
     radii=np.clip(distance_transform_edt(occupied),.8,5.)
     iy,ix=np.nonzero(occupied&(high==support))
     order=np.lexsort((ix,iy,-high[iy,ix]))
     polys=[transform(lambda x,y,z=None:to_world(np.asarray(x),np.asarray(y)),shape(f["geometry"])).buffer(0) for f in cos["features"]]
     codes=[str(f["properties"]["cos25v1_n4_c"]) for f in cos["features"]]
-    tree=sh.STRtree(polys);out=[];seen=set();rejected=Counter()
+    tree=sh.STRtree(polys);out=[];seen={};rejected=Counter()
     for i in order:
         r,c=int(iy[i]),int(ix[i]);x=x0+c+.5;z=z0+r+.5
+        if peak_x is not None:
+            x,z=float(peak_x[r,c]),float(peak_z[r,c])
+            if not (math.isfinite(x) and math.isfinite(z)):raise ValueError('Missing measured peak coordinate')
+        x,z=round(x,2),round(z,2)
         point=sh.Point(x,z);radius=float(radii[r,c])
         if blocked.distance(point)<=.5:
             rejected["road_or_building_trunk_overlap"]+=1;continue
@@ -83,9 +99,11 @@ def candidates(high,count,x0,z0,blocked,cos):
         if code.startswith("9."):
             rejected["cos_water"]+=1;continue
         # Spatial nonmaximum suppression, deterministic and independent of tile order.
-        if any((a,bb) in seen for a in range(r-3,r+4) for bb in range(c-3,c+4) if (a-r)**2+(bb-c)**2<=9):
+        # Circular suppression in continuous world coordinates, not integer grid indices.
+        bx,bz=math.floor(x/3),math.floor(z/3)
+        if any((px-x)**2+(pz-z)**2<=9 for i in range(bx-1,bx+2) for j in range(bz-1,bz+2) for px,pz in seen.get((i,j),())):
             rejected["nearer_higher_peak"]+=1;continue
-        seen.add((r,c))
+        seen.setdefault((bx,bz),[]).append((x,z))
         out.append({"x":round(x,2),"z":round(z,2),"height_m":round(float(high[r,c]),2),
                     "crown_radius_proxy_m":round(radius,2),"cos_code":code,
                     "class":5,"cell_returns":int(count[r,c]),"source":"DGT_LAZ_class5"})
@@ -103,6 +121,7 @@ def main():
     x0,z0,x1,z1=extent();x0,z0=math.floor(x0),math.floor(z0)
     nx,nz=math.ceil(x1-x0),math.ceil(z1-z0);size=nx*nz
     grid=np.zeros((3,size),dtype=np.uint32);high=np.zeros(size,dtype=np.float32)
+    peak_x=np.full(size,np.inf);peak_z=np.full(size,np.inf)
     coverage=np.zeros(size,dtype=bool);classes=Counter();valid=Counter();headers=[]
     tr=Transformer.from_crs(3763,4326,always_xy=True)
     inverse=Transformer.from_crs(4326,3763,always_xy=True)
@@ -130,25 +149,29 @@ def main():
                 coverage[idx]=True
                 for k,n in zip(*np.unique(cl,return_counts=True)):classes[int(k)]+=int(n)
                 use=(cl>=3)&(cl<=5)
-                ex,ny,alt,cl,idx=(v[use] for v in (ex,ny,alt,cl,idx))
+                ex,ny,alt,cl,idx,xx,zz=(v[use] for v in (ex,ny,alt,cl,idx,xx,zz))
                 rr=np.floor((ny-t.f)/t.e).astype(int);cc=np.floor((ex-t.c)/t.a).astype(int)
                 inside=(rr>=0)&(rr<g.shape[0])&(cc>=0)&(cc<g.shape[1])
-                rr,cc,alt,cl,idx=(v[inside] for v in (rr,cc,alt,cl,idx))
+                rr,cc,alt,cl,idx,xx,zz=(v[inside] for v in (rr,cc,alt,cl,idx,xx,zz))
                 dh=alt-g[rr,cc]
                 good=~gmask[rr,cc]&np.isfinite(dh)&(dh>=.15)&(dh<=45)
                 for k in (3,4,5):
                     ok=good&(cl==k);valid[k]+=int(ok.sum())
                     np.add.at(grid[k-3],idx[ok],1)
-                    if k==5:np.maximum.at(high,idx[ok],dh[ok])
+                    if k==5:accumulate_peaks(high,peak_x,peak_z,idx[ok],dh[ok],xx[ok],zz[ok])
     if not classes[5] or not valid[5]:raise ValueError("No high vegetation returns")
     # 5 m coverage from all classes; edge cells may be partly outside AOI.
     coarse=np.pad(coverage.reshape(nz,nx),((0,(-nz)%5),(0,(-nx)%5))).reshape(math.ceil(nz/5),5,math.ceil(nx/5),5).any(axis=(1,3))
     cov=float(coarse.mean())
     if cov<.95:raise ValueError(f"Insufficient point coverage {cov:.3f}")
     blocked=exclusions(osm)
-    trees,rejected,occupied=candidates(high.reshape(nz,nx),grid[2].reshape(nz,nx),x0,z0,blocked,cos)
+    trees,rejected,occupied=candidates(high.reshape(nz,nx),grid[2].reshape(nz,nx),x0,z0,blocked,cos,peak_x.reshape(nz,nx),peak_z.reshape(nz,nx))
     if not trees:raise ValueError("No viable tree candidates")
-    report={"schema":1,"sources":sources,"headers":headers,"osm_sha256":OSM_SHA,"cos_sha256":COS_SHA,
+    coords=np.array([[v["x"],v["z"]] for v in trees])
+    forest=np.array([[v["x"],v["z"]] for v in trees if v["cos_code"].startswith("5.")])
+    def phase(points):
+        return np.abs(np.exp(2j*np.pi*points).mean(axis=0)).tolist() if len(points) else []
+    report={"schema":2,"position_method":"measured highest class-5 return XY, circular local peaks and world-distance NMS; no synthetic displacement","grid_phase_1m_all":phase(coords),"grid_phase_1m_forest":phase(forest),"sources":sources,"headers":headers,"osm_sha256":OSM_SHA,"cos_sha256":COS_SHA,
             "classification_counts":dict(classes),"plausible_height_returns":dict(valid),
             "coverage_5m_fraction":cov,"height_reference":"absolute LAZ z minus nearest valid 0.5m MDT pixel, EPSG:3763",
             "origin_lat_lon":list(ORIGIN),"high_vegetation_cells":occupied,"tree_candidates":len(trees),
@@ -157,6 +180,7 @@ def main():
             "by_cos":dict(Counter(v["cos_code"] for v in trees)),
             "low_medium_vegetation_cells":{str(k):int(np.count_nonzero(grid[k-3])) for k in (3,4)},
             "visual_validated":False,"lod_validated":False}
+    if len(forest)>50 and max(phase(forest))>.25:raise ValueError("Residual 1 m lattice alignment in forest")
     for name,data in (("vegetation-candidates.json",{"origin_lat_lon":list(ORIGIN),"trees":trees}),("vegetation-report.json",report)):
         (a.output/name).write_text(json.dumps(data,separators=(",",":"),allow_nan=False)+"\n")
     print(json.dumps(report,allow_nan=False),flush=True)
