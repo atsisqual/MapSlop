@@ -84,4 +84,20 @@ def facade(p,ground,height,config):
                 a,u=e[1:3];q=a+u*((l+r)/2)
                 base=ground(*q);top=min(height(*(a+u*l)),height(*(a+u*r)))-.06
                 if top>base+.5 and quad("granite",e,l,r,base,top,.06):report["quoin_strips"]+=1
+    cornice=config.get("cornija_granito") or {}
+    report["cornice_segments"]=0
+    if cornice.get("enabled",False):
+        h=float(cornice.get("altura_m",.22))
+        if not .1<=h<=.5:raise ValueError("Invalid cornice height")
+        for e in edges:
+            i,a,u,n,l=e
+            steps=max(1,math.ceil(l/.5))
+            for k in range(steps):
+                t0,t1=l*k/steps,l*(k+1)/steps
+                A=a+u*t0;B=a+u*t1
+                y0=height(*A)-.04;y1=height(*B)-.04
+                if min(y0-ground(*A),y1-ground(*B))<h+.3:continue
+                A=A+n*.09;B=B+n*.09
+                points=[(float(A[0]),y0-h,float(A[1])),(float(B[0]),y1-h,float(B[1])),(float(B[0]),y1,float(B[1])),(float(A[0]),y0,float(A[1]))]
+                result["granite"].extend([[points[0],points[1],points[2]],[points[0],points[2],points[3]]]);report["cornice_segments"]+=1
     return result,report
