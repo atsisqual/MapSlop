@@ -11,6 +11,7 @@ on:
       - 'tools/3dfier-infrastructure.py'
       - 'tools/gis-infrastructure.py'
       - 'tools/convert-infrastructure.py'
+      - 'tools/cityjson-earcut-glb.py'
       - 'tools/ifc-to-glb.py'
       - 'tools/generate-infrastructure-fixture.py'
       - 'tests/test_infrastructure_conversion.py'
@@ -105,8 +106,9 @@ jobs:
           python-version: '3.12.10'
       - name: Install pinned open-format converters
         run: |
-          python -m pip install numpy==1.26.4 ifcopenshell==0.8.3.post2 cjio==0.10.1 triangle==20250106
+          python -m pip install numpy==1.26.4 ifcopenshell==0.8.3.post2 cjio==0.10.1 mapbox-earcut==1.0.3
           python -m pip freeze > /tmp/bim-lock.txt
+          python -c 'import importlib.util; assert importlib.util.find_spec("triangle") is None'
       - name: Execute IFC and CityJSON conversions on own known-dimension fixture
         run: |
           python tools/generate-infrastructure-fixture.py /tmp/fixture
