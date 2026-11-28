@@ -4,6 +4,11 @@ on:
     branches: [main]
     paths:
       - 'tools/build-local-church.py'
+      - 'tools/roof_plane_fit.py'
+      - 'tools/facade_details.py'
+      - 'tools/install-local-church.py'
+      - 'tests/church-in-game.mjs'
+      - 'data/pedome/references/buildings.yaml'
       - 'tools/local-3d/**'
       - 'tools/stage-local-3d.sh'
       - 'tests/local-3d-browser.mjs'
@@ -27,7 +32,7 @@ jobs:
           node-version: '22.16.0'
       - name: Build synthetic mesh and isolated viewer
         run: |
-          python -m pip install -r requirements-vegetation.txt Pillow==11.3.0
+          python -m pip install -r requirements-vegetation.txt Pillow==11.3.0 PyYAML==6.0.3
           python tools/build-local-church.py --fixture --output /tmp/local-3d
           bash tools/stage-local-3d.sh /tmp/local-3d
       - name: Compare GLB and 3D Tiles renderers
@@ -53,7 +58,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 80
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -67,7 +72,7 @@ jobs:
         with:
           node-version: '22.16.0'
       - name: Install offline tools
-        run: python -m pip install -r requirements-vegetation.txt Pillow==11.3.0
+        run: python -m pip install -r requirements-vegetation.txt Pillow==11.3.0 PyYAML==6.0.3
       - name: Retrieve immutable approved DGT derivatives
         run: |
           set -euo pipefail
@@ -83,7 +88,7 @@ jobs:
           for tile in 178494 178495 179494 179495; do
             gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/church-input --pattern "LO-$tile-07-2025_v05.laz"
           done
-      - name: Reconstruct measured church roof and estimated wall shell
+      - name: Fit roof planes and configurable facade details
         run: |
           python tools/build-local-church.py --input /tmp/church-input --runtime /tmp/runtime --output /tmp/local-3d
           bash tools/stage-local-3d.sh /tmp/local-3d
@@ -96,6 +101,33 @@ jobs:
           trap 'kill $! || true' EXIT
           for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
           node tests/local-3d-browser.mjs
+      - name: Stage the exact approved original and replace only the church visual
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ortho-terrain
+          tag=geodata-dgt-pages-road-46085062868
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/ortho-terrain --pattern terrain-road-preview.bin --pattern road-validation.json
+          python tools/verify-pages-terrain.py /tmp/ortho-terrain
+          cmp /tmp/runtime/js/terrain.bin /tmp/ortho-terrain/terrain-tin.bin
+          cp -a /tmp/local-3d/vendor /tmp/runtime/vendor
+          python tools/install-local-church.py --runtime /tmp/runtime --candidate /tmp/local-3d --output /tmp/runtime-church
+          cmp /tmp/runtime/js/terrain.bin /tmp/runtime-church/js/terrain.bin
+          cmp /tmp/runtime/js/colliders.js /tmp/runtime-church/js/colliders.js
+          cmp /tmp/runtime/js/nairobi-geodata.js /tmp/runtime-church/js/nairobi-geodata.js
+      - name: In-game fixed camera comparison and unchanged 104 m drive
+        run: |
+          set -euo pipefail
+          python -m http.server 8080 --bind 127.0.0.1 --directory /tmp/runtime >/tmp/local-3d/game-before.log 2>&1 &
+          before=$!
+          python -m http.server 8081 --bind 127.0.0.1 --directory /tmp/runtime-church >/tmp/local-3d/game-after.log 2>&1 &
+          after=$!
+          trap 'kill "$before" "$after" || true' EXIT
+          for port in 8080 8081; do
+            for i in {1..30}; do if curl -fsS "http://127.0.0.1:$port/" >/dev/null; then break; fi; sleep 1; done
+          done
+          MAPSLOP_RESULTS=/tmp/local-3d node tests/church-in-game.mjs
+          tar -C /tmp/runtime-church -czf /tmp/local-3d/church-runtime-patch.tar.gz js/pedome.js js/pedome-buildings-detail.mjs models/church.glb
       - name: Archive only DGT-derived candidate and diagnostics privately
         if: always()
         run: |
@@ -104,12 +136,12 @@ jobs:
           cd /tmp/local-3d
           shopt -s nullglob
           files=(*.json *.png *.log)
-          if [ -f viewer-report.json ] && jq -e '.pass' viewer-report.json >/dev/null && jq -e '.pass' church-report.json >/dev/null; then
-            files+=(church.glb)
+          if [ -f viewer-report.json ] && [ -f church-in-game-report.json ] && jq -e '.pass' viewer-report.json >/dev/null && jq -e '.pass' church-report.json >/dev/null && jq -e '.pass' church-in-game-report.json >/dev/null; then
+            files+=(church.glb church-runtime-patch.tar.gz)
           fi
           if [ "${#files[@]}" -eq 0 ]; then echo 'No evidence produced'; exit 1; fi
           sha256sum "${files[@]}" > SHA256SUMS.txt
           tag=geodata-dgt-local-church-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
-          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Local DGT church candidate $GITHUB_RUN_ID" --notes "Roof envelope from LiDAR, walls estimated. Standalone viewer only, not approved for integration or publication." "${files[@]}" SHA256SUMS.txt
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Local DGT church candidate $GITHUB_RUN_ID" --notes "Fitted roof facets from LiDAR, procedural estimated facades, private standalone and in-game validation. Not approved for publication." "${files[@]}" SHA256SUMS.txt
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
           echo "PRIVATE_EVIDENCE $tag"
