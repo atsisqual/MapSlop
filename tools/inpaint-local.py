@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare Telea, Navier-Stokes and an optional locally verified LaMa TorchScript checkpoint.
+"""Compare Telea, Navier-Stokes and an optional locally verified LaMa ONNX checkpoint.
 Never download or execute an unreviewed model. Preserve all outside-mask pixels exactly.
 """
 import argparse,hashlib,json
@@ -16,15 +16,18 @@ def inpaint(image,mask,method,model=None):
         pred=cv2.inpaint(image,mask.astype(np.uint8)*255,3,cv2.INPAINT_TELEA if method=="telea" else cv2.INPAINT_NS)
     elif method=="lama":
         if model is None:raise ValueError("Verified LaMa checkpoint required")
-        import torch
-        h,w=mask.shape;ph=(-h)%8;pw=(-w)%8
+        h,w=mask.shape
+        if h>512 or w>512:raise ValueError("LaMa requires a local crop at most 512x512")
+        ph=512-h;pw=512-w
         im=np.pad(image,((0,ph),(0,pw),(0,0)),mode="reflect");ma=np.pad(mask,((0,ph),(0,pw)),mode="constant")
-        with torch.inference_mode():
-            x=torch.from_numpy(im.copy()).permute(2,0,1)[None].float()/255
-            m=torch.from_numpy(ma.copy())[None,None].float()
-            pred=model(x,m)
-            if not isinstance(pred,torch.Tensor) or pred.shape!=x.shape:raise ValueError("Unexpected LaMa output")
-            pred=(pred[0].permute(1,2,0).clamp(0,1).numpy()*255).round().astype(np.uint8)[:h,:w]
+        x=im.transpose(2,0,1)[None].astype(np.float32)/255.;m=ma[None,None].astype(np.float32)
+        inputs={i.name:i for i in model.get_inputs()}
+        if set(inputs)!={"image","mask"}:raise ValueError("Unexpected LaMa inputs")
+        y=model.run(None,{"image":x,"mask":m})[0]
+        if y.shape!=(1,3,512,512) or not np.isfinite(y).all():raise ValueError("Unexpected LaMa output")
+        # Pinned Carve FP32 export returns RGB in the 0..255 range.
+        if y.max()<=1.5 or y.max()>260 or y.min()<-5:raise ValueError("Unexpected LaMa output scale")
+        pred=np.rint(np.clip(y[0].transpose(1,2,0),0,255)).astype(np.uint8)[:h,:w]
     else:raise ValueError("Unknown method")
     out=image.copy();out[mask]=pred[mask]
     return out
@@ -41,8 +44,10 @@ def main():
     methods=["telea","ns"];model=None
     if a.checkpoint:
         if not a.checkpoint_sha256 or not a.checkpoint_license or hashlib.sha256(a.checkpoint.read_bytes()).hexdigest()!=a.checkpoint_sha256:raise ValueError("Verified checkpoint hash and license required")
-        import torch
-        model=torch.jit.load(str(a.checkpoint),map_location="cpu").eval();methods.append("lama")
+        if a.checkpoint.suffix.lower()!=".onnx":raise ValueError("Only ONNX checkpoint accepted; no pickle execution")
+        import onnxruntime as ort
+        options=ort.SessionOptions();options.intra_op_num_threads=2
+        model=ort.InferenceSession(str(a.checkpoint),sess_options=options,providers=["CPUExecutionProvider"]);methods.append("lama")
     a.output.mkdir(parents=True,exist_ok=False);rows=[]
     for method in methods:
         out=inpaint(image,mask,method,model)
