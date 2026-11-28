@@ -1,0 +1,17 @@
+const assert=require('node:assert/strict');const {LatLonBox,octant_to_latlong}=require(process.argv[2]);
+const b=new LatLonBox(20,10,30,40);
+assert.deepEqual(b.mid_point(),{lat:15,lon:35});
+const a=b.get_child('0'),c=b.get_child('3');
+assert.deepEqual([a.n,a.s,a.w,a.e],[15,10,30,35]);
+assert.deepEqual([c.n,c.s,c.w,c.e],[20,15,35,40]);
+assert(LatLonBox.is_overlapping(a,new LatLonBox(13,11,31,34)));
+assert(!LatLonBox.is_overlapping(a,new LatLonBox(19,17,36,39)));
+assert.throws(()=>b.get_child('x'));
+const root=octant_to_latlong('');assert.deepEqual([root.n,root.s,root.w,root.e],[90,-90,-180,180]);
+const path=require('node:path');const {MeshDecoder}=require(path.join(path.dirname(process.argv[2]),'MeshDecoder.js'));const {BufferGeometryUtils}=require(path.join(path.dirname(process.argv[2]),'BufferGeometryUtils.js'));
+assert.deepEqual([...MeshDecoder.unpackVertices(Uint8Array.from([1,2,3,4,2,1,7,1,2]))],[1,4,7,3,6,8,6,7,10]);
+assert.deepEqual(MeshDecoder.unpackVarInt(Uint8Array.from([172,2]),0),[300,2]);
+assert.throws(()=>MeshDecoder.unpackVarInt(Uint8Array.from([128]),0));
+assert.deepEqual([...MeshDecoder.unpackIndices(Uint8Array.from([4,0,0,0,0]))],[0,1,2,3]);
+assert.deepEqual([...BufferGeometryUtils.toTriangleStripDrawMode(Uint16Array.from([0,1,2,3]))],[0,1,2,3,2,1]);
+console.log(JSON.stringify({pass:true,scope:'pure geometry and synthetic mesh decoding primitives; no network or full textured model decoding',upstream:'54194adca25a266582200a8aa114ef1288b1e40b'}));

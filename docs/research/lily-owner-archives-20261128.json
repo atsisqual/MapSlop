@@ -1,0 +1,64 @@
+{
+  "received": "2026-11-28",
+  "source": "owner-supplied conversation attachments",
+  "archive_status": "received and inspected locally; GitHub draft upload pending",
+  "archive_tag_proposed": "toolchain-lily-owner-20261128",
+  "files": [
+    {
+      "name": "LilyTexturePacker-v1.1.3-64bit.zip",
+      "version": "1.1.3",
+      "bytes": 140878,
+      "sha256": "5ab76e7ff1b7294aea71e77d791e06cf138509ce536448fbeaf4987a58496554",
+      "entries": 9,
+      "python_modules_parsed": 4,
+      "crc_pass": true,
+      "license": "GPL-3.0-or-later per LICENSES; rectpack2D MIT; pybind11 BSD-style",
+      "abi": "CPython 3.7 x64 Windows/Linux",
+      "blender_min": [
+        2,
+        83,
+        0
+      ],
+      "runtime_status": "blocked: compatible Blender unavailable in local environment"
+    },
+    {
+      "name": "LilySurfaceScraper-v1.9.0.zip",
+      "version": "1.9.0",
+      "bytes": 21108750,
+      "sha256": "f3972a400a64c19314fbfe29b8de7b7073306c8e49423d3119262b7a701165ba",
+      "entries": 399,
+      "python_modules_parsed": 25,
+      "crc_pass": true,
+      "license": "GPLv3 declared in __init__.py; individual Python files MIT notices; root LICENSE.md referenced but not present in supplied ZIP",
+      "abi": "bundled lxml 5.2.1 CPython 3.11",
+      "blender_min": [
+        4,
+        1,
+        0
+      ],
+      "local_test": {
+        "pass": true,
+        "scope": "original MaterialData, LocalDirectoryScraper, Metadata with preference shim; no Blender graph, no network",
+        "maps": [
+          "ambientOcclusion",
+          "baseColor",
+          "height",
+          "metallic",
+          "normal",
+          "roughness"
+        ],
+        "deep_directory_pass": true,
+        "metadata_roundtrip_pass": true,
+        "missing_path_rejected": true
+      },
+      "blender_graph_status": "pending"
+    }
+  ],
+  "not_received": [
+    "LilyCaptureMerger"
+  ],
+  "tools": [
+    "tools/lily-archive-qa.py",
+    "tools/lily-blender-qa.py"
+  ]
+}

@@ -1,0 +1,33 @@
+name: Blender offline asset tooling
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/blender-asset-audit.py'
+      - '.github/workflows/blender-asset-tooling.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fixture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install distribution Blender for synthetic tooling test
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y blender python3-numpy
+          blender --version
+      - name: Export and reimport synthetic LOD GLB
+        run: |
+          set -euo pipefail
+          blender --background --factory-startup --python-exit-code 1 --python tools/blender-asset-audit.py -- --fixture --output /tmp/blender-qa
+          python -c 'import json; r=json.load(open("/tmp/blender-qa/asset-audit.json")); assert r["pass"] and r["fixture"] and r["candidate"]["triangles"] < r["source"]["triangles"] and r["bbox_drift_m"] <= .1'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: blender-synthetic-evidence
+          path: /tmp/blender-qa/

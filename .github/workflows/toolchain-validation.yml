@@ -1,0 +1,219 @@
+name: Offline reconstruction toolchain validation
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/asset-pipeline.py'
+      - 'tools/mesh-fusion.py'
+      - 'tests/mesh-fusion-fixture.py'
+      - 'tools/texture-atlas.py'
+      - 'tools/inpaint-local.py'
+      - 'tools/reconstruct-photos.py'
+      - 'tools/generate-*-fixture.py'
+      - 'tools/blender-import-assets.py'
+      - 'tests/test_asset_toolchain.py'
+      - '.github/workflows/toolchain-validation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  asset-import:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Install pinned dependencies and test alignment and preservation
+        run: |
+          python -m pip install numpy==2.2.6 Pillow==11.3.0 opencv-python-headless==4.11.0.86
+          python -m unittest discover -s tests -p test_asset_toolchain.py -v
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y blender python3-numpy
+          dpkg-query -W blender python3-numpy
+      - name: Actual Blender textured OBJ import and consolidation
+        run: |
+          python tools/generate-obj-fixture.py /tmp/obj-fixture
+          blender --background --factory-startup --python-exit-code 1 --python tools/blender-import-assets.py -- --input /tmp/obj-fixture/fixture.obj --manifest /tmp/obj-fixture/manifest.json --output /tmp/imported
+          python - <<'PY'
+          import json
+          r=json.load(open('/tmp/imported/import-report.json'))
+          assert r['pass'] and r['source']['triangles']==2 and r['converted']['objects']==1 and r['converted']['textures'],r
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: toolchain-asset-import-fixture
+          path: /tmp/imported/
+  colmap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Install and execute CPU COLMAP
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y colmap
+          dpkg-query -W colmap
+          python -m pip install numpy==2.2.6 opencv-python-headless==4.11.0.86
+          python tools/generate-photo-fixture.py /tmp/photos
+          python tools/reconstruct-photos.py colmap --input /tmp/photos --manifest /tmp/photos/manifest.json --output /tmp/sfm
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: toolchain-colmap-fixture
+          path: |
+            /tmp/sfm/*.json
+            /tmp/sfm/*.log
+            /tmp/photos/manifest.json
+  openmvs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Install official OpenMVS v2.4.0 Ubuntu release and COLMAP
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y colmap libgl1 libgomp1
+          mkdir /tmp/openmvs-bin
+          gh api repos/cdcseacave/openMVS/releases/tags/v2.4.0 > /tmp/openmvs-release.json
+          python - <<'PY'
+          import json,re,subprocess
+          r=json.load(open('/tmp/openmvs-release.json'))
+          assets=[a for a in r['assets'] if re.search(r'ubuntu|linux',a['name'],re.I) and re.search(r'x64|x86_64|amd64',a['name'],re.I) and 'cuda' not in a['name'].lower()]
+          assert len(assets)==1,[a['name'] for a in r['assets']]
+          a=assets[0]
+          subprocess.run(['gh','release','download','v2.4.0','--repo','cdcseacave/openMVS','--pattern',a['name'],'--dir','/tmp/openmvs-bin'],check=True)
+          import hashlib,pathlib
+          path=pathlib.Path('/tmp/openmvs-bin')/a['name'];digest=hashlib.sha256(path.read_bytes()).hexdigest()
+          if a.get('digest'):assert a['digest']=='sha256:'+digest
+          pathlib.Path('/tmp/openmvs-receipt.json').write_text(json.dumps({'asset':a['name'],'sha256':digest,'release_digest':a.get('digest'),'bytes':path.stat().st_size}))
+          if path.suffix=='.zip':subprocess.run(['unzip','-q',str(path),'-d','/tmp/openmvs-bin'],check=True)
+          elif path.name.endswith(('.tar.gz','.tgz')):subprocess.run(['tar','-xzf',str(path),'-C','/tmp/openmvs-bin'],check=True)
+          else:raise ValueError('Unsupported archive')
+          PY
+          bin=$(find /tmp/openmvs-bin -type f -name InterfaceCOLMAP -print -quit)
+          test -n "$bin"
+          dirname "$bin" >> "$GITHUB_PATH"
+          ldd "$bin"
+      - name: Run real dense reconstruction and mesh texturing on synthetic photos
+        run: |
+          python -m pip install numpy==2.2.6 opencv-python-headless==4.11.0.86
+          python tools/generate-photo-fixture.py /tmp/photos
+          python tools/reconstruct-photos.py openmvs --input /tmp/photos --manifest /tmp/photos/manifest.json --output /tmp/mvs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: toolchain-openmvs-fixture
+          path: |
+            /tmp/openmvs-receipt.json
+            /tmp/mvs/*.json
+            /tmp/mvs/*.log
+  odm:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Resolve versioned ODM image digest and run synthetic aerial reconstruction
+        run: |
+          set -euo pipefail
+          python -m pip install numpy==2.2.6 opencv-python-headless==4.11.0.86
+          python tools/generate-photo-fixture.py /tmp/photos --aerial
+          image=opendronemap/odm@sha256:56be7b87a5ef3abfc0bb2afe88df839862fd18c41d26ca13672bf79cd2d59dd1
+          docker pull "$image"
+          printf '%s\n' "$image" > /tmp/odm-image.txt
+          python tools/reconstruct-photos.py odm --input /tmp/photos --manifest /tmp/photos/manifest.json --output /tmp/odm-test --odm-image "$image"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: toolchain-odm-fixture
+          path: |
+            /tmp/odm-image.txt
+            /tmp/odm-test/*.json
+            /tmp/odm-test/*.log
+  lama:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Fetch declared Apache-2.0 ONNX weights and verify exact content
+        run: |
+          python -m pip install numpy==2.2.6 Pillow==11.3.0 opencv-python-headless==4.11.0.86 onnxruntime==1.22.1
+          curl --fail --location --retry 3 https://huggingface.co/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx -o /tmp/lama_fp32.onnx
+          echo '1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6  /tmp/lama_fp32.onnx' | sha256sum -c -
+      - name: Actual LaMa inference and comparison against known synthetic ground truth
+        run: |
+          python - <<'PY'
+          import numpy as np
+          from PIL import Image
+          y,x=np.indices((512,512));v=np.clip(90+30*np.sin(x/18)+20*np.sin(y/17),0,255).astype(np.uint8)
+          rgb=np.stack([v,np.clip(v.astype(int)+10,0,255).astype(np.uint8),v],axis=2);mask=np.zeros((512,512),bool);mask[240:250,220:242]=True
+          damaged=rgb.copy();damaged[mask]=245
+          Image.fromarray(rgb).save('/tmp/truth.png');Image.fromarray(damaged).save('/tmp/damaged.png');Image.fromarray(mask.astype(np.uint8)*255).save('/tmp/mask.png')
+          PY
+          python tools/inpaint-local.py --image /tmp/damaged.png --mask /tmp/mask.png --truth /tmp/truth.png --checkpoint /tmp/lama_fp32.onnx --checkpoint-sha256 1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6 --checkpoint-license Apache-2.0 --output /tmp/inpaint
+          python - <<'PY'
+          import json
+          r=json.load(open('/tmp/inpaint/inpaint-report.json'));assert r['pass'] and r['lama_status']=='executed'
+          assert all(x['masked_mae']<65 for x in r['methods']),r
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: toolchain-lama-fixture
+          path: /tmp/inpaint/
+  mesh-fusion:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      OMP_NUM_THREADS: '2'
+      OPENBLAS_NUM_THREADS: '2'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Install pinned Open3D and PyMeshLab
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libgl1 libegl1 libopengl0 libglu1-mesa libxkbcommon0
+          python -m pip install numpy==1.26.4 open3d==0.19.0 pymeshlab==2025.7.post1
+          python -m pip freeze > /tmp/mesh-fusion-lock.txt
+      - name: Execute registration, color ICP and exact mesh cleanup
+        run: python tests/mesh-fusion-fixture.py /tmp/mesh-fusion
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: toolchain-mesh-fusion
+          path: |
+            /tmp/mesh-fusion/
+            /tmp/mesh-fusion-lock.txt
