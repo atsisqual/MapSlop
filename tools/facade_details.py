@@ -51,7 +51,15 @@ def facade(p,ground,height,config):
     if entrance.get("enabled",True):
         fraction=float(entrance.get("fracao_aresta",.5));w=float(entrance.get("largura_m",1.5));h=float(entrance.get("altura_m",2.55))
         if not .1<=fraction<=.9 or not .5<=w<=3 or not 1<=h<=4:raise ValueError("Invalid door configuration")
-        if not opening("door",chosen,chosen[4]*fraction,w,.04,h,.20):raise ValueError("Configured door does not fit")
+        if not opening("door",chosen,chosen[4]*fraction,w,.04,h,.20):
+            if entrance.get("aresta") is not None:raise ValueError("Explicit configured door does not fit")
+            # Default estimated orientation may be ambiguous; try other edges without
+            # changing the explicitly configured width/height.
+            for alternative in sorted(possible,key=lambda e:(float(e[3]@direction),e[4]),reverse=True):
+                if alternative[0]==chosen[0]:continue
+                if opening("door",alternative,alternative[4]*.5,w,.04,h,.20):
+                    chosen=alternative;report["door_fallback"]="estimated orientation fallback";break
+            else:raise ValueError("No suitable facade for estimated door")
         report["door_edge"]=chosen[0]
     if windows.get("enabled",True):
         w=float(windows.get("largura_m",.75));h=float(windows.get("altura_m",1.4));sill=float(windows.get("peitoril_m",2.1));spacing=float(windows.get("intervalo_m",4.2))
