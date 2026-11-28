@@ -111,11 +111,15 @@ jobs:
       - name: Retrieve immutable approved DGT derivatives
         run: |
           set -euo pipefail
-          mkdir -p /tmp/combined /tmp/runtime /tmp/church-input /tmp/approved-v1
+          mkdir -p /tmp/combined /tmp/runtime /tmp/church-input /tmp/approved-v1 /tmp/approved-v3
           tag=geodata-dgt-local-church-46138928840-1
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/approved-v1 --pattern church.glb
           echo '26e9bce51daaf408408fe8e63de621c61aed0cc788c6cfcc13fcfd5a1ebe42b9  /tmp/approved-v1/church.glb' | sha256sum -c -
+          tag=geodata-dgt-local-church-46156457337-1
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/approved-v3 --pattern church.glb
+          echo 'adc7fe62ac33ec4dd0021c5cc1e85666d81b6432c9c8b2e9c2b0cc2f2f1209b1  /tmp/approved-v3/church.glb' | sha256sum -c -
           tag=geodata-dgt-orthophoto-46098427966-1
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/combined --pattern combined-runtime.tar.gz --pattern combined-report.json --pattern combined-inputs.json --pattern SHA256SUMS.txt
@@ -132,7 +136,7 @@ jobs:
       - name: Compare RANSAC with exact approved V1, protect tower and optimize materials
         run: |
           python tools/build-local-church.py --input /tmp/church-input --runtime /tmp/runtime --materials /tmp/cc0-materials --approved-v1 /tmp/approved-v1/church.glb --output /tmp/local-3d
-          bash tools/optimize-church.sh /tmp/local-3d
+          bash tools/optimize-church.sh /tmp/local-3d /tmp/approved-v3/church.glb
           bash tools/stage-local-3d.sh /tmp/local-3d
       - name: Render real candidate with both loaders
         run: |
@@ -172,6 +176,55 @@ jobs:
           tar -C /tmp/runtime-church -czf /tmp/local-3d/church-runtime-patch.tar.gz js/pedome.js js/pedome-buildings-detail.mjs models/church.glb
           python tools/package-playable-preview.py /tmp/runtime-church /tmp/local-3d/church-in-game-report.json /tmp/local-3d/MapSlop-Pedome-Church-Preview.zip --church-report /tmp/local-3d/church-report.json
           tar -C /tmp/cc0-materials -czf /tmp/local-3d/cc0-material-inputs.tar.gz .
+      - name: Compare corrected lighting on the same corrected church
+        run: |
+          set -euo pipefail
+          lighting_sha=db74803e8e945ec680fa267b40f845b491b56719
+          git init -q /tmp/lighting-source
+          git -C /tmp/lighting-source remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          git -C /tmp/lighting-source fetch --no-tags --depth=1 origin "$lighting_sha"
+          test "$(git -C /tmp/lighting-source rev-parse FETCH_HEAD)" = "$lighting_sha"
+          mkdir -p /tmp/lighting-tools /tmp/lighting-results
+          for f in pedome-lighting.mjs install-lighting-preview.py; do
+            git -C /tmp/lighting-source show "$lighting_sha:tools/$f" > "/tmp/lighting-tools/$f"
+          done
+          for f in lighting-real.mjs lighting-real-image-gate.py; do
+            git -C /tmp/lighting-source show "$lighting_sha:tests/$f" > "tests/$f"
+          done
+          python /tmp/lighting-tools/install-lighting-preview.py /tmp/runtime-church /tmp/runtime-lit
+          cmp /tmp/runtime-church/js/terrain.bin /tmp/runtime-lit/js/terrain.bin
+          cmp /tmp/runtime-church/js/colliders.js /tmp/runtime-lit/js/colliders.js
+          cmp /tmp/runtime-church/models/church.glb /tmp/runtime-lit/models/church.glb
+          python -m http.server 8080 --bind 127.0.0.1 --directory /tmp/runtime-church >/tmp/lighting-results/before.log 2>&1 &
+          before=$!
+          python -m http.server 8081 --bind 127.0.0.1 --directory /tmp/runtime-lit >/tmp/lighting-results/after.log 2>&1 &
+          after=$!
+          trap 'kill "$before" "$after" || true' EXIT
+          for port in 8080 8081; do
+            for i in {1..30}; do if curl -fsS "http://127.0.0.1:$port/" >/dev/null; then break; fi; sleep 1; done
+          done
+          MAPSLOP_RESULTS=/tmp/lighting-results node tests/lighting-real.mjs
+          python tests/lighting-real-image-gate.py /tmp/lighting-results
+          jq -e '.pass and .checks.same_church and .checks.tree_shadows and (.candidate.scene.church.osm_id == 149406360)' /tmp/lighting-results/lighting-report.json
+          tar -C /tmp/runtime-lit -czf /tmp/local-3d/church-lighting-runtime-patch.tar.gz js/pedome.js js/pedome-buildings-detail.mjs js/pedome-lighting.mjs models/church.glb
+          python - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          root=Path('/tmp/local-3d');lighting=Path('/tmp/lighting-results')
+          report=json.loads((root/'church-report.json').read_text())
+          def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
+          data={'church_commit':os.environ['GITHUB_SHA'],'lighting_commit':'db74803e8e945ec680fa267b40f845b491b56719','base_runtime_sha256':'f9f574945cfe74923076b3d430fefb2848e0cad5a1b0ce67bcbd787b7fe0f57c','patch_sha256':sha(root/'church-lighting-runtime-patch.tar.gz'),'church_sha256':report['glb_sha256'],'church_report_sha256':sha(root/'church-report.json'),'church_in_game_sha256':sha(root/'church-in-game-report.json'),'lighting_report_sha256':sha(lighting/'lighting-report.json'),'lighting_visual_sha256':sha(lighting/'lighting-visual-diagnostics.json'),'visual_review_required':True}
+          (root/'church-lighting-receipt.json').write_text(json.dumps(data,indent=2)+'\n')
+          PY
+      - name: Preserve combined visual diagnostics
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/local-3d
+          shopt -s nullglob
+          for f in /tmp/lighting-results/*.png /tmp/lighting-results/*.json /tmp/lighting-results/*.log; do
+            cp "$f" "/tmp/local-3d/lighting-$(basename "$f")"
+          done
       - name: Archive only DGT-derived candidate and diagnostics privately
         if: always()
         run: |
@@ -183,6 +236,9 @@ jobs:
           if [ -f viewer-report.json ] && [ -f church-in-game-report.json ] && jq -e '.pass' viewer-report.json >/dev/null && jq -e '.pass' church-report.json >/dev/null && jq -e '.pass' church-in-game-report.json >/dev/null; then
             test -f MapSlop-Pedome-Church-Preview.zip && test -f cc0-material-inputs.tar.gz
             files+=(church.glb church-runtime-patch.tar.gz MapSlop-Pedome-Church-Preview.zip cc0-material-inputs.tar.gz)
+          fi
+          if [ -f church-lighting-receipt.json ] && [ -f church-lighting-runtime-patch.tar.gz ] && jq -e '.pass' lighting-lighting-report.json >/dev/null && jq -e '.pass' lighting-lighting-visual-diagnostics.json >/dev/null; then
+            files+=(church-lighting-runtime-patch.tar.gz)
           fi
           if [ "${#files[@]}" -eq 0 ]; then echo 'No evidence produced'; exit 1; fi
           sha256sum "${files[@]}" > SHA256SUMS.txt
