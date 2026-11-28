@@ -20,7 +20,8 @@ async function capture(name,x,z,span=65){
   await page.evaluate(async({x,z,span})=>{
     const THREE=await import('three/webgpu');
     const {heightAt}=await import(new URL('js/terrain.js',location.href).href);
-    const {renderer,scene}=window.mapslop.trafficPreview;
+    const {renderer,scene,getUI}=window.mapslop.trafficPreview;
+    getUI().refresh();
     const cam=new THREE.OrthographicCamera(-span/2,span/2,span*800/1280/2,-span*800/1280/2,.1,500);
     cam.position.set(x,heightAt(x,z)+150,z);cam.up.set(0,0,-1);cam.lookAt(x,heightAt(x,z),z);
     cam.updateMatrixWorld();
@@ -33,6 +34,29 @@ async function capture(name,x,z,span=65){
 try{
   await page.goto(url,{waitUntil:'load',timeout:90000});
   await page.waitForFunction(()=>window.mapslop?.ready===true&&!!window.mapslop.trafficPreview,{},{timeout:120000});
+  const hudRead=()=>page.evaluate(()=>{
+    const e=window.mapslop.controllers.getActiveEntity(),{x,z}=e.position;
+    const canvas=document.querySelector('#hud-map canvas'),label=document.querySelector('#location');
+    return {x,z,heading:e.heading,label:label.textContent,coords:label.title,marker:[Number(canvas.dataset.playerX),Number(canvas.dataset.playerZ)],expected_distance_m:Math.round(Math.hypot(x,z))};
+  });
+  const original=await hudRead();
+  await page.evaluate(()=>{
+    const {controllers:c,trafficPreview:p,GEO}=window.mapslop;
+    const T=GEO.terrain,xmax=T.x0+(T.nx-1)*T.cell,zmax=T.z0+(T.nz-1)*T.cell;
+    const target=GEO.roadGraph.nodes.filter(n=>Math.min(n.x-T.x0,xmax-n.x,n.z-T.z0,zmax-n.z)>45&&Math.hypot(n.x,n.z)>100).sort((a,b)=>Math.hypot(a.x,a.z)-Math.hypot(b.x,b.z))[0];
+    if(!target)throw Error('Missing interior HUD validation target');
+    c.teleportActiveTo(...p.roadSpawn(null,target.x,target.z).slice(0,3));
+  });
+  await page.waitForFunction(old=>{
+    const e=window.mapslop.controllers.getActiveEntity(),{x,z}=e.position,canvas=document.querySelector('#hud-map canvas');
+    return Math.hypot(x-old.x,z-old.z)>50&&Math.hypot(Number(canvas.dataset.playerX)-x,Number(canvas.dataset.playerZ)-z)<.5&&document.querySelector('#location').textContent.endsWith(' · '+Math.round(Math.hypot(x,z))+' m da igreja');
+  },original,{timeout:15000});
+  const moved=await hudRead();
+  const consistent=r=>r.label.endsWith(' · '+r.expected_distance_m+' m da igreja')&&Math.hypot(r.marker[0]-r.x,r.marker[1]-r.z)<.5;
+  report.hud={original,moved,pass:consistent(original)&&consistent(moved)&&original.label!==moved.label&&original.coords!==moved.coords};
+  await page.screenshot({path:path.join(root,'hud-moved-live.png'),timeout:60000});
+  await page.evaluate(({x,z,heading})=>window.mapslop.controllers.teleportActiveTo(x,z,heading),original);
+  await page.waitForFunction(old=>document.querySelector('#location').textContent===old.label,original,{timeout:15000});
   await page.screenshot({path:path.join(root,'actual-game-spawn.png'),timeout:60000});
   const setup=await page.evaluate(async()=>{
     const {GEO,controllers:c,trafficPreview:p}=window.mapslop;
@@ -145,7 +169,12 @@ try{
   await capture('spawn-top-down',setup.spawn.actual.x,setup.spawn.actual.z,45);
   if(setup.complex){
     await capture('vim-real-oneway-complex-not-confirmed-roundabout',setup.complex.x,setup.complex.z,95);
-    report.roundabout.nearby_real_complex=setup.complex;save();
+    report.roundabout.nearby_real_complex=setup.complex;
+    if(setup.complex.min_playable_margin_m<setup.complex.controller_edge_margin_m && tags.length===0){
+      report.roundabout.status='not_applicable_in_pilot_bbox';
+      report.roundabout.reason='Known VIM/Humberto Delgado/São Pedro complex intersects controller boundary; full ring cannot be validated in this pinned extract. Follow-up #35.';
+    }
+    save();
   }
   // Define once inside the live browser. Use the exact upstream controller.
   await page.evaluate(()=>{
@@ -236,7 +265,7 @@ try{
     report.oneway.validation=o;save();
     await capture('real-oneway-driven',o.drive.end.x,o.drive.end.z,45);
   }
-  report.available_cases_pass=setup.terrain.source==='DGT MDT 0.5 m'&&setup.terrain.kind==='tin'&&setup.terrain.vertices===126528&&!setup.terrain.flat&&setup.spawn.pass&&setup.marking.pass&&report.intersection?.drive?.pass===true&&report.oneway?.validation?.pass===true&&report.errors.length===0&&report.console_errors.length===0&&report.failed_requests.every(r=>r.url.endsWith('/favicon.ico'));
+  report.available_cases_pass=setup.terrain.source==='DGT MDT 0.5 m'&&setup.terrain.kind==='tin'&&setup.terrain.vertices===126528&&!setup.terrain.flat&&report.hud?.pass===true&&setup.spawn.pass&&setup.marking.pass&&report.intersection?.drive?.pass===true&&report.oneway?.validation?.pass===true&&report.errors.length===0&&report.console_errors.length===0&&report.failed_requests.every(r=>r.url.endsWith('/favicon.ico'));
   // Explicitly partial: the pilot has no tagged real roundabout.
   // A future source update requires a separate real-ring route and review.
   if(tags.length)report.roundabout.reason='Tagged feature exists in source but no verified real ring drive; manual inspection required';
