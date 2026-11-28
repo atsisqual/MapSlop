@@ -29,16 +29,20 @@ export function installLighting(scene,renderer,sun,hemi,buildings,quality='low')
  state.tree_caster_batches=canopy.length;
  scene.traverse(o=>{if(o.isMesh){o.receiveShadow=true;state.receivers++;}});
  let last=null;
- function update(camera){
+ function update(camera,force=false){
   const p=camera.position;
   const x=Math.round(p.x/step)*step,y=Math.round(p.y/step)*step,z=Math.round(p.z/step)*step;
   state.tree_caster_instances=canopy.reduce((n,o)=>n+(o.visible?o.count:0),0);
   state.tree_shadow_triangles=canopy.reduce((n,o)=>n+(o.visible?o.count*(o.geometry.index?.count??o.geometry.attributes.position.count)/3:0),0);
   const key=x+','+y+','+z+';'+canopy.map(o=>o.instanceMatrix.version).join(',');
-  if(key===last)return;
+  if(key===last&&!force)return;
   last=key;sun.target.position.set(x,y,z);sun.position.set(x-105,y+140,z+90);
   sun.target.updateMatrixWorld(true);sun.updateMatrixWorld(true);
   sun.shadow.needsUpdate=true;state.updates++;
  }
- return {update,report:()=>({...state,shadow_enabled:renderer.shadowMap.enabled,sun_cast_shadow:sun.castShadow,fog:scene.fog.isFogExp2===true})};
+ function shadowControl(camera,{trees=true,bias=state.bias,normalBias=state.normalBias}={}){
+  for(const o of canopy)o.castShadow=trees;
+  sun.shadow.bias=bias;sun.shadow.normalBias=normalBias;update(camera,true);
+ }
+ return {update,shadowControl,report:()=>({...state,shadow_enabled:renderer.shadowMap.enabled,sun_cast_shadow:sun.castShadow,fog:scene.fog.isFogExp2===true})};
 }
