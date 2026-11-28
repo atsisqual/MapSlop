@@ -25,13 +25,13 @@ Opções --method colored (ambas as nuvens RGB, estimativa de normais, ICP color
 
 ## Limpeza de geometria
 
-Para fundir peças previamente alinhadas, concatenar vértices/faces com offsets de índices na mesma frame, sem texturas ou atributos, e guardar PLY único. Depois:
+Para fundir peças previamente alinhadas, usar --mesh repetido no mesmo diretório e manifesto, com common_metric_frame_confirmed:true. A ferramenta concatena vértices/faces com offsets de índices e deduplica automaticamente. Exemplo de peça única:
 
 ```sh
 python tools/mesh-fusion.py clean --geometry-only --mesh inputs/merged.ply --manifest inputs/manifest.json --output outputs/clean
 ```
 
-Manifesto inclui geometry_only:true. Rejeita cor de vértice, UV e textura. PyMeshLab remove vértices duplicados exatos, faces degeneradas/duplicadas e vértices não referenciados; preservação do conjunto de triângulos não degenerados em coordenadas verificada. Não faz união booleana, remeshing, soldadura com tolerância nem eliminação de superfícies sobrepostas não idênticas. Para malha texturada, usar Blender/importador existente sem destruir seams. Não aceitar automaticamente orientação de faces duplicadas conflitantes.
+Para várias peças: `python tools/mesh-fusion.py clean --geometry-only --mesh inputs/a.ply --mesh inputs/b.ply --manifest inputs/manifest.json --output outputs/merged`. Manifesto inclui geometry_only:true. Rejeita cor de vértice, UV e textura. PyMeshLab remove vértices duplicados exatos, faces degeneradas/duplicadas e vértices não referenciados; preservação do conjunto de triângulos não degenerados em coordenadas verificada. Não faz união booleana, remeshing, soldadura com tolerância nem eliminação de superfícies sobrepostas não idênticas. Para malha texturada, usar Blender/importador existente sem destruir seams. Não aceitar automaticamente orientação de faces duplicadas conflitantes.
 
 ## QA e próximos passos
 
