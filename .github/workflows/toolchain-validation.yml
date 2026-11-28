@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - 'tools/asset-pipeline.py'
+      - 'tools/texture-atlas.py'
+      - 'tests/earth3d-offline.cjs'
       - 'tools/inpaint-local.py'
       - 'tools/reconstruct-photos.py'
       - 'tools/renderdoc-*'
@@ -220,3 +222,31 @@ jobs:
         with:
           name: toolchain-renderdoc-fixture
           path: /tmp/render-evidence/*.json
+
+  earth3d-offline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Compile pinned upstream pure geometry module
+        run: |
+          set -euo pipefail
+          git init /tmp/earth3d
+          git -C /tmp/earth3d remote add origin https://github.com/AIFanatic/earth-3d.git
+          git -C /tmp/earth3d fetch --depth 1 origin 54194adca25a266582200a8aa114ef1288b1e40b
+          git -C /tmp/earth3d checkout --detach FETCH_HEAD
+          mkdir /tmp/earth3d-tools
+          npm install --prefix /tmp/earth3d-tools --save-exact typescript@4.9.5
+          /tmp/earth3d-tools/node_modules/.bin/tsc /tmp/earth3d/src/node/decoder/LatLonBox.ts --module commonjs --target es2020 --outDir /tmp/earth3d-qa
+          # Only pure geometry; never instantiate network NodeManager or query any map endpoint.
+          node tests/earth3d-offline.cjs /tmp/earth3d-qa/LatLonBox.js | tee /tmp/earth3d-qa/test.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: toolchain-earth3d-offline
+          path: /tmp/earth3d-qa/test.json
