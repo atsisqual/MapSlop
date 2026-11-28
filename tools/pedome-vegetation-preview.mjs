@@ -10,7 +10,7 @@ const styles={
  agriculture:{shape:[.85,1],start:[.30,.38],colors:[0x688c4b,0x54773c]},
  settlement:{shape:[1,.76],start:[.32,.39],colors:[0x4e773e,0x729650]}
 };
-const limits=[100,250,750], hash=(x,z)=>((Math.imul(Math.round(x*100),73856093)^Math.imul(Math.round(z*100),19349663))>>>0);
+const limits=[100,250,750], hash=(x,z)=>{let h=Math.imul(Math.round(x*100),73856093)^Math.imul(Math.round(z*100),19349663);h=Math.imul(h^(h>>>16),0x45d9f3b);h=Math.imul(h^(h>>>16),0x45d9f3b);return (h^(h>>>16))>>>0;};
 const tris=g=>(g.index?.count||g.attributes.position.count)/3;
 export function installVegetation(scene,trees){
  const group=new THREE.Group(); group.name='PrivateLiDARVegetation';scene.add(group);
