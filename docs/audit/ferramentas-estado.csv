@@ -1,0 +1,51 @@
+ferramenta,categoria,versao,licenca,nivel,evidencia,decisao,prioridade
+Roofer,reconstrucao,v1.0.0,GPL-3.0 (offline),N9,Pages 255673d8bc58 (17 telhados),principal telhados; correr nos 527,P2-1
+City3D,reconstrucao,ZIP arquivado,GPL-3.0,N1,reconstruction-toolchain-20261127,descartar,-
+City4CFD,reconstrucao,ZIP arquivado,GPL-3.0,N1,reconstruction-toolchain-20261127,descartar,-
+3dfier,reconstrucao,docker (digest por fixar),GPL-3.0,N5,run 46146334404 (fixture),fallback muros; preferir PDAL,P2
+Open3D,reconstrucao,0.19.0,MIT,N5,PR41 mesh-fusion (reportado),dormente ate fotogrametria,P4
+PyMeshLab,reconstrucao,2025.7.post1,GPL-3.0,N5,PR41 (reportado),dormente ate fotogrametria,P4
+Blender bpy,reconstrucao,4.0.2/4.2.0/4.4.0,GPL (outputs livres),N5,run 46137932115,fixar uma versao,P0-1
+BlenderGIS,reconstrucao,2add45f,GPL-3.0,N3-N4,PR41 (reportado),descartar (pyproj cobre),-
+COLMAP,fotogrametria,apt nao fixada,BSD-3,N5,run 46140715436 (sintetico),P4 com fotos proprias,P4
+OpenMVS,fotogrametria,v2.4.0,AGPL-3.0,N5,PR41 (reportado),P4,P4
+OpenDroneMap,fotogrametria,3.5.6,AGPL-3.0,N5,PR41 (reportado),P4 com drone,P4
+OSM2World,infraestrutura,0.4.0,LGPL (estilo CC0/PD),N6,run 46146334404 (30.5 MB recorte igreja),secundario filtrado + gltfpack,P2-5
+MOSAIQ,infraestrutura,f73d030,Apache-2.0,N6,run 46146334404 (Web Mercator x1.333),descartar da cadeia principal,-
+OSM Highway Junction,infraestrutura,c138167,Apache-2.0,N6,run 46146334404,avaliar vs osm2streets,P1-6
+OSM Street Roadrunner,infraestrutura,-,por verificar,N0,-,nao investir,-
+MRoadGen,infraestrutura,50dec2e,CC0,N0,repo sem .blend,parar,-
+SUMO netconvert,infraestrutura,1.28.0,EPL-2.0,N6,run 46146334404; frame test vermelho 46147123962,trafego NPC,P4
+OpenDRIVE,infraestrutura,1.4 via SUMO,ASAM,N6,export SUMO,trafego NPC,P4
+IfcOpenShell,infraestrutura,0.8.3.post2,LGPL-3.0,N5,fixture muro,dormente,P4
+cjio,infraestrutura,0.10.1,MIT,N5,fixture,validar CityJSON do Roofer,P2-1
+GDAL/OGR,infraestrutura,3.8.4,MIT,N9,pipeline terreno,base canonica,-
+QGIS,infraestrutura,-,GPL,N0,-,uso humano opcional,-
+Geometry Nodes bake,infraestrutura,Blender 4.4,GPL (outputs livres),N5,run 46146179120,dormente,-
+OpenCV inpaint,materiais,4.11.0.86,Apache-2.0,N6,run 46144971908 (efeito minimo),fechar item A,-
+LaMa ONNX,materiais,lama_fp32.onnx,Apache-2.0,N5,run 46140715436 (reportado),so com caso real,P4
+LilyTexturePacker,materiais,1.1.3,GPL-3.0,N1,lily-owner-archives-20261128.json,substituir por gltfpack,-
+LilySurfaceScraper,materiais,1.9.0,GPL-3.0/MIT,N1,lily-owner-archives-20261128.json,substituir por lockfile CC0,-
+Poly Haven,materiais,API,CC0,N2 (partido),run 46144974129 KeyError diff,corrigir + lockfile,P0-6
+ambientCG,materiais,API v3,CC0,N0,-,adotar,P1-2
+atlas/UV/alinhamento proprios,materiais,-,MIT,N5,PR41,manter asset-pipeline,P0-3
+3DTilesRendererJS,visualizacao,-,Apache-2.0,N6,run 46138928840 (igreja),adotar na fase de blocos,P3-3
+RenderDoc,visualizacao,-,MIT,N4 (job a falhar),run 46144617952 exit 139,retirar do CI; usar Spector.js,P0-2
+MapsModelsImporter,visualizacao,70fca73,GPL-3.0,N0-N3,PR41,retirar do repo,P0-2
+Earth-3D,visualizacao,54194ad,MIT,N3,PR41,retirar do repo,P0-2
+Earth Reverse Engineering,visualizacao,35af10d,por confirmar,N3,PR41,retirar do repo,P0-2
+LexSong,visualizacao,cd5c4d6,por confirmar,N3,PR41,retirar do repo,P0-2
+Apple Flyover,visualizacao,ce5f9c6,por confirmar,N3,PR41,retirar do repo,P0-2
+triangle (pip),dependencia,20250106,LGPL wrapper; Triangle so uso pessoal/academico,-,infrastructure-converters.yml,remover,P0-2
+osm2streets,novo,osm2streets-js 0.1.4,Apache-2.0,N0,-,adotar passeios/cruzamentos,P1-6
+PDAL,novo,-,BSD-3,N0,-,adotar alturas muros,P1-4
+glTF-Transform,novo,4.x,MIT,N0,-,adotar passo final,P3-1
+gltfpack/meshoptimizer,novo,-,MIT,N0,-,adotar LOD/KTX2,P3-1
+KTX-Software,novo,-,Apache-2.0,N0,-,dependencia KTX2,P3-1
+3d-tiles-tools,novo,-,Apache-2.0,N0,-,fase de blocos,P3-3
+three.js CSM,novo,addon three.js,MIT,N0,-,iluminacao,P1-1
+N8AO,novo,-,por confirmar,N0,-,AO (confirmar licenca),P1-1
+samgeo,novo,-,MIT (SAM Apache-2.0),N0,-,segmentar ortofoto,P2-2
+Myria3D + FRACTAL,novo,3.8.x,BSD-3 / Etalab 2.0,N0,-,experiencia reclassificacao,P4
+Spector.js,novo,-,MIT,N0,-,inspecao WebGL,P0-2
+Streets GL,referencia,-,MIT (sem manutencao),N0,-,referencia; reutilizar modulos isolados,P1
