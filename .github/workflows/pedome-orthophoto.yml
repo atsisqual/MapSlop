@@ -1,0 +1,94 @@
+name: Pedome private orthophoto ground
+on:
+  workflow_call:
+permissions:
+  contents: write
+concurrency:
+  group: private-orthophoto-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/agent/orthophoto-ground'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MAPSLOP_RESULTS: /tmp/ortho-results
+      MAPSLOP_TEST_URL: http://127.0.0.1:8080/?webgl
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Install pinned dependencies and verify clipping
+        run: |
+          python -m pip install -r requirements-buildings.txt Pillow==11.3.0
+          node tests/orthophoto-partition.test.mjs
+      - name: Retrieve only inventoried private orthophotos
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ortho-input /tmp/ortho-results
+          tag=geodata-dgt-pedome-20261127
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/ortho-input --pattern 'ORTOS-2025-cog-25cm-084-2_v01.tif' --pattern 'ORTOS-2025-cog-25cm-084-4_v01.tif'
+      - name: Fetch approved immutable terrain and pinned upstream
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ortho-terrain
+          tag=geodata-dgt-pages-road-46085062868
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/ortho-terrain --pattern terrain-road-preview.bin --pattern road-validation.json
+          python tools/verify-pages-terrain.py /tmp/ortho-terrain
+          echo '36019dfc27584d667555c794350107c29981da4f4ee15bac2c03078aba0d895b  /tmp/ortho-terrain/terrain-tin.bin' | sha256sum -c -
+          git init /tmp/nairobi
+          git -C /tmp/nairobi remote add origin https://github.com/briankariuki/slop-nairobi.git
+          git -C /tmp/nairobi fetch --depth=1 origin 64b8599ae7dd7ba56ffbe68f19cc1423a9e7f903
+          git -C /tmp/nairobi checkout --detach FETCH_HEAD
+          git init /tmp/three
+          git -C /tmp/three remote add origin https://github.com/mrdoob/three.js.git
+          git -C /tmp/three sparse-checkout set build examples/jsm
+          git -C /tmp/three fetch --depth=1 --filter=blob:none origin f17eb5d689094a3fbd4cd0d64d54729a48036ce0
+          git -C /tmp/three checkout --detach FETCH_HEAD
+          mkdir /tmp/three-vendor
+          cp -r /tmp/three/build /tmp/three/examples /tmp/three/LICENSE /tmp/three-vendor/
+      - name: Generate aligned tile pyramid and private game
+        run: |
+          set -euo pipefail
+          python tools/build-orthophoto-tiles.py --input /tmp/ortho-input --terrain /tmp/ortho-terrain/terrain-tin.bin --output /tmp/ortho-tiles
+          cp /tmp/ortho-tiles/manifest.json /tmp/ortho-results/
+          python tools/prepare-pedome.py /tmp/nairobi /tmp/pedome-ortho --osm-json data/pedome/pedome-osm.json --terrain-bin /tmp/ortho-terrain/terrain-tin.bin --three-vendor /tmp/three-vendor
+          cmp /tmp/ortho-terrain/terrain-tin.bin /tmp/pedome-ortho/js/terrain.bin
+          cp /tmp/pedome-ortho/build-report.json /tmp/ortho-results/
+          python tools/install-orthophoto-preview.py /tmp/pedome-ortho /tmp/ortho-tiles
+          node --check /tmp/pedome-ortho/js/pedome-orthophoto-preview.mjs
+          node --check tests/orthophoto-real.mjs
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Private browser validation and performance
+        run: |
+          set -euo pipefail
+          python -m http.server 8080 --bind 127.0.0.1 --directory /tmp/pedome-ortho > /tmp/ortho-results/http.log 2>&1 &
+          server=$!
+          trap 'kill "$server" || true' EXIT
+          for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
+          node tests/orthophoto-real.mjs
+      - name: Preserve tiles and evidence in unique draft only
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ortho-results
+          if [ -d /tmp/ortho-tiles ]; then tar -C /tmp/ortho-tiles -czf /tmp/ortho-results/orthophoto-tiles.tar.gz .; fi
+          cd /tmp/ortho-results
+          shopt -s nullglob
+          files=(*.json *.png *.log *.tar.gz)
+          if [ "${#files[@]}" -eq 0 ]; then echo 'No evidence'; exit 1; fi
+          sha256sum "${files[@]}" > SHA256SUMS.txt
+          tag=geodata-dgt-orthophoto-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Private orthophoto evidence ${GITHUB_RUN_ID}" --notes "DGT 2025 derivatives only; manual alignment, real-device performance and publication authorization pending." "${files[@]}" SHA256SUMS.txt
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          echo "PRIVATE_EVIDENCE $tag"
