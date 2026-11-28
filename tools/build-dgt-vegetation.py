@@ -53,10 +53,10 @@ def exclusions(osm):
         tags=e.get("tags",{});g=e.get("geometry",[])
         if len(g)<2:continue
         pts=[to_world(p["lon"],p["lat"]) for p in g]
-        if "highway" in tags:
-            areas.append(LineString(pts).buffer(width(tags)/2+1.5))
+        if "highway" in tags and tags["highway"] not in ("footway","path","steps","cycleway","pedestrian","bridleway","corridor","construction","proposed"):
+            areas.append(LineString(pts).buffer(width(tags)/2))
         if ("building" in tags or "building:part" in tags) and len(pts)>=4 and pts[0]==pts[-1]:
-            areas.append(Polygon(pts).buffer(0).buffer(.75))
+            areas.append(Polygon(pts).buffer(0))
     return sh.union_all(areas)
 
 def candidates(high,count,x0,z0,blocked,cos):
@@ -73,8 +73,8 @@ def candidates(high,count,x0,z0,blocked,cos):
     for i in order:
         r,c=int(iy[i]),int(ix[i]);x=x0+c+.5;z=z0+r+.5
         point=sh.Point(x,z);radius=float(radii[r,c])
-        if blocked.distance(point)<=radius:
-            rejected["road_or_building_crown_overlap"]+=1;continue
+        if blocked.distance(point)<=.5:
+            rejected["road_or_building_trunk_overlap"]+=1;continue
         matches=tree.query(point,predicate="intersects")
         unique={codes[j] for j in matches}
         if len(unique)!=1:
