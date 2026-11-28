@@ -20,10 +20,12 @@ try{
    const cam=new THREE.PerspectiveCamera(45,640/480,.1,300);cam.position.set(25,22,35);cam.lookAt(0,0,0);
    const light=installLighting(scene,renderer,sun,hemi,group,quality);light.update(cam);renderer.render(scene,cam);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
    window.qa={...light.report(),triangles:renderer.info.render.triangles};
+   window.shadowControl=async()=>{sun.castShadow=false;renderer.shadowMap.enabled=false;scene.traverse(o=>{if(o.isMesh){for(const mat of (Array.isArray(o.material)?o.material:[o.material]))if(mat)mat.needsUpdate=true;}});renderer.render(scene,cam);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));};
   },quality);
   const s=await p.evaluate(()=>window.qa);await p.screenshot({path:root+'/'+quality+'.png'});
   report.variants[quality]={...s,errors};if(errors.length)throw Error(JSON.stringify(errors));
   if(quality!=='off'&&(!s.shadow_enabled||!s.sun_cast_shadow||s.casters!==1||s.updates!==1||!s.fog))throw Error(JSON.stringify(s));
+  if(quality==='low'){await p.evaluate(()=>window.shadowControl());await p.screenshot({path:root+'/low-shadow-disabled.png'});}
   await p.close();
  }
  report.pass=true;
