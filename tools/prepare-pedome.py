@@ -191,7 +191,7 @@ export const tin = T.kind === 'tin' ? makeTin(T) : null;""")
     shutil.copy2(P(__file__).resolve().parent/'pedome-render-diagnostics.mjs',out/'js/pedome-render-diagnostics.mjs')
     f=out/'js/ground.js'
     patch(f,"new THREE.MeshStandardMaterial({ map, roughness: 0.95 })","new THREE.MeshStandardNodeMaterial({ map, roughness: 0.95 })")
-    patch(f,"  mesh.name = 'ground';","  if(map)setGroundMap(mesh.material,map,renderer);\\n  mesh.name = 'ground';")
+    patch(f,"  mesh.name = 'ground';","  if(map)setGroundMap(mesh.material,map,renderer);\n  mesh.name = 'ground';")
     # Preserve painting coordinates while resampling the final texture to power-of-two dimensions.
     patch(f,"import * as THREE from 'three/webgpu';","import * as THREE from 'three/webgpu';\nimport { configureGroundTexture,setGroundMap } from './pedome-render-diagnostics.mjs';")
     patch(f,"  map.anisotropy = renderer.getMaxAnisotropy ? renderer.getMaxAnisotropy() : 8;","  configureGroundTexture(map,renderer);")
