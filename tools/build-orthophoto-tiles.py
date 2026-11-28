@@ -20,13 +20,13 @@ b=importlib.util.module_from_spec(spec);spec.loader.exec_module(b)
 NAMES=["ORTOS-2025-cog-25cm-084-2_v01.tif","ORTOS-2025-cog-25cm-084-4_v01.tif"]
 TILE=128
 GUTTER=2
-LEVELS=[("far",2,75),("mid",1,78),("near",.25,82)]
+LEVELS=[("far",64,75),("mid",128,78),("near",512,82)]
 def digest(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    with path.open("rb") as f:return hashlib.file_digest(f,"sha256").hexdigest()
 def world_bounds(x0,z0,x1,z1):
     return (ORIGIN[1]+x0/KX,ORIGIN[0]-z1/KY,ORIGIN[1]+x1/KX,ORIGIN[0]-z0/KY)
 def render_tile(datasets,x,z):
-    size=int((TILE+2*GUTTER)/.25)
+    size=next(n for l,n,_ in LEVELS if l=="near")
     bounds=world_bounds(x-GUTTER,z-GUTTER,x+TILE+GUTTER,z+TILE+GUTTER)
     affine=from_bounds(*bounds,size,size)
     rgb=np.full((3,size,size),65535,dtype=np.uint16)
@@ -51,6 +51,7 @@ def main():
     cols,rows=math.ceil((x1-x0)/TILE),math.ceil((z1-z0)/TILE)
     a.output.mkdir(parents=True,exist_ok=False)
     manifest={"schema":1,"year":2025,"attribution":"© Direção-Geral do Território, ortofotos 2025; CC BY 4.0; reprojected and cropped by MapSlop","license":"https://creativecommons.org/licenses/by/4.0/","origin_lat_lon":list(ORIGIN),"terrain_sha256":digest(a.terrain),"world_extent":[x0,z0,x1,z1],"tile_m":TILE,"gutter_m":GUTTER,"cols":cols,"rows":rows,"sources":sources,"tiles":[]}
+    manifest["sampling"]="pot-v1";manifest["source_metres_per_pixel"]=.25
     total={l:0 for l,_,_ in LEVELS}
     with ExitStack() as stack:
         ds=[stack.enter_context(rasterio.open(a.input/n)) for n in NAMES]
@@ -62,14 +63,15 @@ def main():
                 x,z=x0+i*TILE,z0+j*TILE
                 image=render_tile(ds,x,z)
                 record={"i":i,"j":j,"bounds":[x,z,x+TILE,z+TILE],"levels":{}}
-                for name,px,q in LEVELS:
-                    n=int((TILE+2*GUTTER)/px)
-                    target=a.output/f"{i}-{j}-{name}.webp"
+                for name,n,q in LEVELS:
+                    assert n>0 and n&(n-1)==0
+                    px=(TILE+2*GUTTER)/n
+                    target=a.output/f"{i}-{j}-{name}-pot{n}.webp"
                     (image if n==image.width else image.resize((n,n),Image.Resampling.LANCZOS)).save(target,"WEBP",quality=q,method=4)
                     size=target.stat().st_size
                     if size>262144:raise ValueError("Tile exceeds 256 KiB")
                     total[name]+=size
-                    record["levels"][name]={"path":target.name,"px":n,"metres_per_pixel":px,"bytes":size,"sha256":digest(target)}
+                    record["levels"][name]={"path":target.name,"px":n,"metres_per_pixel":px,"mip_levels":n.bit_length(),"bytes":size,"sha256":digest(target)}
                 manifest["tiles"].append(record)
     if total["far"]>1_000_000:raise ValueError("Far pyramid exceeds initial transfer budget")
     manifest["bytes_by_level"]=total
