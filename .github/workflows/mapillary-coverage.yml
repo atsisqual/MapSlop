@@ -5,7 +5,7 @@ permissions:
   contents: read
 jobs:
   coverage:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/agent/mapillary-positive-control'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -14,6 +14,7 @@ jobs:
           MAPILLARY_TOKEN: ${{ secrets.MAPILLARY_TOKEN }}
         run: python3 tools/mapillary-coverage.py
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: mapillary-coverage
           path: mapillary-coverage.json
