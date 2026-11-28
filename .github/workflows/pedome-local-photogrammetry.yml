@@ -224,7 +224,9 @@ jobs:
           mkdir -p /tmp/local-3d
           shopt -s nullglob
           for f in /tmp/lighting-results/*.png /tmp/lighting-results/*.json /tmp/lighting-results/*.log; do
-            cp "$f" "/tmp/local-3d/lighting-$(basename "$f")"
+            name="$(basename "$f")"
+            case "$name" in lighting-*) ;; *) name="lighting-$name";; esac
+            cp "$f" "/tmp/local-3d/$name"
           done
       - name: Archive only DGT-derived candidate and diagnostics privately
         if: always()
@@ -238,7 +240,7 @@ jobs:
             test -f MapSlop-Pedome-Church-Preview.zip && test -f cc0-material-inputs.tar.gz
             files+=(church.glb church-runtime-patch.tar.gz MapSlop-Pedome-Church-Preview.zip cc0-material-inputs.tar.gz)
           fi
-          if [ -f church-lighting-receipt.json ] && [ -f church-lighting-runtime-patch.tar.gz ] && jq -e '.pass' lighting-lighting-report.json >/dev/null && jq -e '.pass' lighting-lighting-visual-diagnostics.json >/dev/null; then
+          if [ -f church-lighting-receipt.json ] && [ -f church-lighting-runtime-patch.tar.gz ] && jq -e '.pass' lighting-report.json >/dev/null && jq -e '.pass' lighting-visual-diagnostics.json >/dev/null; then
             test -f MapSlop-Pedome-Church-Lighting-Preview.zip
             files+=(church-lighting-runtime-patch.tar.gz MapSlop-Pedome-Church-Lighting-Preview.zip)
           fi
