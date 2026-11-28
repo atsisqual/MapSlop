@@ -98,3 +98,9 @@ jobs:
     permissions:
       contents: write
     uses: ./.github/workflows/pedome-orthophoto.yml
+
+  local-photogrammetry:
+    if: inputs.mode == 'roofs' && github.ref == 'refs/heads/agent/local-photogrammetry'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/pedome-local-photogrammetry.yml
