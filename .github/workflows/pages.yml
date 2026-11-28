@@ -44,7 +44,7 @@ permissions:
   pages: write
   id-token: write
 concurrency:
-  group: mapslop-pages
+  group: mapslop-pages-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || 'deploy' }}
   cancel-in-progress: false
 jobs:
   plan:
