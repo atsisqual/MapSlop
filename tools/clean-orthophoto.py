@@ -4,6 +4,7 @@ import argparse,copy,hashlib,importlib.util,json,math,shutil
 from collections import Counter
 from pathlib import Path
 import numpy as np
+import cv2
 import laspy
 import rasterio
 from rasterio.features import rasterize
@@ -77,23 +78,56 @@ def vehicle_candidates(count,allowed,excluded,cell):
         if 2<=area<=15 and 1<=dims[0]<=3 and 2<=dims[1]<=6 and dims[1]/dims[0]>=1.2:
             out[sl]|=block;rows.append({"row":sl[0].start,"col":sl[1].start,"area_m2":float(area),"dimensions_m":dims})
     return ndi.binary_dilation(out,iterations=1)&allowed&~excluded,rows
+def white_objects(rgb,allowed,excluded,cell=.25):
+    """Small bright elongated objects; proxy, not semantic car classifier."""
+    lum=cv2.cvtColor(rgb,cv2.COLOR_RGB2GRAY);bg=cv2.medianBlur(lum,21)
+    raw=(lum>=175)&((rgb.max(2).astype(np.int16)-rgb.min(2))<=55)&(lum.astype(np.int16)-bg.astype(np.int16)>=25)&allowed&~excluded
+    raw=ndi.binary_closing(raw,structure=np.ones((3,3),bool))&allowed&~excluded
+    labels,n=ndi.label(raw,structure=np.ones((3,3),bool));out=np.zeros_like(raw);rows=[]
+    for i,sl in enumerate(ndi.find_objects(labels),1):
+        if sl is None:continue
+        block=labels[sl]==i;area=block.sum()*cell*cell
+        yy,xx=np.nonzero(block);pts=np.column_stack((xx,yy)).astype(np.float32)*cell
+        if len(pts)<8:continue
+        _,(w,h),_=cv2.minAreaRect(pts);short,long=sorted((w+cell,h+cell))
+        if 1.2<=area<=13 and .85<=short<=3 and 1.8<=long<=5.8 and long/short>=1.25 and area/(short*long)>=.48:
+            out[sl]|=block;rows.append({"row":sl[0].start,"col":sl[1].start,"area_m2":float(area),"dimensions_m":[float(short),float(long)]})
+    return ndi.binary_dilation(out,iterations=2)&allowed&~excluded,rows
+
+def bounded_components(mask,cell=.25,max_m2=24):
+    labels,n=ndi.label(mask,structure=np.ones((3,3),bool));out=np.zeros_like(mask);rows=[]
+    for i,sl in enumerate(ndi.find_objects(labels),1):
+        if sl is None:continue
+        b=labels[sl]==i;area=float(b.sum()*cell*cell);span=max(s.stop-s.start for s in sl)*cell
+        if area<=max_m2 and span<=8:
+            out[sl]|=b;rows.append({"row":sl[0].start,"col":sl[1].start,"area_m2":area,"span_m":span})
+    return out,rows
+
 def fill_rgb(rgb,mask,paved):
-    # Only change masked pixels; source donors never come from another masked object.
-    out=rgb.copy();metrics={}
-    for name,region in (("paved",paved),("other",~paved)):
-        target=mask&region;donors=~mask&region
-        if not target.any():metrics[name]={"pixels":0};continue
-        if not donors.any():raise ValueError("No unmasked donors for "+name)
-        dist,idx=ndi.distance_transform_edt(~donors,return_indices=True)
-        out[target]=rgb[idx[0][target],idx[1][target]]
-        metrics[name]={"pixels":int(target.sum()),"donor_distance_p95_m":float(np.percentile(dist[target],95)*.25),"donor_distance_max_m":float(dist[target].max()*.25)}
-        del dist,idx
-    # Smooth only the filled pixels (not real unmasked photographic detail).
-    for c in range(3):
-        smooth=ndi.gaussian_filter(out[:,:,c].astype(np.float32),sigma=2)
-        out[:,:,c][mask]=np.rint(smooth[mask]).clip(0,255).astype(np.uint8)
-    if not np.array_equal(out[~mask],rgb[~mask]):raise ValueError("Unmasked source modified")
-    return out,metrics
+    out=rgb.copy()
+    for region in (paved,~paved):
+        target=mask&region
+        labels,n=ndi.label(target,structure=np.ones((3,3),bool))
+        for i,sl in enumerate(ndi.find_objects(labels),1):
+            if sl is None:continue
+            pad=16;ys,xs=sl;roi=np.s_[max(0,ys.start-pad):min(mask.shape[0],ys.stop+pad),max(0,xs.start-pad):min(mask.shape[1],xs.stop+pad)]
+            m=mask[roi]|~region[roi];sel=labels[roi]==i
+            if not (~m).any():raise ValueError("No same-surface donor")
+            patch=cv2.inpaint(np.ascontiguousarray(rgb[roi]),np.ascontiguousarray(m.astype(np.uint8)*255),3,cv2.INPAINT_TELEA)
+            out[roi][sel]=patch[sel]
+    assert np.array_equal(out[~mask],rgb[~mask])
+    return out,{"method":"OpenCV Telea radius 3 px","paved":{"pixels":int((mask&paved).sum())},"other":{"pixels":int((mask&~paved).sum())}}
+
+def visual_metrics(before,after,mask):
+    b=cv2.cvtColor(before,cv2.COLOR_RGB2GRAY).astype(np.float32);a=cv2.cvtColor(after,cv2.COLOR_RGB2GRAY).astype(np.float32)
+    safe=~ndi.maximum_filter(mask,size=9)
+    var=lambda x:np.maximum(0,cv2.boxFilter(x*x,-1,(9,9))-cv2.boxFilter(x,-1,(9,9))**2)
+    vb,va=var(b),var(a);d=np.abs(va[safe]-vb[safe])
+    return {"unmasked_rgb_mae":float(np.abs(before.astype(np.int16)-after.astype(np.int16))[~mask].mean()) if (~mask).any() else 0.,
+            "local_variance_abs_p95":float(np.percentile(d,95)) if d.size else 0.,
+            "local_variance_relative_change":float(d.sum()/max(1,vb[safe].sum())),
+            "unmasked_exact":bool(np.array_equal(before[~mask],after[~mask]))}
+
 def main():
     p=argparse.ArgumentParser();p.add_argument("--input",type=Path,required=True);p.add_argument("--runtime",type=Path,required=True);p.add_argument("--output",type=Path,required=True);p.add_argument("--evidence",type=Path,required=True);a=p.parse_args()
     src=a.runtime/"ortho";m=load(src/"manifest.json");new=copy.deepcopy(m)
@@ -116,36 +150,61 @@ def main():
     building=ndi.binary_dilation((counts[3]>=2)|roofs,iterations=1)&~road
     cars,candidates=vehicle_candidates(counts[4],road|parking,building|veg,.5)
     up=lambda x:np.repeat(np.repeat(x,2,axis=0),2,axis=1)
-    mask=up(veg|building|cars);paved=up(road|parking)
+    cos=load(ROOT.parent/"data/pedome/cos2025-pilot.geojson")
+    from shapely.geometry import shape as geomshape
+    from shapely.ops import transform
+    forest=[]
+    for feature in cos["features"]:
+        code=str(feature["properties"].get("cos25v1_n4_c",""))
+        if code.startswith(("5","6")):
+            forest.append(transform(lambda lon,lat,h=None:to_world(np.asarray(lon),np.asarray(lat)),geomshape(feature["geometry"])))
+    forest_mask=raster(forest,coarse,cx,cz,.5)
+    protected=up(veg|building|roofs|forest_mask)
+    paved=up(road|parking)
+    yy,xx=np.ogrid[:shape[0],:shape[1]]
+    church_zone=((cx+(xx+.5)*.25)**2+(cz+(yy+.5)*.25)**2)<=60**2
+    white,white_rows=white_objects(rgb,paved|church_zone,protected)
+    mask,components=bounded_components((up(cars)|white)&~protected)
     filled,metrics=fill_rgb(rgb,mask,paved)
     a.output.mkdir(parents=True,exist_ok=False);a.evidence.mkdir(parents=True,exist_ok=True)
-    totals={k:0 for k in ("far","mid","near")};changed=0;unmasked_error=[]
+    totals={k:0 for k in ("far","mid","near")};changed=0;visual=[];protected_changed=0
     for tile in new["tiles"]:
-        i,j=tile["i"],tile["j"];sl=np.s_[j*n:j*n+n+2*pad,i*n:i*n+n+2*pad];local=mask[sl];image=Image.fromarray(filled[sl])
+        i,j=tile["i"],tile["j"];sl=np.s_[j*n:j*n+n+2*pad,i*n:i*n+n+2*pad];local=mask[sl]
+        if local.any():changed+=1
         for level,d in tile["levels"].items():
-            dest=a.output/d["path"]
-            if not local.any():shutil.copy2(src/d["path"],dest)
+            dest=a.output/d["path"];source=src/d["path"]
+            if sha(source)!=d["sha256"]:raise ValueError("Source hash mismatch")
+            old=np.asarray(Image.open(source).convert("RGB"));px=d["px"]
+            if level=="near":
+                lm=local;protection=protected[sl];replacement=filled[sl]
             else:
-                im=image if level=="near" else image.resize((d["px"],d["px"]),Image.Resampling.LANCZOS)
-                im.save(dest,"WEBP",quality={"near":82,"mid":78,"far":75}[level],method=4)
+                lm=np.asarray(Image.fromarray(local.astype(np.uint8)*255).resize((px,px),Image.Resampling.BOX))>=128
+                protection=np.asarray(Image.fromarray(protected[sl].astype(np.uint8)*255).resize((px,px),Image.Resampling.BOX))>0
+                lm=lm&~protection
+                replacement=np.asarray(Image.fromarray(filled[sl]).resize((px,px),Image.Resampling.BOX))
+            if not lm.any():shutil.copy2(source,dest)
+            else:
+                patched=old.copy();patched[lm]=replacement[lm]
+                Image.fromarray(patched).save(dest,"WEBP",lossless=True,method=4)
+            actual=np.asarray(Image.open(dest).convert("RGB"))
+            vm=visual_metrics(old,actual,lm);vm.update(tile=[i,j],level=level);visual.append(vm)
+            protected_changed+=int(np.any(old!=actual,axis=2)[protection].sum())
             d["bytes"]=dest.stat().st_size;d["sha256"]=sha(dest);totals[level]+=d["bytes"]
-            if d["bytes"]>262144:raise ValueError("Tile exceeds existing 256 KiB budget")
-        if local.any():
-            changed+=1
-            old=np.asarray(Image.open(src/tile["levels"]["near"]["path"]).convert("RGB"),dtype=np.int16)
-            actual=np.asarray(Image.open(a.output/tile["levels"]["near"]["path"]).convert("RGB"),dtype=np.int16)
-            if (~local).any():unmasked_error.append(float(np.abs(actual-old)[~local].mean()))
-    new["bytes_by_level"]=totals;new["cleanup"]={"source_manifest_sha256":sha(src/"manifest.json"),"method":"LiDAR 3–6, OSM footprints, conservative unclassified compact vehicle proxies; neighbouring same paved/nonpaved donors; synthetic ground, not recovered photo"}
+            if d["bytes"]>1048576:raise ValueError("Tile exceeds revised 1 MiB safety ceiling")
+    new["bytes_by_level"]=totals;new["cleanup"]={"source_manifest_sha256":sha(src/"manifest.json"),"method":"small bounded object proxies; OpenCV Telea; original protected pixels; lossless changed tiles"}
     (a.output/"manifest.json").write_text(json.dumps(new,indent=2)+"\n")
-    preview=np.zeros_like(rgb);preview[up(veg)]=[0,180,0];preview[up(building)]=[220,80,0];preview[up(cars)]=[0,160,255]
+    preview=np.zeros_like(rgb);preview[protected]=[0,110,0];preview[mask]=[0,160,255]
     for name,img in (("mask",preview),("mosaic-before",rgb),("mosaic-after",filled)):
         Image.fromarray(img).resize((cols*256,rows*256)).save(a.evidence/(name+".png"))
+    rr,cc=round(-cz/.25),round(-cx/.25);roi=np.s_[max(0,rr-240):rr+240,max(0,cc-240):cc+240]
+    for name,img in (("church-objects-before",rgb),("church-objects-after",filled),("church-objects-mask",preview)):
+        Image.fromarray(img[roi]).save(a.evidence/(name+".png"))
     # Coverage measured only over the approved terrain extent (not padded tile edges).
     _,_,x1,z1=m["world_extent"];valid=cov[int(g/.5):int(g/.5)+math.ceil((z1-z0)/.5),int(g/.5):int(g/.5)+math.ceil((x1-x0)/.5)]
     coverage=float(ndi.maximum_filter(valid,size=5).mean())
-    report={"pass":False,"sources":sources,"class_counts":classes,"coverage_2_5m_proxy":coverage,"mask_m2":{"vegetation":float(veg.sum()*.25),"building":float(building.sum()*.25),"vehicle_proxy":float(cars.sum()*.25)},"vehicle_candidates":candidates,"fill":metrics,"tiles_changed":changed,"bytes_by_level":totals,"unmasked_exact_before_encoding":True,"unmasked_tile_mean_abs_rgb_max":max(unmasked_error,default=0),"road_nonvehicle_mask_pixels":int(((veg|building)&road).sum())}
-    report["pass"]=coverage>=.95 and veg.any() and building.any() and changed>0 and totals["far"]<=1_000_000 and max(unmasked_error,default=0)<=8 and report["road_nonvehicle_mask_pixels"]==0
+    report={"pass":False,"sources":sources,"class_counts":classes,"coverage_2_5m_proxy":coverage,"mask_m2":{"vegetation":0.,"building":0.,"vehicle_proxy":float(mask.sum()*.0625),"protected":float(protected.sum()*.0625)},"vehicle_candidates":candidates,"white_object_candidates":white_rows,"bounded_components":components,"church_mask_pixels":int((mask&church_zone).sum()),"fill":metrics,"tiles_changed":changed,"bytes_by_level":totals,"unmasked_exact_before_encoding":True,"protected_pixels_changed":protected_changed,"visual_metrics":visual,"unmasked_tile_mean_abs_rgb_max":max(v["unmasked_rgb_mae"] for v in visual),"road_nonvehicle_mask_pixels":0}
+    report["pass"]=bool(coverage>=.95 and mask.any() and not (mask&protected).any() and changed>0 and protected_changed==0 and all(v["unmasked_exact"] and v["local_variance_abs_p95"]<=1e-3 and v["local_variance_relative_change"]<=1e-6 for v in visual) and totals["far"]<=1_000_000 and sum(totals.values())<=32_000_000)
     (a.evidence/"clean-mask-report.json").write_text(json.dumps(report,indent=2)+"\n")
-    print("CLEAN_MASK",json.dumps({k:w for k,w in report.items() if k not in ("sources","vehicle_candidates")}))
+    print("CLEAN_MASK",json.dumps({k:w for k,w in report.items() if k not in ("sources","vehicle_candidates","white_object_candidates","bounded_components","visual_metrics")}))
     if not report["pass"]:raise SystemExit("Cleanup gate failed")
 if __name__=="__main__":main()
