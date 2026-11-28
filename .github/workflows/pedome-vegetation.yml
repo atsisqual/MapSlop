@@ -1,0 +1,52 @@
+name: Pedome private vegetation extraction
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: private-vegetation-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  extract:
+    if: github.ref == 'refs/heads/agent/lidar-vegetation' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Install offline dependencies
+        run: python -m pip install -r requirements-vegetation.txt
+      - name: Retrieve only inventoried private LiDAR and MDT
+        run: |
+          set -euo pipefail
+          tag=geodata-dgt-pedome-20261127
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          mkdir -p /tmp/vegetation-input
+          for tile in 178494 178495 179494 179495; do
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/vegetation-input --pattern "LO-$tile-07-2025_v05.laz" --pattern "MDT-50cm-$tile-07-2025_v02.tif"
+          done
+      - name: Extract private candidates
+        run: python tools/build-dgt-vegetation.py --input /tmp/vegetation-input --output /tmp/vegetation-results
+      - name: Preserve derived candidates privately
+        run: |
+          set -euo pipefail
+          cd /tmp/vegetation-results
+          sha256sum vegetation-candidates.json vegetation-report.json > SHA256SUMS.txt
+          case "$GITHUB_REF" in
+            refs/heads/agent/lidar-vegetation) tag=geodata-dgt-vegetation-agent-lidar-vegetation ;;
+            refs/heads/main) tag=geodata-dgt-vegetation-main ;;
+            *) exit 1 ;;
+          esac
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft >/tmp/vegetation-draft 2>/dev/null; then
+            test "$(jq -r .isDraft /tmp/vegetation-draft)" = true
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Private LiDAR vegetation candidates" --notes "Experimental derivative; never publish without approval."
+          fi
+          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber vegetation-candidates.json vegetation-report.json SHA256SUMS.txt
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
