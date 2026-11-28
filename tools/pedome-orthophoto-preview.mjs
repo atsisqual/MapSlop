@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import {configureGroundTexture,isPOT} from './pedome-render-diagnostics.mjs';
+import {configureGroundTexture,isPOT,groundPolicy,loadOfflineTexture,setGroundMap} from './pedome-render-diagnostics.mjs';
 import {partitionTin} from './orthophoto-partition.mjs';
 const levels=['far','mid','near'];
 const maxActive={near:8,mid:20};
@@ -23,7 +23,9 @@ export async function installOrthophoto(scene,ground,renderer){
  const loader=new THREE.TextureLoader(),records=[],errors=[],stats={bytes_requested:0,loads:0,errors,partition:{area_original:partition.inputArea,area_render:partition.outputArea,triangles:partition.triangles,vertices:partition.parts.reduce((a,p)=>a+p.positions.length/3,0)}};
  async function load(r,l){
   const data=r.tile.levels[l];stats.bytes_requested+=data.bytes;stats.loads++;
-  const tex=await loader.loadAsync(new URL(data.path,root).href);
+  const offline=groundPolicy(renderer).mips==='offline';
+  const tex=offline?await loadOfflineTexture(root,data):await loader.loadAsync(new URL(data.path,root).href);
+  if(offline)stats.bytes_requested+=data.offline.bytes-data.bytes;
   tex.name=data.path;tex.userData={level:l,metres_per_pixel:data.metres_per_pixel,expected_px:data.px};
   if(!isPOT(data.px)||tex.image.width!==data.px||tex.image.height!==data.px){tex.dispose();throw Error('Unexpected tile dimensions '+data.path);}
   tex.colorSpace=THREE.SRGBColorSpace;configureGroundTexture(tex,renderer);
@@ -33,7 +35,7 @@ export async function installOrthophoto(scene,ground,renderer){
   const p=partition.parts[tile.j*manifest.cols+tile.i];if(!p.indices.length)continue;
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(p.positions,3));g.setAttribute('normal',new THREE.Float32BufferAttribute(p.normals,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(p.uv,2));g.setIndex(p.indices);
-  const m=new THREE.MeshStandardMaterial({roughness:.95});
+  const m=new THREE.MeshStandardNodeMaterial({roughness:.95});
   const mesh=new THREE.Mesh(g,m);mesh.name='Ortho-'+tile.i+'-'+tile.j;mesh.position.y=-0.02;group.add(mesh); // render-only separation from roads/paving; TIN unchanged
   records.push({tile,mesh,base:null,current:null,level:'far',want:'far',pending:false,d:Infinity});
  }
@@ -41,7 +43,7 @@ export async function installOrthophoto(scene,ground,renderer){
  async function init(){
   while(cursor<records.length){
    const r=records[cursor++];
-   try{r.base=r.current=await load(r,'far');r.mesh.material.map=r.base;r.mesh.material.needsUpdate=true;}
+   try{r.base=r.current=await load(r,'far');setGroundMap(r.mesh.material,r.base,renderer);}
    catch(e){errors.push(String(e));}
   }
  }
@@ -50,7 +52,7 @@ export async function installOrthophoto(scene,ground,renderer){
  ground.visible=false;group.visible=true;
  let lastX=Infinity,lastZ=Infinity,inflight=0;
  function swap(r,texture,level){
-  const old=r.current;r.current=texture;r.level=level;r.mesh.material.map=texture;r.mesh.material.needsUpdate=true;
+  const old=r.current;r.current=texture;r.level=level;setGroundMap(r.mesh.material,texture,renderer);
   if(old&&old!==r.base&&old!==texture)old.dispose();
  }
  function pump(){

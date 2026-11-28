@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import {texture,vec4,mix,step} from 'three/tsl';
 
 const generated=new WeakSet();
 const queries=()=>new URLSearchParams(location.search);
@@ -7,13 +8,54 @@ export function rendererOptions(){
  const q=queries();
  return {antialias:true,forceWebGL:!navigator.gpu||q.has('webgl')||q.get('renderer')==='webgl'};
 }
+export function groundPolicy(renderer){
+ const q=queries(),b=renderer.backend;let gpu='';
+ if(b.isWebGLBackend){const gl=b.gl,e=gl.getExtension('WEBGL_debug_renderer_info');gpu=String(gl.getParameter(e?e.UNMASKED_RENDERER_WEBGL:gl.RENDERER));}
+ else gpu=JSON.stringify(b.device?.adapterInfo||{});
+ const explicit=q.get('mips');
+ return {mips:['0','gpu','offline'].includes(explicit)?explicit:/xclipse/i.test(gpu)?'0':'offline',srgb:q.get('srgb')!=='0',gpu};
+}
+export async function loadOfflineTexture(root,data){
+ const d=data.offline;if(!d||d.format!=='rgba8-bottom-up-srgb-gzip-v1')throw Error('Missing offline mip chain '+data.path);
+ const res=await fetch(new URL(d.path,root));if(!res.ok)throw Error('Missing offline mip pack '+d.path);
+ const packed=await res.arrayBuffer();if(packed.byteLength!==d.bytes)throw Error('Invalid mip pack size');
+ const raw=await new Response(new Blob([packed]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+ let offset=0;const mips=d.levels.map((m,i)=>{
+  const n=data.px>>i;if(m.px!==n||m.bytes!==n*n*4||offset+m.bytes>raw.byteLength)throw Error('Invalid mip chain dimensions');
+  const image={data:new Uint8Array(raw,offset,m.bytes),width:n,height:n};offset+=m.bytes;return image;
+ });
+ if(mips.length!==1+Math.log2(data.px)||offset!==raw.byteLength)throw Error('Incomplete mip chain');
+ const t=new THREE.DataTexture(mips[0].data,data.px,data.px,THREE.RGBAFormat,THREE.UnsignedByteType);
+ t.mipmaps=mips;t.flipY=false;return t;
+}
+export function setGroundMap(material,tex,renderer){
+ material.map=tex;
+ if(tex&&!groundPolicy(renderer).srgb){
+  if(!material.isNodeMaterial)throw Error('Terrain shader conversion requires NodeMaterial');
+  const c=texture(tex).rgb;
+  material.colorNode=vec4(mix(c.div(12.92),c.add(.055).div(1.055).pow(2.4),step(.04045,c)),1);
+ }else if(material.isNodeMaterial)material.colorNode=null;
+ material.needsUpdate=true;
+}
 export function configureGroundTexture(tex,renderer){
  const max=Math.max(1,renderer.getMaxAnisotropy()||1);
  const mobile=/Android/i.test(navigator.userAgent);
  const requested=Number(queries().get('anisotropy')|| (mobile?1:8));
- tex.generateMipmaps=true;tex.mipmapsAutoUpdate=true;
- tex.minFilter=THREE.LinearMipmapLinearFilter;tex.magFilter=THREE.LinearFilter;
- tex.anisotropy=Math.min(max,Math.max(1,Number.isFinite(requested)?Math.floor(requested):1));
+ const policy=groundPolicy(renderer);
+ // Dynamic procedural CanvasTexture has no archived pixels. Avoid GPU generation;
+ // when offline is selected, create CPU mip levels from its painted base.
+ if(policy.mips==='offline'&&tex.isCanvasTexture&&tex.mipmaps.length===0){
+  let prev=tex.image;tex.mipmaps=[prev];
+  while(prev.width>1||prev.height>1){const c=document.createElement('canvas');c.width=Math.max(1,prev.width>>1);c.height=Math.max(1,prev.height>>1);c.getContext('2d').drawImage(prev,0,0,c.width,c.height);tex.mipmaps.push(c);prev=c;}
+ }
+ const mode=policy.mips==='offline'&&tex.mipmaps.length===0?'0':policy.mips;
+ tex.userData={...tex.userData,mipMode:mode,shaderSRGB:!policy.srgb};
+ tex.generateMipmaps=mode==='gpu';tex.mipmapsAutoUpdate=mode==='gpu';
+ tex.minFilter=mode==='0'?THREE.LinearFilter:THREE.LinearMipmapLinearFilter;tex.magFilter=THREE.LinearFilter;
+ tex.colorSpace=policy.srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;
+ tex.internalFormat=null; // NoColorSpace + RGBA/UnsignedByte => RGBA8; shader performs sRGB EOTF.
+ if(mode==='0')tex.mipmaps=[];
+ tex.anisotropy=mode==='0'?1:Math.min(max,Math.max(1,Number.isFinite(requested)?Math.floor(requested):1));
  tex.needsUpdate=true;
  return tex;
 }
@@ -27,7 +69,7 @@ export function textureState(tex,renderer){
   minFilter:tex.minFilter,magFilter:tex.magFilter,
   trilinear:tex.minFilter===THREE.LinearMipmapLinearFilter&&tex.magFilter===THREE.LinearFilter,
   anisotropy:tex.anisotropy,expectedLevels:expected,gpuLevels:levels,
-  generated:generated.has(tex)};
+  generated:generated.has(tex),mipMode:tex.userData?.mipMode,manualLevels:tex.mipmaps.length,colorSpace:tex.colorSpace,shaderSRGB:tex.userData?.shaderSRGB??false};
 }
 export async function installRenderDiagnostics(renderer){
  const b=renderer.backend, original=b.generateMipmaps;
@@ -56,14 +98,14 @@ export async function installRenderDiagnostics(renderer){
   document.body.append(panel);
   const update=()=>{
    const s=window.mapslop?.renderDebug?.();
-   if(s){const t=s.textures;panel.textContent=JSON.stringify({...s,textures:{count:t.length,generated:t.filter(x=>x.generated).length,invalid:t.filter(x=>!x.pot||!x.generateMipmaps||!x.trilinear).length,sample:t.find(x=>x.generated)||t[0]||null}},null,1);}
+   if(s){const t=s.textures;panel.textContent=JSON.stringify({...s,textures:{count:t.length,generated:t.filter(x=>x.generated).length,invalid:t.filter(x=>!x.pot||(x.mipMode==='0'?(x.generateMipmaps||x.minFilter!==1006):x.mipMode==='offline'?(x.generateMipmaps||!x.trilinear||x.manualLevels!==x.expectedLevels):(!x.generateMipmaps||!x.trilinear))).length,sample:t.find(x=>x.generated)||t[0]||null}},null,1);}
   };
   setInterval(update,1000);
  }
  return (scene,ortho,camera)=>{
   const textures=new Set();
   scene.traverse(o=>{if(o.name==='ground'||o.name.startsWith('Ortho-')||['asphalt','sidewalks','footpaths','kerbs'].includes(o.name))for(const m of (Array.isArray(o.material)?o.material:[o.material]))if(m?.map)textures.add(m.map);});
-  return {backend,gpu,maxAnisotropy:renderer.getMaxAnisotropy(),orthoEnabled:ortho?.group?.visible??false,
+  return {backend,gpu,groundPolicy:groundPolicy(renderer),maxAnisotropy:renderer.getMaxAnisotropy(),orthoEnabled:ortho?.group?.visible??false,
    baseGroundVisible:ortho?.ground?.visible??scene.getObjectByName('ground')?.visible??null,
    shadows:renderer.shadowMap?.enabled??false,near:camera.near,far:camera.far,errors:[...errors],
    textures:[...textures].map(t=>textureState(t,renderer))};

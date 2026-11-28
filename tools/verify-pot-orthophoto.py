@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Validate a regenerated POT pyramid against the immutable combined runtime before replacing tiles."""
-import hashlib,json,math,sys
+import hashlib,json,math,sys,gzip
 from pathlib import Path
 from PIL import Image
 
@@ -32,6 +32,17 @@ def verify(old,new):
             with Image.open(p) as im:
                 require(im.format=="WEBP" and im.size==(n,n),"Wrong decoded image: "+name)
                 im.load()
+            offline=d["offline"];pack=new/offline["path"]
+            require(pack.name==offline["path"] and pack.name==p.with_suffix(".rgba.gz").name and pack.name not in files,"Unexpected mip pack")
+            require(offline["format"]=="rgba8-bottom-up-srgb-gzip-v1" and pack.stat().st_size==offline["bytes"] and sha(pack)==offline["sha256"],"Bad offline pack")
+            files.add(pack.name)
+            raw=gzip.decompress(pack.read_bytes());offset=0
+            require(len(offline["levels"])==n.bit_length(),"Incomplete mip chain")
+            for k,mip in enumerate(offline["levels"]):
+                px=n>>k;size=px*px*4
+                require(mip["px"]==px and mip["bytes"]==size and hashlib.sha256(raw[offset:offset+size]).hexdigest()==mip["sha256"],"Bad offline mip")
+                offset+=size
+            require(offset==len(raw),"Wrong mip pack length")
             totals[l]+=d["bytes"]
     require({p.name for p in new.iterdir()}==files,"Unexpected files in POT pyramid")
     require(totals==b["bytes_by_level"] and totals["far"]<=1_000_000,"Transfer budget")

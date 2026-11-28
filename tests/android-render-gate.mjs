@@ -24,8 +24,8 @@ try{
   await probe.close();
   if(!available){result.skipped='No WebGPU adapter on runner';console.log(result.skipped);}
  }
- if(!result.skipped)for(const enabled of [true,false]){
-  const url=new URL(base);url.search='';url.searchParams.set('debug','1');
+ if(!result.skipped)for(const [enabled,mips,srgb] of [[true,'offline',true],[true,'0',true],[true,'gpu',false],[true,'gpu',true],[false,'offline',true]]){
+  const url=new URL(base);url.search='';url.searchParams.set('debug','1');url.searchParams.set('mips',mips);if(!srgb)url.searchParams.set('srgb','0');
   if(!tryWebGPU)url.searchParams.set('renderer','webgl');
   if(!enabled)url.searchParams.set('ortho','0');
   const page=await browser.newPage({viewport:{width:823,height:384},isMobile:true,hasTouch:true,userAgent:'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/142.0 Mobile Safari/537.36'});
@@ -45,8 +45,8 @@ try{
    const p=m.controllers.getActiveEntity().position;
    return {...m.renderDebug(),tile:m.orthoPreview.ortho.inspect(p.x,p.z),offsets:m.orthoPreview.ortho.group.children.map(o=>o.position.y)};
   });
-  result.cases.push({enabled,state,errors,orthoRequests:requests.length});
-  await page.screenshot({path:join(dir,'android-'+mode+'-'+(enabled?'ortho':'no-ortho')+'.png')});
+  result.cases.push({enabled,mips,srgb,state,errors,orthoRequests:requests.length});
+  await page.screenshot({path:join(dir,'android-'+mode+'-'+(enabled?mips+'-'+srgb:'no-ortho')+'.png')});
   assert.equal(state.orthoEnabled,enabled);
   assert.equal(state.baseGroundVisible,!enabled);
   assert.equal(state.far,2500);
@@ -61,11 +61,13 @@ try{
    assert.ok(state.offsets.length>0&&state.offsets.every(x=>x===-.02),'Visual separation missing');
    assert.ok(state.textures.length>=64,'Missing texture rows');
    for(const t of state.textures){
-    assert.ok(t.pot&&t.generateMipmaps===true&&t.autoUpdate===true&&t.trilinear&&t.minFilter===1008&&t.magFilter===1006,'Invalid texture: '+JSON.stringify(t));
+    assert.ok(t.pot&&t.mipMode===mips&&t.generateMipmaps===(mips==='gpu')&&t.autoUpdate===(mips==='gpu')&&t.minFilter===(mips==='0'?1006:1008)&&t.magFilter===1006&&t.shaderSRGB===!srgb,'Invalid texture: '+JSON.stringify(t));
+    if(mips==='offline')assert.equal(t.manualLevels,t.expectedLevels);
+    if(mips!=='gpu')assert.equal(t.generated,false);
     assert.equal(t.anisotropy,1,'Android conservative sampler not applied');
     if(t.generated&&state.backend==='WebGPU')assert.equal(t.gpuLevels,t.expectedLevels,'Incomplete GPU mip allocation');
    }
-   assert.ok(state.textures.some(t=>t.generated&&t.name===state.tile.texture_name),'No backend mip generation for the rendered near tile');
+   if(mips==='gpu')assert.ok(state.textures.some(t=>t.generated&&t.name===state.tile.texture_name),'No backend mip generation for the rendered near tile');
   }else{
    assert.equal(requests.length,0,'Ortho disabled but tiles fetched');
    assert.equal(state.textures.length,0,'Archived plain ground should not have a texture');
