@@ -10,7 +10,7 @@ jobs:
   extract:
     if: github.ref == 'refs/heads/agent/lidar-vegetation' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 50
+    timeout-minutes: 75
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -20,8 +20,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12.10'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
       - name: Install offline dependencies
-        run: python -m pip install -r requirements-vegetation.txt
+        run: python -m pip install -r requirements-vegetation.txt Pillow==11.3.0
       - name: Synthetic vegetation regression tests
         run: python -m unittest discover -s tests -p 'test_vegetation.py' -v
       - name: Retrieve only inventoried private LiDAR and MDT
@@ -35,20 +38,63 @@ jobs:
           done
       - name: Extract private candidates
         run: python tools/build-dgt-vegetation.py --input /tmp/vegetation-input --output /tmp/vegetation-results
-      - name: Preserve derived candidates privately
+      - name: Retrieve and compare inventoried 2025 orthophotos
         run: |
           set -euo pipefail
-          cd /tmp/vegetation-results
-          sha256sum vegetation-candidates.json vegetation-report.json > SHA256SUMS.txt
-          case "$GITHUB_REF" in
-            refs/heads/agent/lidar-vegetation) tag=geodata-dgt-vegetation-agent-lidar-vegetation ;;
-            refs/heads/main) tag=geodata-dgt-vegetation-main ;;
-            *) exit 1 ;;
-          esac
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft >/tmp/vegetation-draft 2>/dev/null; then
-            test "$(jq -r .isDraft /tmp/vegetation-draft)" = true
-          else
-            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Private LiDAR vegetation candidates" --notes "Experimental derivative; never publish without approval."
-          fi
-          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber vegetation-candidates.json vegetation-report.json SHA256SUMS.txt
+          tag=geodata-dgt-pedome-20261127
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/vegetation-input --pattern 'ORTOS-2025-cog-25cm-084-2_v01.tif' --pattern 'ORTOS-2025-cog-25cm-084-4_v01.tif'
+          python tools/compare-vegetation-ortho.py /tmp/vegetation-input /tmp/vegetation-results
+      - name: Fetch approved immutable terrain and pinned upstream
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/vegetation-terrain
+          tag=geodata-dgt-pages-road-46085062868
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/vegetation-terrain --pattern terrain-road-preview.bin --pattern road-validation.json
+          python tools/verify-pages-terrain.py /tmp/vegetation-terrain
+          echo '36019dfc27584d667555c794350107c29981da4f4ee15bac2c03078aba0d895b  /tmp/vegetation-terrain/terrain-tin.bin' | sha256sum -c -
+          git init /tmp/nairobi
+          git -C /tmp/nairobi remote add origin https://github.com/briankariuki/slop-nairobi.git
+          git -C /tmp/nairobi fetch --depth=1 origin 64b8599ae7dd7ba56ffbe68f19cc1423a9e7f903
+          git -C /tmp/nairobi checkout --detach FETCH_HEAD
+          git init /tmp/three
+          git -C /tmp/three remote add origin https://github.com/mrdoob/three.js.git
+          git -C /tmp/three sparse-checkout set build examples/jsm
+          git -C /tmp/three fetch --depth=1 --filter=blob:none origin f17eb5d689094a3fbd4cd0d64d54729a48036ce0
+          git -C /tmp/three checkout --detach FETCH_HEAD
+          mkdir /tmp/three-vendor
+          cp -r /tmp/three/build /tmp/three/examples /tmp/three/LICENSE /tmp/three-vendor/
+      - name: Build and render private preview
+        env:
+          MAPSLOP_RESULTS: /tmp/vegetation-results
+          MAPSLOP_TEST_URL: http://127.0.0.1:8080/?webgl
+        run: |
+          set -euo pipefail
+          python tools/prepare-pedome.py /tmp/nairobi /tmp/pedome-vegetation --osm-json data/pedome/pedome-osm.json --terrain-bin /tmp/vegetation-terrain/terrain-tin.bin --three-vendor /tmp/three-vendor
+          cp /tmp/pedome-vegetation/build-report.json /tmp/vegetation-results/
+          cmp /tmp/vegetation-terrain/terrain-tin.bin /tmp/pedome-vegetation/js/terrain.bin
+          python tools/install-vegetation-preview.py /tmp/pedome-vegetation /tmp/vegetation-results/vegetation-candidates.json
+          node --check /tmp/pedome-vegetation/js/pedome-vegetation-preview.mjs
+          node --check tests/vegetation-real.mjs
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          python -m http.server 8080 --bind 127.0.0.1 --directory /tmp/pedome-vegetation > /tmp/vegetation-results/http.log 2>&1 &
+          server=$!
+          trap 'kill "$server" || true' EXIT
+          for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
+          node tests/vegetation-real.mjs
+      - name: Preserve derived candidates and all evidence privately
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/vegetation-results
+          cd /tmp/vegetation-results
+          shopt -s nullglob
+          files=(*.json *.png *.log)
+          if [ "${#files[@]}" -eq 0 ]; then echo 'No evidence generated'; exit 1; fi
+          sha256sum "${files[@]}" > SHA256SUMS.txt
+          tag=geodata-dgt-vegetation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Private LiDAR vegetation evidence ${GITHUB_RUN_ID}" --notes "Experimental derivative and 2025 orthophoto comparisons. Manual visual review and real-device FPS pending. Never publish without approval." "${files[@]}" SHA256SUMS.txt
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          echo "PRIVATE_EVIDENCE $tag"
