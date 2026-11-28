@@ -14,7 +14,7 @@ async function run(port,suffix){
  const page=await browser.newPage({viewport:{width:823,height:384}});
  const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&!m.text().includes('favicon'))errors.push(m.text())});
  const url='http://127.0.0.1:'+port+'/?webgl&quality=low';
- await page.route('**/*',r=>r.request().url().startsWith(new URL(url).origin+'/')?r.continue():r.abort());
+ await page.route('**/*',r=>(r.request().url().startsWith(new URL(url).origin+'/')||r.request().url().startsWith('blob:')||r.request().url().startsWith('data:'))?r.continue():r.abort());
  const settled=()=>page.waitForFunction(()=>window.mapslop.orthoPreview.ortho.report().settled,{},{timeout:120000});
  try{
   await page.goto(url,{waitUntil:'load',timeout:90000});
