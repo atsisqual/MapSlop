@@ -1,5 +1,9 @@
 # Estado do projeto
 
+## BLOQUEIO DE PUBLICAÇÃO — Android físico (2026-11-28)
+
+Dono reportou ruído colorido nos taludes e riscas zebra no chão, build pública `255673d8bc58`. SwiftShader não reproduziu. Prioridade absoluta: branch `agent/android-render-hotfix`, separado de #42 e #45. Mipmaps já eram defaults do Three fixado; forçar filtros/POT, instrumentar a geração no backend e reduzir anisotropia Android a 1 são mitigação e diagnóstico, não prova de causa. Terreno render-only -2 cm, far 2500 m (fog 1100 m), TIN/física intactos; base não é visível com ortofoto ativa e iluminação publicada não ativa shadowMap. Flags `debug`, `ortho`, `renderer`, `anisotropy`, `paving`, `shadows` documentadas. Pages aplica overlay ao runtime arquivado após verificação de checksums; build privada e artefactos de teste, sem deploy no branch. Gate browser e confirmação física pendentes. Não publicar nem integrar #42/#45 até aprovação do dono.
+
 ## Mapillary — controlo positivo
 Run 46134604891: 0 imagens em 16 células, complete=true, sem erros HTTP. Não prova ausência absoluta sem controlo positivo. Token criado pelo dono. Novo teste usa a mesma API, token e campos em Vila Nova de Famalicão centro; fallback Lisboa Baixa se zero. Exigir pelo menos uma imagem de controlo, preservar relatório mesmo se falhar; resultado novo pendente. `gh workflow run mapillary-coverage.yml --repo atsisqual/MapSlop --ref agent/mapillary-positive-control`.
 
