@@ -14,7 +14,16 @@ await mkdir(dir,{recursive:true});
 const browser=await chromium.launch({headless:true,args});
 const result={mode,cases:[]};
 try{
- for(const enabled of [true,false]){
+ if(tryWebGPU){
+  const probe=await browser.newPage();
+  const probeURL=new URL('/__gpu_probe__',base).href;
+  await probe.route(probeURL,r=>r.fulfill({body:'<html></html>',contentType:'text/html'}));
+  await probe.goto(probeURL);
+  const available=await probe.evaluate(async()=>Boolean(await navigator.gpu?.requestAdapter({featureLevel:'compatibility'}).catch(()=>null)));
+  await probe.close();
+  if(!available){result.skipped='No WebGPU adapter on runner';console.log(result.skipped);}
+ }
+ if(!result.skipped)for(const enabled of [true,false]){
   const url=new URL(base);url.search='';url.searchParams.set('debug','1');
   if(!tryWebGPU)url.searchParams.set('renderer','webgl');
   if(!enabled)url.searchParams.set('ortho','0');
@@ -37,7 +46,7 @@ try{
   assert.equal(state.baseGroundVisible,!enabled);
   assert.equal(state.far,2500);
   assert.deepEqual(errors,[]);assert.deepEqual(state.errors,[]);
-  if(!tryWebGPU)assert.equal(state.backend,'WebGL2');
+  assert.equal(state.backend,tryWebGPU?'WebGPU':'WebGL2');
   if(hardware)assert.ok(state.gpu.renderer&&!/swiftshader|llvmpipe|softpipe|software|lavapipe/i.test(state.gpu.renderer),'No verified hardware renderer');
   if(enabled){
    assert.ok(state.tile?.applied&&state.tile.level==='near','Spawn tile missing');
@@ -56,7 +65,7 @@ try{
   await page.close();
  }
  result.webgpuExercised=result.cases.some(c=>c.state.backend==='WebGPU');
- result.pass=true;
+ result.pass=!result.skipped;
  console.log('ANDROID_RENDER_GATE',mode,JSON.stringify(result.cases.map(c=>({enabled:c.enabled,backend:c.state.backend,gpu:c.state.gpu,textures:c.state.textures.length,generated:c.state.textures.filter(t=>t.generated).length}))));
 }finally{
  await writeFile(join(dir,'android-'+mode+'.json'),JSON.stringify(result,null,2)+'\n');
