@@ -37,7 +37,7 @@ jobs:
       - name: Reproducible setup
         run: |
           make setup
-          .venv/bin/python -m pip install -r requirements-buildings.txt -r requirements-roads.txt
+          .venv/bin/python -m pip install -r requirements-buildings.txt -r requirements-roads.txt Pillow==11.3.0
       - name: Offline repository and data workflow tests
         run: |
           .venv/bin/python -m pip check
@@ -51,6 +51,7 @@ jobs:
           node --check tests/road-drive-diagnostics.mjs
           node --check tests/traffic-real.mjs
           node --check tests/orthophoto-real.mjs
+          node --check tests/combined-real.mjs
           node tests/orthophoto-partition.test.mjs
       - name: Fixture and real Pedome builds
         run: |
