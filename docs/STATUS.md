@@ -289,3 +289,7 @@ PR de publicação separado agent/publish-road-carve inclui código #28 e corre�
 ## Seguimento #9 — vegetação LiDAR, primeira fase
 
 Branch agent/lidar-vegetation: workflow manual pedome-vegetation.yml, extração de classes 3/4/5 a partir das quatro LAZ privadas e MDT 0,5 m, hashes e CRS verificados pelo script, COS2025 como contexto, exclusões de copa proxy nas vias e edifícios. Testes sintéticos de seleção, retornos mínimos, supressão e exclusões adicionados; execução CI e dados reais pendentes. Relatório e candidatos exclusivamente em draft privado. Ortofoto, revisão visual, LOD e orçamento de desempenho ainda por implementar/validar; #9 permanece aberta. Ver [ADR 0015](decisions/0015-vegetacao-lidar.md). Publicação rodoviária #32 integrada em f256f82fef28b97772a3daa8f05fde7e903136a7 após CI 46088090409 e preflight Pages 46088090406; confirmação deploy público separada. Circulação #8 no PR #33, sem publicação adicional.
+
+### Lançamento #34
+
+CI anterior 46088849769 passou. Pages run 46088548235 confirmado pelo dono, SHA bruto 36019dfc…; sem alteração do produto público. O workflow novo isolado não aceita dispatch antes de existir na branch default (404). Converter para workflow_call e chamar pelo launcher já registado: `gh workflow run pedome-terrain.yml --ref agent/lidar-vegetation -f mode=vegetation`. Validação real ainda pendente; só outputs derivados em draft privado.

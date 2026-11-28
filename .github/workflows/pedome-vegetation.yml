@@ -1,6 +1,6 @@
 name: Pedome private vegetation extraction
 on:
-  workflow_dispatch:
+  workflow_call:
 permissions:
   contents: write
 concurrency:
