@@ -41,8 +41,8 @@ def main():
  const loadedChurch=await new GLTFLoader().loadAsync(new URL('../models/church.glb',import.meta.url).href);
  loadedChurch.scene.name='PedomeChurchMeasuredVisual';buildingGroup.add(loadedChurch.scene);
  buildingGroup.updateMatrixWorld(true);const churchBounds=new THREE.Box3().setFromObject(loadedChurch.scene);
- let churchMeshes=0,churchTriangles=0;loadedChurch.scene.traverse(o=>{if(o.isMesh){churchMeshes++;churchTriangles+=(o.geometry.index?.count??o.geometry.attributes.position.count)/3;}});
- window.churchVisualReport={...buildingGroup.userData.churchReplacement,mesh_count:churchMeshes,triangles:churchTriangles,bounds:[churchBounds.min.toArray(),churchBounds.max.toArray()],sha256:CHURCH_SHA};
+ let churchMeshes=0,churchTriangles=0;const pbrMaterials=[];loadedChurch.scene.traverse(o=>{if(o.isMesh){churchMeshes++;churchTriangles+=(o.geometry.index?.count??o.geometry.attributes.position.count)/3;for(const mat of (Array.isArray(o.material)?o.material:[o.material]))if(mat?.map&&mat.normalMap&&mat.roughnessMap)pbrMaterials.push({name:mat.name,uv:!!o.geometry.attributes.uv});}});
+ window.churchVisualReport={...buildingGroup.userData.churchReplacement,mesh_count:churchMeshes,pbr_materials:pbrMaterials,triangles:churchTriangles,bounds:[churchBounds.min.toArray(),churchBounds.max.toArray()],sha256:CHURCH_SHA};
  if(churchMeshes<2||!window.churchVisualReport.bounds.flat().every(Number.isFinite))throw Error('Invalid church GLB');"""
     s=patch(s,old,new.replace("CHURCH_SHA",json.dumps(report["glb_sha256"])))
     shell.write_text(s)
