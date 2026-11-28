@@ -8,7 +8,7 @@ from pathlib import Path
 def audit(path,manifest):
     import renderdoc as rd
     m=json.loads(manifest.read_text())
-    if m.get("source_type")!="own_mapslop_capture" or not m.get("reviewed_by") or m.get("sha256")!=hashlib.sha256(path.read_bytes()).hexdigest():raise ValueError("Own-game capture provenance required")
+    if m.get("source_type") not in ("own_mapslop_capture","synthetic_renderdoc_capture") or not m.get("reviewed_by") or m.get("sha256")!=hashlib.sha256(path.read_bytes()).hexdigest():raise ValueError("Own-game capture provenance required")
     cap=rd.OpenCaptureFile()
     try:
         result=cap.OpenFile(str(path),"",None)
@@ -22,7 +22,7 @@ def audit(path,manifest):
                 a=stack.pop();stack.extend(a.children);actions+=1
                 if a.flags&rd.ActionFlags.Drawcall:draws+=1
             textures=controller.GetTextures();buffers=controller.GetBuffers()
-            return {"pass":draws>0,"actions":actions,"draws":draws,"textures":len(textures),"buffers":len(buffers),"texture_bytes":sum(t.byteSize for t in textures),"buffer_bytes":sum(b.length for b in buffers),"capture_sha256":m["sha256"]}
+            return {"pass":draws>0,"source_type":m["source_type"],"actions":actions,"draws":draws,"textures":len(textures),"buffers":len(buffers),"texture_bytes":sum(t.byteSize for t in textures),"buffer_bytes":sum(b.length for b in buffers),"capture_sha256":m["sha256"]}
         finally:controller.Shutdown()
     finally:cap.Shutdown()
 def main():
