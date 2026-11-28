@@ -43,10 +43,12 @@ class VegetationTests(unittest.TestCase):
         self.assertEqual(rej["road_or_building_trunk_overlap"],1)
 
     def test_water_and_road_cos(self):
-        for code in ("9.1.1.1","1.5.1.1"):
-            trees,rej,_=v.candidates(self.h,self.n,0,0,box(20,20,21,21),cos(code))
-            self.assertEqual(trees,[])
-            self.assertEqual(rej["cos_road_or_water"],1)
+        trees,rej,_=v.candidates(self.h,self.n,0,0,box(20,20,21,21),cos("9.1.1.1"))
+        self.assertEqual(trees,[])
+        self.assertEqual(rej["cos_water"],1)
+        trees,rej,_=v.candidates(self.h,self.n,0,0,box(20,20,21,21),cos("1.5.1.1"))
+        self.assertEqual(len(trees),1)
+        self.assertEqual(trees[0]["cos_code"],"1.5.1.1")
 
     def test_minimum_returns(self):
         self.n[4,4]=2
