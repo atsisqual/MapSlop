@@ -191,7 +191,7 @@ export const tin = T.kind === 'tin' ? makeTin(T) : null;""")
     shutil.copy2(P(__file__).resolve().parent/'pedome-render-diagnostics.mjs',out/'js/pedome-render-diagnostics.mjs')
     f=out/'js/ground.js'
     # Preserve painting coordinates while resampling the final texture to power-of-two dimensions.
-    patch(f,"import * as THREE from 'three/webgpu';","import * as THREE from 'three/webgpu';\\nimport { configureGroundTexture } from './pedome-render-diagnostics.mjs';")
+    patch(f,"import * as THREE from 'three/webgpu';","import * as THREE from 'three/webgpu';\nimport { configureGroundTexture } from './pedome-render-diagnostics.mjs';")
     patch(f,"  map.anisotropy = renderer.getMaxAnisotropy ? renderer.getMaxAnisotropy() : 8;","  configureGroundTexture(map,renderer);")
     patch(f,"const map = new THREE.CanvasTexture(paintMap());","const painted=paintMap(); const pot=document.createElement(\'canvas\'); pot.width=painted.width; pot.height=2**Math.round(Math.log2(painted.height)); pot.getContext(\'2d\').drawImage(painted,0,0,pot.width,pot.height); const map = new THREE.CanvasTexture(pot);")
     (out/'js/pedome.js').write_text('''import * as THREE from 'three/webgpu';
