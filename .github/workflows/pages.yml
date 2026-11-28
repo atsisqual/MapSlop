@@ -161,22 +161,10 @@ jobs:
           set -euo pipefail
           archive=geodata-dgt-pages-road-46085062868
           mkdir -p /tmp/pages-terrain
-          if gh release view "$archive" --repo "$GITHUB_REPOSITORY" --json isDraft >/tmp/pages-draft 2>/dev/null; then
-            tag="$archive"
-          else
-            # Only the trusted same-repository publication PR can establish
-            # the immutable private archive. Main cannot silently fall back.
-            test "$GITHUB_EVENT_NAME" = pull_request
-            test "$GITHUB_HEAD_REF" = agent/publish-road-carve
-            tag=geodata-dgt-roads-agent-smooth-road-profiles
-          fi
-          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
-          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/pages-terrain --pattern terrain-road-preview.bin --pattern road-validation.json
+          # Immutable approved source already exists. No PR may bootstrap a release.
+          test "$(gh release view "$archive" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$archive" --repo "$GITHUB_REPOSITORY" --dir /tmp/pages-terrain --pattern terrain-road-preview.bin --pattern road-validation.json
           python tools/verify-pages-terrain.py /tmp/pages-terrain
-          if [ "$tag" != "$archive" ]; then
-            gh release create "$archive" --repo "$GITHUB_REPOSITORY" --draft --target 9633c955c0c74eeb881d9e29044d5210ce64c9a4 --title "Approved Pages road derivative — run 46085062868" --notes "Private immutable source for owner-authorized Pages deployment. Do not clobber or publish this release." /tmp/pages-terrain/terrain-road-preview.bin /tmp/pages-terrain/road-validation.json
-            test "$(gh release view "$archive" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
-          fi
       - name: Retrieve exact approved combined runtime — run 46098427966
         env:
           GH_TOKEN: ${{ github.token }}
@@ -209,15 +197,30 @@ jobs:
           cp /tmp/pot-tiles/manifest.json /tmp/pot-evidence/pot-manifest.json
           tar -C /tmp/pot-tiles -czf /tmp/pot-evidence/pot-tiles.tar.gz .
           (cd /tmp/pot-evidence; sha256sum pot-report.json pot-manifest.json pot-tiles.tar.gz > SHA256SUMS.txt)
-          archive=geodata-dgt-orthophoto-pot-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${{ matrix.role }}
-          gh release create "$archive" --repo "$GITHUB_REPOSITORY" --draft --target "$BUILD_SHA" --title "POT orthophoto derivative $BUILD_SHA" --notes "Verified original DGT sources; candidate only; no raw rasters. Browser gate and owner review separate." /tmp/pot-evidence/*
-          test "$(gh release view "$archive" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
           mv /tmp/pedome/ortho /tmp/old-ortho
           mv /tmp/pot-tiles /tmp/pedome/ortho
           python tools/apply-android-render-hotfix.py /tmp/pedome
           node --check /tmp/pedome/js/pedome.js
           node --check /tmp/pedome/js/pedome-orthophoto-preview.mjs
           node --check /tmp/pedome/js/pedome-render-diagnostics.mjs
+      - name: Preserve regenerated POT tiles and checksums as Actions artifact
+        if: always() && env.ANDROID_HOTFIX == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pot-orthophoto-${{ matrix.role }}
+          path: /tmp/pot-evidence/
+          if-no-files-found: warn
+      - name: Archive POT derivative in draft release (main only)
+        if: env.ANDROID_HOTFIX == '1' && github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd /tmp/pot-evidence; sha256sum -c SHA256SUMS.txt)
+          archive=geodata-dgt-orthophoto-pot-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${{ matrix.role }}
+          gh release create "$archive" --repo "$GITHUB_REPOSITORY" --draft --target "$BUILD_SHA" --title "POT orthophoto derivative $BUILD_SHA" --notes "Verified original DGT sources; candidate only; no raw rasters. Browser gate and owner review separate." /tmp/pot-evidence/*
+          test "$(gh release view "$archive" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
       - name: Apply explicit branch runtime contract
         if: env.PREVIEW_REF != '' && env.PREVIEW_REF != 'agent/android-render-hotfix'
         run: |
