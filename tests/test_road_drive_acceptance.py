@@ -7,7 +7,7 @@ from road_drive_acceptance import evaluate_drive
 def drive(target,window,raw,roll,complete=True):
     return dict(route={"way":149303998,"name":"Rua das Bouças"},success=complete,progress_m=104 if complete else 85,
                 distance_m=104.2 if complete else 86,collisions=0,target_speed_m_s=target,max_speed_m_s=target,
-                at_target_speed_samples=120,speed_policy='curvature_braking_envelope_v1',speed_plan=[{'station_m':0,'command_m_s':14}],lateral_target_limit_m_s2=4,lateral_acceleration_window_0_2s_max_m_s2=3.8,vertical_metrics={
+                at_target_speed_samples=120,speed_tracking_segments=[dict(start_m=i,end_m=min(104,i+5),samples=30,covered_m=min(104,i+5)-i-.1,mean_speed_ratio=.96) for i in range(0,104,5)],speed_policy='curvature_braking_envelope_v1',speed_plan=[{'station_m':0,'command_m_s':14}],lateral_target_limit_m_s2=4,lateral_acceleration_window_0_2s_max_m_s2=3.8,vertical_metrics={
                     "surface_window_0_2s":{"max_m_s2":window,"samples":100},
                     "surface_raw":{"max_m_s2":raw,"samples":100},
                     "straight_roll_max_degrees":roll,"straight_roll_samples":34})
@@ -26,7 +26,11 @@ class DriveAcceptanceTests(unittest.TestCase):
         self.assertFalse(evaluate_drive(b,drive(14,11,141,.15),14)["pass"])
     def test_speed_and_missing_metrics_fail(self):
         b=drive(14,26.6,1044,11.4);c=drive(14,7.9,79,.8)
-        c["at_target_speed_samples"]=59
+        c["at_target_speed_samples"]=0;c["max_speed_m_s"]=10.0
+        self.assertTrue(evaluate_drive(b,c,14)["pass"])
+        c["speed_tracking_segments"][4]["mean_speed_ratio"]=.89
+        self.assertFalse(evaluate_drive(b,c,14)["pass"])
+        c["speed_tracking_segments"]=[]
         self.assertFalse(evaluate_drive(b,c,14)["pass"])
         self.assertFalse(evaluate_drive(b,{},14)["pass"])
 
