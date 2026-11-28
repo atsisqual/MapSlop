@@ -16,3 +16,7 @@ python -m http.server 8080 --bind 127.0.0.1 --directory outputs/local-church
 ```
 
 Abrir http://127.0.0.1:8080/?mode=glb e http://127.0.0.1:8080/?mode=tiles. Ferramentas descarregadas são software; viewer não consulta serviços de mapas. O ambiente de validação bloqueará pedidos externos, com capturas e report. O lock gerado permite repetir a versão efetivamente resolvida; ainda não foi fixado no Git.
+
+## Revisão V2
+
+Dono aprovou V1 real (run 46138928840, RMSE 0,43179 m), mas pediu planos, detalhes e integração. Implementação: roof_plane_fit.py (eixos footprint, detetar torre por aglomerado de retornos altos; modelos de águas contínuas, interseção de planos exata), facade_details.py (config YAML com defaults, não medições), install-local-church.py (troca visual única num runtime verificado). Geometria de colisão original preservada por design, mesmo que cobertura física para helicóptero não coincida com topo visual. Evidência do jogo antes/depois e 104 m de condução, amostras de colisores junto ao edifício, GLB e TilesRendererJS; guardar patch privado após gates. V2 ainda não validada em dados reais. Não confundir com pipeline fotogramétrica completa.
