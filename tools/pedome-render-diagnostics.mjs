@@ -29,7 +29,7 @@ export function textureState(tex,renderer){
   anisotropy:tex.anisotropy,expectedLevels:expected,gpuLevels:levels,
   generated:generated.has(tex)};
 }
-export function installRenderDiagnostics(renderer){
+export async function installRenderDiagnostics(renderer){
  const b=renderer.backend, original=b.generateMipmaps;
  if(typeof original!=='function')throw Error('Unknown mipmap backend');
  b.generateMipmaps=function(texture,...args){
@@ -39,7 +39,9 @@ export function installRenderDiagnostics(renderer){
  const backend=b.isWebGPUBackend?'WebGPU':b.isWebGLBackend?'WebGL2':'unknown';
  let gpu={};
  if(b.isWebGPUBackend){
-  const info=b.device?.adapterInfo;
+  const adapter=b.device?.adapterInfo?null:await navigator.gpu?.requestAdapter({featureLevel:'compatibility'}).catch(()=>null);
+  const info=b.device?.adapterInfo||adapter?.info||await adapter?.requestAdapterInfo?.();
+  gpu.infoSource=b.device?.adapterInfo?'device':adapter?'separate-adapter-query':'unavailable';
   if(info)for(const k of ['vendor','architecture','device','description','isFallbackAdapter'])if(info[k]!==undefined)gpu[k]=info[k];
  }else if(b.isWebGLBackend){
   const gl=b.gl,ext=gl.getExtension('WEBGL_debug_renderer_info');
