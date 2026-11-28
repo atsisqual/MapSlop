@@ -24,7 +24,7 @@ def fixture(out):
     # Ground class 2 and separation-top returns class 17, not claimed to be DGT classification.
     wx,wy=np.meshgrid(np.arange(.1,20,.2),np.arange(4.1,4.6,.2));wx=wx.ravel();wy=wy.ravel()
     x=np.r_[x,wx];y=np.r_[y,wy];z=np.r_[z,101.3+.02*wx];classes=np.r_[classes,np.full(len(wx),17,np.uint8)]
-    header=laspy.LasHeader(point_format=3,version="1.2");header.offsets=[x0,y0,100];header.scales=[.001,.001,.001];header.add_crs(CRS.from_epsg(3763));las=laspy.LasData(header);las.x=x+x0;las.y=y+y0;las.z=z;las.classification=classes;las.write(out/"points.las")
+    header=laspy.LasHeader(point_format=3,version="1.2");header.offsets=[x0,y0,100];header.scales=[.001,.001,.001];header.add_crs(CRS.from_epsg(3763));las=laspy.LasData(header);las.x=x+x0;las.y=y+y0;las.z=z;las.classification=classes;las.return_number=np.ones(len(x),np.uint8);las.number_of_returns=np.ones(len(x),np.uint8);las.write(out/"points.las")
     (out/"config.yml").write_text("""input_polygons:
   - datasets:
       - /data/road.geojson
@@ -42,7 +42,6 @@ lifting_options:
   Separation:
     height: percentile-80
     use_LAS_classes:
-      - 2
       - 17
 input_elevation:
   - datasets:
@@ -70,16 +69,23 @@ def run(src,out,image):
             result=subprocess.run(args,stdout=log,stderr=subprocess.STDOUT,timeout=1200)
         r["exit_code"]=result.returncode
         if result.returncode:raise RuntimeError((out/"engine.log").read_text(errors="replace")[-6000:])
-        p=work/"lifted.obj";vertices=[];faces=0
+        p=work/"lifted.obj";vertices=[];faces=0;material=None;groups={}
         for l in p.read_text().splitlines():
             if l.startswith("v "):vertices.append(list(map(float,l.split()[1:4])))
-            elif l.startswith("f "):faces+=1
+            elif l.startswith("usemtl "):material=l.split(maxsplit=1)[1].strip()
+            elif l.startswith("f "):
+                faces+=1
+                groups.setdefault(material or "unknown",set()).update(int(x.split("/")[0])-1 for x in l.split()[1:])
         if not vertices or faces<2 or not all(math.isfinite(v) for xyz in vertices for v in xyz):raise ValueError("Invalid lifted mesh")
         bounds=[[min(v[i] for v in vertices) for i in range(3)],[max(v[i] for v in vertices) for i in range(3)]]
-        r.update(vertices=len(vertices),faces=faces,bounds=bounds,sha256=sha(p),pass_=True)
-        # Synthetic output must be raised above datum with variation; no exact separation height claim.
-        if m["source_type"]=="synthetic" and not (99<=bounds[0][2]<=101 and 100<bounds[1][2]<=103 and bounds[1][2]-bounds[0][2]>.1):raise ValueError("Unexpected synthetic vertical datum/relief")
-        shutil.copy2(p,out/"lifted.obj");r["pass"]=r.pop("pass_")
+        r.update(vertices=len(vertices),faces=faces,bounds=bounds,sha256=sha(p),material_z_ranges={k:[min(vertices[i][2] for i in v),max(vertices[i][2] for i in v)] for k,v in groups.items() if v})
+        # Separate semantic gates; a valid flat road cannot hide a failed wall reconstruction.
+        shutil.copy2(p,out/"lifted.obj")
+        if m["source_type"]=="synthetic":
+            mats=r["material_z_ranges"];road=next((z for k,z in mats.items() if k.lower()=="road"),None);wall=next((z for k,z in mats.items() if k.lower()=="separation"),None)
+            r["checks"]={"road_datum":bool(road and 99.8<=road[0]<=100.2 and 100.2<=road[1]<=100.6),"wall_top":bool(wall and 101.35<=wall[1]<=101.9 and road and wall[1]-road[1]>=.8)}
+            if not all(r["checks"].values()):raise ValueError("Semantic lifting gate failed: "+json.dumps(r["checks"]))
+        r["pass"]=True
     finally:
         shutil.rmtree(work,ignore_errors=True)
         (out/"report.json").write_text(json.dumps(r,indent=2)+"\n")
