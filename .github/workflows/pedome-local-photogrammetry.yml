@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - 'tools/build-local-church.py'
+      - 'tools/fetch-cc0-materials.py'
+      - 'tools/package-playable-preview.py'
       - 'tools/roof_plane_fit.py'
       - 'tools/facade_details.py'
       - 'tools/install-local-church.py'
@@ -88,9 +90,11 @@ jobs:
           for tile in 178494 178495 179494 179495; do
             gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/church-input --pattern "LO-$tile-07-2025_v05.laz"
           done
+      - name: Retrieve CC0 material maps and record exact provenance
+        run: python tools/fetch-cc0-materials.py /tmp/cc0-materials
       - name: Fit roof planes and configurable facade details
         run: |
-          python tools/build-local-church.py --input /tmp/church-input --runtime /tmp/runtime --output /tmp/local-3d
+          python tools/build-local-church.py --input /tmp/church-input --runtime /tmp/runtime --materials /tmp/cc0-materials --output /tmp/local-3d
           bash tools/stage-local-3d.sh /tmp/local-3d
       - name: Render real candidate with both loaders
         run: |
@@ -128,6 +132,8 @@ jobs:
           done
           MAPSLOP_RESULTS=/tmp/local-3d node tests/church-in-game.mjs
           tar -C /tmp/runtime-church -czf /tmp/local-3d/church-runtime-patch.tar.gz js/pedome.js js/pedome-buildings-detail.mjs models/church.glb
+          python tools/package-playable-preview.py /tmp/runtime-church /tmp/local-3d/church-in-game-report.json /tmp/local-3d/MapSlop-Pedome-Church-Preview.zip --church-report /tmp/local-3d/church-report.json
+          tar -C /tmp/cc0-materials -czf /tmp/local-3d/cc0-material-inputs.tar.gz .
       - name: Archive only DGT-derived candidate and diagnostics privately
         if: always()
         run: |
@@ -137,7 +143,8 @@ jobs:
           shopt -s nullglob
           files=(*.json *.png *.log)
           if [ -f viewer-report.json ] && [ -f church-in-game-report.json ] && jq -e '.pass' viewer-report.json >/dev/null && jq -e '.pass' church-report.json >/dev/null && jq -e '.pass' church-in-game-report.json >/dev/null; then
-            files+=(church.glb church-runtime-patch.tar.gz)
+            test -f MapSlop-Pedome-Church-Preview.zip && test -f cc0-material-inputs.tar.gz
+            files+=(church.glb church-runtime-patch.tar.gz MapSlop-Pedome-Church-Preview.zip cc0-material-inputs.tar.gz)
           fi
           if [ "${#files[@]}" -eq 0 ]; then echo 'No evidence produced'; exit 1; fi
           sha256sum "${files[@]}" > SHA256SUMS.txt
