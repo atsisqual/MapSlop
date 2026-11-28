@@ -16,7 +16,7 @@ try{
    await p.screenshot({path:root+'/church-'+mode+'.png'});
    const drift=Math.max(...s.bounds.flat().map((v,i)=>Math.abs(v-s.report.bounds.flat()[i])));
    report.modes[mode]={...s,drift,errors,external};
-   if(s.error||!s.ready||s.models<1||drift>.05||errors.length||external.length||(s.report.materials&&(!s.pbr||s.pbr.length<2||s.pbr.some(m=>!m.uv||!m.normal||!m.roughness||!m.base))))throw Error(JSON.stringify(report.modes[mode]));
+   if(s.error||!s.ready||s.models<1||drift>.05||errors.length||external.length||s.roof?.length!==1||!s.roof[0].uv||!s.roof[0].baseMap||!s.roof[0].srgb||!s.roof[0].sameImage||s.roof[0].fill.some(v=>Math.abs(v-.22)>1e-6)||(s.report.materials&&(!s.pbr||s.pbr.length<2||s.pbr.some(m=>!m.uv||!m.normal||!m.roughness||!m.base))))throw Error(JSON.stringify(report.modes[mode]));
   }finally{await p.close()}
  }
  report.pass=true;
