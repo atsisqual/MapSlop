@@ -14,7 +14,6 @@ jobs:
     env:
       MAPSLOP_RESULTS: /tmp/traffic-evidence
       MAPSLOP_TEST_URL: http://127.0.0.1:8080/?webgl
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -71,6 +70,8 @@ jobs:
           node tests/traffic-real.mjs
       - name: Archive actual screenshots and measurements in a private draft
         if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/traffic-evidence
