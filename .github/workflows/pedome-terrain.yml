@@ -5,7 +5,7 @@ on:
       mode:
         description: Terrain source to validate
         type: choice
-        options: [copernicus, dgt, buildings, roofs, roads, traffic]
+        options: [copernicus, dgt, buildings, roofs, roads, traffic, vegetation]
         default: copernicus
 permissions:
   contents: read
@@ -86,3 +86,9 @@ jobs:
     permissions:
       contents: write
     uses: ./.github/workflows/pedome-traffic.yml
+
+  vegetation:
+    if: inputs.mode == 'vegetation' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/agent/lidar-vegetation')
+    permissions:
+      contents: write
+    uses: ./.github/workflows/pedome-vegetation.yml
