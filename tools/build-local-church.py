@@ -15,6 +15,9 @@ from PIL import Image
 from terrain_grid import ORIGIN,KX,KY,to_world
 from terrain_binary import decode
 from terrain_tin import TinSampler
+from roof_plane_fit import mesh_planar,fit,axis_frame
+from facade_details import facade
+import yaml
 ROOT=Path(__file__).resolve().parents[1]
 CHURCH=149406360
 TERRAIN_SHA="36019dfc27584d667555c794350107c29981da4f4ee15bac2c03078aba0d895b"
@@ -132,7 +135,8 @@ def mesh(p,sample,ground,cell=.5):
         walls.extend([[ab,bb,bt],[ab,bt,at]])
     if abs(border-p.length)>.01:raise ValueError("Wall perimeter mismatch")
     return roofs,walls,np.array(support),area
-def glb(path,roofs,walls,texture,uv_extent):
+def glb(path,roofs,walls,texture,uv_extent,details=None,config=None):
+    details=details or {};config=config or {}
     # Standard self-contained glTF 2.0 binary. No external URLs or custom decoders.
     payload=bytearray();views=[];accessors=[]
     def view(data,target=None):
@@ -146,7 +150,8 @@ def glb(path,roofs,walls,texture,uv_extent):
         if kind=="VEC3":d.update(min=a.min(axis=0).tolist(),max=a.max(axis=0).tolist())
         accessors.append(d);return i
     primitives=[]
-    for k,faces in enumerate((roofs,walls)):
+    for k,faces in enumerate((roofs,walls,details.get("granite",[]),details.get("door",[]),details.get("window",[]))):
+        if not faces:continue
         a=np.asarray(faces,dtype=np.float64);normal=np.cross(a[:,1]-a[:,0],a[:,2]-a[:,0]);length=np.linalg.norm(normal,axis=1)
         valid=length>1e-10;a=a[valid];normal=normal[valid]/length[valid,None]
         xyz=a.reshape(-1,3);attrs={"POSITION":attrib(xyz,"VEC3"),"NORMAL":attrib(np.repeat(normal,3,axis=0),"VEC3")}
@@ -155,6 +160,9 @@ def glb(path,roofs,walls,texture,uv_extent):
             attrs["TEXCOORD_0"]=attrib(np.column_stack(((xyz[:,0]-x0)/(x1-x0),(xyz[:,2]-z0)/(z1-z0))),"VEC2")
         primitives.append({"attributes":attrs,"material":k,"mode":4})
     materials=[{"name":"Measured roof with aerial colour","doubleSided":True,"pbrMetallicRoughness":{"baseColorFactor":[.65,.24,.12,1],"metallicFactor":0,"roughnessFactor":.9}},{"name":"Estimated facade — NOT photographic","doubleSided":True,"pbrMetallicRoughness":{"baseColorFactor":[.75,.72,.65,1],"metallicFactor":0,"roughnessFactor":1}}]
+    materials[1]['pbrMetallicRoughness']['baseColorFactor']=[*config.get('cor_parede_rgb',[.75,.72,.65]),1]
+    for name,color in [('Granite quoins and surrounds',config.get('cor_granito_rgb',[.47,.45,.42])),('Estimated timber door',[.16,.085,.04]),('Estimated dark windows',[.075,.10,.12])]:
+        materials.append({'name':name,'doubleSided':True,'pbrMetallicRoughness':{'baseColorFactor':[*color,1],'metallicFactor':0,'roughnessFactor':.9}})
     doc={"asset":{"version":"2.0","generator":"MapSlop local DGT church candidate"},"scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],"meshes":[{"primitives":primitives}],"materials":materials}
     if texture:
         doc.update(images=[{"bufferView":view(texture),"mimeType":"image/png"}],textures=[{"source":0,"sampler":0}],samplers=[{"magFilter":9729,"minFilter":9987,"wrapS":33071,"wrapT":33071}])
@@ -167,10 +175,15 @@ def glb(path,roofs,walls,texture,uv_extent):
 def main():
     ap=argparse.ArgumentParser();ap.add_argument("--fixture",action="store_true");ap.add_argument("--input",type=Path);ap.add_argument("--runtime",type=Path);ap.add_argument("--output",type=Path,required=True);a=ap.parse_args()
     p=footprint();a.output.mkdir(parents=True,exist_ok=False);texture=None;uv=None;tex_sources=[];sources=[];rmse=None
+    entry=next(b for b in yaml.safe_load((ROOT/'data/pedome/references/buildings.yaml').read_text())['buildings'] if int(b['osm_id'])==CHURCH)
+    config=entry.get('detalhes_fachada') or {}
     if a.fixture:
         ground=lambda x,z:0.
-        sample=lambda x,z:(9+max(0,2-abs(z)/10),0.)
-        n=None
+        basis=axis_frame(p);corners=np.asarray(p.exterior.coords)@basis;u0,v0=corners.min(0);u1,v1=corners.max(0)
+        pts=np.array([(x,z) for x in np.arange(p.bounds[0],p.bounds[2],.5) for z in np.arange(p.bounds[1],p.bounds[3],.5) if sh.intersects_xy(p,x,z)])
+        uvlocal=pts@basis;u,vv=uvlocal.T;heights=10.-.30*np.abs(vv-(v0+v1)/2)
+        tower=u>u1-5.5;heights[tower]=19.-.4*np.abs(vv[tower]-(v0+v1)/2)
+        samples=np.column_stack((pts[:,0],heights,pts[:,1]));n=len(samples)
         # Synthetic checker image tests embedded texture decoding without external imagery.
         image=Image.new("RGB",(64,64));pix=np.indices((64,64)).sum(axis=0)//8%2
         image=Image.fromarray(np.where(pix[...,None],np.array([165,70,40]),np.array([220,150,100])).astype(np.uint8))
@@ -182,19 +195,24 @@ def main():
         terrain=decode(binpath.read_bytes());ground=TinSampler(terrain)
         points,sources=points_from_lidar(a.input,p,terrain["base"]);samples=roof_samples(points,ground);n=len(samples)
         # Deterministic independent occupied-cell holdout, diagnostics not independent survey accuracy.
-        train=samples[np.arange(n)%5!=0];test=samples[np.arange(n)%5==0];predict=interpolator(train)
-        err=np.array([predict(x,z)[0]-y for x,y,z in test])
-        rmse=float(np.sqrt(np.mean(err**2)));sample=interpolator(samples)
         texture,uv,tex_sources=roof_texture(a.runtime,p)
-    roofs,walls,dist,area=mesh(p,sample,ground)
-    out=a.output/"church.glb";glb(out,roofs,walls,texture,uv)
-    coords=np.asarray(roofs+walls).reshape(-1,3);lo=coords.min(axis=0);hi=coords.max(axis=0);center=(lo+hi)/2;half=(hi-lo)/2
+    train=samples[np.arange(n)%5!=0];test=samples[np.arange(n)%5==0]
+    *_,predict=fit(p,train)
+    err=np.array([predict(x,z)-y for x,y,z in test])
+    rmse=float(np.sqrt(np.mean(err**2)))
+    roofs,walls,dist,area,height,regions=mesh_planar(p,samples,ground)
+    details,facade_report=facade(p,ground,height,config)
+    out=a.output/"church.glb";glb(out,roofs,walls,texture,uv,details,config)
+    all_faces=roofs+walls+[tri for faces in details.values() for tri in faces]
+    coords=np.asarray(all_faces).reshape(-1,3);lo=coords.min(axis=0);hi=coords.max(axis=0);center=(lo+hi)/2;half=(hi-lo)/2
     x,y,z=center;hx,hy,hz=half
     # 3D Tiles local Cartesian Z-up: X east, Y north, Z up. GLB is native Y-up.
     tiles={"asset":{"version":"1.1"},"geometricError":0,"root":{"boundingVolume":{"box":[x,-z,y,hx,0,0,0,hz,0,0,0,hy]},"geometricError":0,"refine":"REPLACE","content":{"uri":"church.glb"}}}
     jsonout(a.output/"tileset.json",tiles)
-    report={"fixture":a.fixture,"osm_id":CHURCH,"source":"SYNTHETIC — NOT REAL" if a.fixture else "DGT class-6 roof envelope + OSM footprint + DGT 2025 orthophoto; walls estimated","origin_lat_lon":list(ORIGIN),"frame":"X east, Y above approved DGT terrain base, Z south","bounds":[lo.tolist(),hi.tolist()],"roof_triangles":len(roofs),"wall_triangles":len(walls),"footprint_m2":area,"roof_sample_cells":n,"holdout_rmse_m":rmse,"nearest_sample_p95_m":float(np.percentile(dist,95)),"nearest_sample_max_m":float(dist.max()),"glb_sha256":sha(out),"glb_bytes":out.stat().st_size,"source_hashes":sources,"texture_tile_sha256":tex_sources,"visual_review_required":True}
-    report["pass"]=bool(a.fixture or (report["nearest_sample_p95_m"]<=2 and report["nearest_sample_max_m"]<=5 and rmse<=2.5))
+    report={"fixture":a.fixture,"osm_id":CHURCH,"source":"SYNTHETIC — NOT REAL" if a.fixture else "DGT class-6 fitted planar roof facets + OSM footprint + DGT 2025 orthophoto; walls and facade details estimated","origin_lat_lon":list(ORIGIN),"frame":"X east, Y above approved DGT terrain base, Z south","bounds":[lo.tolist(),hi.tolist()],"roof_triangles":len(roofs),"wall_triangles":len(walls),"footprint_m2":area,"roof_sample_cells":n,"holdout_rmse_m":rmse,"nearest_sample_p95_m":float(np.percentile(dist,95)),"nearest_sample_max_m":float(dist.max()),"glb_sha256":sha(out),"glb_bytes":out.stat().st_size,"source_hashes":sources,"texture_tile_sha256":tex_sources,"visual_review_required":True}
+    report.update(roof_regions=regions,roof_method="robust continuous planar envelope per tower/nave region; exact plane intersections",facade=facade_report,facade_triangles=sum(len(v) for v in details.values()),facade_config=config,previous_real_rmse_m=.4317902658049366,previous_real_top_m=20.881288115940958)
+    report["checks"]={"facet_coverage":abs(area-p.area)<=.01,"facade":(not (config.get("porta_principal") or {}).get("enabled",True) or facade_report["door"]==1) and (not (config.get("janelas") or {}).get("enabled",True) or facade_report["window"]>0) and (not (config.get("cunhais_granito") or {}).get("enabled",True) or facade_report["quoin_strips"]>0),"tower":any(r["name"]=="tower" for r in regions),"sample_support":report["nearest_sample_p95_m"]<=2 and report["nearest_sample_max_m"]<=5,"holdout_rmse":rmse<=1.0,"preserve_measured_top":a.fixture or abs(float(hi[1])-20.881288115940958)<=1.5}
+    report["pass"]=bool(all(report["checks"].values()))
     jsonout(a.output/"church-report.json",report);print("CHURCH_CANDIDATE",json.dumps(report))
     if not report["pass"]:raise SystemExit("Roof support/holdout gate failed; do not integrate")
 if __name__=="__main__":main()
