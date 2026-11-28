@@ -1,7 +1,7 @@
 // Browser-side route test. Real controller, collision and terrain modules.
 // Accelerated deterministic physics (1/60 s); the short browser smoke separately
 // exercises live rendering, keyboard and multitouch. No position writes during drive.
-export async function driveTerrainRoute({reference=null,minGrade=0.02,targetSpeed=5.5}={}){
+export async function driveTerrainRoute({reference=null,minGrade=0.02,targetSpeed=5.5,renderEvery=0}={}){
   const {heightAt}=await import(new URL('js/terrain.js',location.href).href);
   const {GEO,controllers:c}=window.mapslop;
   const {pavementLift}=await import(new URL('js/street-geometry.js',location.href).href);
@@ -80,7 +80,7 @@ export async function driveTerrainRoute({reference=null,minGrade=0.02,targetSpee
     }
     return best;
   }
-  function attempt(route){
+  async function attempt(route){
     const a=route.points,m=metrics(a);
     // Geometry-only speed schedule shared by all terrains. 20 km/h replay
     // intentionally unchanged. For 50 km/h, anticipate curvature and braking.
@@ -135,6 +135,7 @@ export async function driveTerrainRoute({reference=null,minGrade=0.02,targetSpee
         c.setTouchInput('forward',clamp((command-e.speed)/1.8,0,1));
         c.setTouchInput('backward',clamp((e.speed-command-(fast?.05:.4))/(fast?.8:1.8),0,1));
         c.update(dt,(i+1)*dt);
+        if(renderEvery&&i%renderEvery===0)await window.mapslop.orthoPreview.renderDrive(dt*renderEvery,(i+1)*dt);
         const pos=e.position;
         maxSpeed=Math.max(maxSpeed,e.speed);
         const raw=heightAt(pos.x,pos.z),surface=c.getGroundHeight(pos.x,pos.z,'car',pos.y);
@@ -255,7 +256,7 @@ export async function driveTerrainRoute({reference=null,minGrade=0.02,targetSpee
   if(!candidates.length)return {success:false,reason:'No interior sloped curved road candidate',attempts:[]};
   const attempts=[];
   for(const route of candidates){
-    const r=attempt(route);
+    const r=await attempt(route);
     attempts.push(r);
     if(r.success)return {...r,attempts:attempts.map(({trace,route,...m})=>({way:route.way,name:route.name,...m}))};
   }
