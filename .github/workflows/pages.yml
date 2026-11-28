@@ -329,10 +329,17 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/pedome-results
-          python -m http.server 8080 --bind 127.0.0.1 --directory /tmp/site > /tmp/pedome-results/http.log 2>&1 &
+          serve=/tmp/site
+          if [ -n "$PREVIEW_REF" ]; then
+            serve=/tmp/preview-http
+            mkdir -p "$serve/MapSlop/preview/$(dirname "$PREVIEW_REF")"
+            ln -s /tmp/site/MapSlop "$serve/MapSlop/preview/$PREVIEW_REF"
+            export MAPSLOP_TEST_URL="http://127.0.0.1:8080/MapSlop/preview/$PREVIEW_REF/mobile.html?webgl"
+          fi
+          python -m http.server 8080 --bind 127.0.0.1 --directory "$serve" > /tmp/pedome-results/http.log 2>&1 &
           server=$!
           trap 'kill "$server" || true' EXIT
-          for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/MapSlop/ >/dev/null; then break; fi; sleep 1; done
+          for i in {1..30}; do if curl -fsS "$MAPSLOP_TEST_URL" >/dev/null; then break; fi; sleep 1; done
           node tests/browser-smoke.mjs
           node tests/pages-combined-smoke.mjs
           if [ "$ANDROID_HOTFIX" = 1 ]; then
@@ -350,7 +357,8 @@ jobs:
           try {
             for (const entry of ['index.html','mobile.html']) {
               const page=await browser.newPage({viewport:{width:823,height:384}});
-              await page.goto('http://127.0.0.1:8080/MapSlop/'+entry+'?webgl');
+              await page.goto(new URL(entry+'?webgl',process.env.MAPSLOP_TEST_URL).href);
+              if(process.env.PREVIEW_REF){const banner=page.locator('#preview-banner');await banner.waitFor({state:'visible'});if(await banner.textContent()!=='PREVIEW '+process.env.BUILD_SHA.slice(0,12))throw Error('Wrong preview banner');}
               const credit=page.locator('#credits').getByText('© Direção-Geral do Território, CC BY 4.0',{exact:true});
               await credit.waitFor({state:'visible'});
               await page.close();
@@ -421,6 +429,7 @@ jobs:
     if: needs.plan.outputs.publish == 'true'
     needs: [plan, assemble]
     permissions:
+      contents: read
       pages: write
       id-token: write
     env:
@@ -432,6 +441,11 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Reject a stale main snapshot before preview deployment
+        if: env.PREVIEW_SHA != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$ROOT_SHA"
       - name: Deploy to Pages
         id: deployment
         uses: actions/deploy-pages@v4
