@@ -65,7 +65,7 @@ try{
   drive:validDrive(a.drive)&&validDrive(b.drive)&&b.drive.vertical<=Math.max(a.drive.vertical+.1,2.958)&&b.drive.roll<=Math.max(a.drive.roll+.05,.429),
   texture:near(b.driveTile)&&b.captures.every(c=>near(c.tile)&&c.stream.settled&&c.stream.estimated_texture_bytes<=24000000),
   vegetation:b.captures.every(c=>budget(c.vegetation)),
-  performance:b.timing.frames>=70&&a.timing.frames>=70&&b.timing.median_ms<=a.timing.median_ms*1.5&&b.timing.p95_ms<=a.timing.p95_ms*2
+  performance:b.timing.frames>=70&&a.timing.frames>=70&&b.timing.median_ms<=a.timing.median_ms*1.15&&b.timing.p95_ms<=a.timing.p95_ms*1.3
  };
  report.pass=Object.values(report.checks).every(Boolean);console.log('COMBINED_RESULT',JSON.stringify({pass:report.pass,checks:report.checks,before:a.timing,after:b.timing,paving:p,roof_counts:b.scene.roof_counts,measured:bs.measured,drive:b.drive}));if(!report.pass)process.exitCode=1;
 }catch(e){report.errors.push(String(e));console.error(e);process.exitCode=1;}finally{save();await browser.close();}
