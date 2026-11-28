@@ -15,7 +15,7 @@ try:
     os.environ["PYTHONHTTPSVERIFY"]="1"
     for path in (gis,mmi):
         sys.path.insert(0,str(path.parent))
-        addon_utils.enable(path.name,default_set=False,persistent=False)
+        addon_utils.enable(path.name,default_set=True,persistent=False)
         module=sys.modules.get(path.name)
         if not module or not addon_utils.check(path.name)[1]:raise RuntimeError("Addon failed to enable: "+path.name)
         report["addons"][path.name]={"registered":True,"version":list(module.bl_info["version"])}
