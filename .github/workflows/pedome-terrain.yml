@@ -5,7 +5,7 @@ on:
       mode:
         description: Terrain source to validate
         type: choice
-        options: [copernicus, dgt, buildings, roofs, roads]
+        options: [copernicus, dgt, buildings, roofs, roads, traffic]
         default: copernicus
 permissions:
   contents: read
@@ -80,3 +80,9 @@ jobs:
     permissions:
       contents: write
     uses: ./.github/workflows/pedome-dgt-roads.yml
+
+  traffic:
+    if: inputs.mode == 'traffic' && github.ref == 'refs/heads/agent/right-hand-traffic'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/pedome-traffic.yml
