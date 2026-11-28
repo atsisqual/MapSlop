@@ -75,3 +75,17 @@ image=$(docker image inspect --format '{{index .RepoDigests 0}}' tudelft3d/3dfie
 python tools/3dfier-infrastructure.py run outputs/lift-input outputs/lift-output --image "$image"
 ```
 Novos jobs em infrastructure-converters.yml: blender-roads (matrix), gis-conversion, lidar-3dfier. Resultados pendentes. Testes iniciais 2/3 PASS; sem integração, sem publicação. Prioridade após gates: comparar segmentos reais de muros/portões e lancis com TIN/LiDAR e capturas, escolher a ferramenta por evidência e evitar duplicar objetos.
+
+### Resultados efetivamente observados
+
+Run 46145829568 (commit 55e2fbf), e repetição 46145984476 (1b72f2e): OSM2World 0.4.0, MOSAIQ, OSM Highway Junction, SUMO 1.28.0 e IFC/cjio PASS nos respetivos ensaios. SUMO: piloto inteiro (166 ways rodoviárias inteiras, 855 nós, 34 excluídas), 424 edges /430 lanes/1090 OpenDRIVE roads/161 junctions inferidos; UTM29WGS84, netOffset -550568.25,-4584532.83, sem validação de tráfego integral. MOSAIQ: recorte igreja 171 ways/1047 nodes, 147 meshes/2614 triângulos, 205340 B, SHA d0d01a24014590ef9b6eb41e856063f947f8fa1d2c9f0639d0b558272107fa21. Junction: 13 roads,21 road meshes,5 junctions,14 connectors,41 meshes/926 tris,79724 B, SHA 3a6a2ea015620c35d57bbf94d4a022807a58a34c5c95bc901afdb2930934f13c. OSM2World: bin ZIP SHA c05b37920d29c26710a06e30c170ca62e5e8ea653cccbbb3243dfc7e5d20b899 agora fixado; resultado idêntico 341 meshes,5125 tris,44 images,30480444 B. GLB style license audit still required. IFC/cjio fixture 12 triangles each. GIS e 3dfier ainda FAIL: 46145984476 jobs 140982044596 (Dataset iteration) e 140982044553 (duplicate --yaml). Correções 3d66cd0 e 347799d; digest container sha256:95a8e1defe7d8f2e105758bc5ed96e7964f97bda6fb07e577c8ff67cf9dd8264 fixado; novo CI pendente. Não equiparar testes de conversão a precisão geográfica ou integração no jogo.
+
+### Geometry Nodes: bridge genérico para MRoadGen e ferramentas semelhantes
+
+`tools/bake-infrastructure-nodes.py`: bpy 4.4.0 para fixture; ficheiro .blend verificado SHA256, scripts auto desativados, rede Python bloqueada; usar ambiente isolado e assets revistos, isto não é sandbox de segurança. Rejeita libraries externas, imagens FILE não packed, UDIM/sequências, instâncias não realizadas; exporta só malhas/curvas/superfícies visíveis avaliadas por depsgraph, materiais/atributos preservados quando suportados pelo exportador glTF, frame e contagem de triângulos, bounds finitos, 2M triangles/100MB ceilings. Não altera ficheiro de origem. Fixture próprio extrude strip 5m×3m×0.2m, gate bounds, triângulos antes/depois e contagem GLB real. Novo job geometry-nodes-bake. MRoadGen original exige Blender >=5 e collection MRoadGenerator: não testado sem .blend oficial; após receber ficheiro, avaliar compatibilidade, preparar curva/terreno e realizar instâncias, bake com versão 5 compatível e --collection quando adequado. Este conversor não configura automaticamente a ferramenta nem reproduz seu algoritmo de taludes. Não necessário adquirir agora.
+
+```sh
+python -m pip install bpy==4.4.0 numpy==1.26.4
+python tools/bake-infrastructure-nodes.py fixture /tmp/road.blend
+python tools/bake-infrastructure-nodes.py bake /tmp/road.blend outputs/baked-road --sha256 "$(sha256sum /tmp/road.blend | cut -d' ' -f1)"
+```
