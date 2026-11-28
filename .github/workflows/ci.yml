@@ -37,7 +37,7 @@ jobs:
       - name: Reproducible setup
         run: |
           make setup
-          .venv/bin/python -m pip install -r requirements-buildings.txt -r requirements-roads.txt Pillow==11.3.0
+          .venv/bin/python -m pip install -r requirements-buildings.txt -r requirements-roads.txt Pillow==11.3.0 opencv-python-headless==4.11.0.86
       - name: Offline repository and data workflow tests
         run: |
           .venv/bin/python -m pip check
