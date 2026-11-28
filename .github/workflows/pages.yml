@@ -344,11 +344,11 @@ jobs:
           node tests/pages-combined-smoke.mjs
           if [ "$ANDROID_HOTFIX" = 1 ]; then
             node tests/android-render-gate.mjs
-            MAPSLOP_GPU=webgpu node tests/android-render-gate.mjs
             if compgen -G '/dev/dri/renderD*' >/dev/null; then
               MAPSLOP_GPU=hardware node tests/android-render-gate.mjs
+              MAPSLOP_GPU=hardware-webgpu node tests/android-render-gate.mjs
             else
-              echo 'No GPU render device on runner; hardware test still required on Android.' | tee /tmp/pedome-results/android-hardware-unavailable.txt
+              echo 'No GPU render device on runner; WebGPU/physical hardware gate unavailable. SwiftShader WebGPU timed out in run 46164297512; Android WebGPU verification required.' | tee /tmp/pedome-results/android-hardware-unavailable.txt
             fi
           fi
           node --input-type=module - <<'JS'
