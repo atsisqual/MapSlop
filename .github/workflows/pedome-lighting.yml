@@ -7,6 +7,7 @@ on:
       - 'tools/install-lighting-preview.py'
       - 'tests/lighting-*.mjs'
       - 'tests/lighting-image-gate.py'
+      - 'tests/lighting-real-image-gate.py'
       - '.github/workflows/pedome-lighting.yml'
   workflow_call:
 permissions:
@@ -100,6 +101,8 @@ jobs:
             for i in {1..30}; do if curl -fsS "http://127.0.0.1:$port/" >/dev/null; then break; fi; sleep 1; done
           done
           node tests/lighting-real.mjs
+          python -m pip install Pillow==11.3.0
+          python tests/lighting-real-image-gate.py /tmp/lighting-results
       - name: Archive private evidence only
         if: always()
         run: |
@@ -109,7 +112,7 @@ jobs:
           shopt -s nullglob
           files=(*.json *.png *.log)
           test "${#files[@]}" -gt 0
-          if [ -f lighting-report.json ] && jq -e '.pass' lighting-report.json >/dev/null; then
+          if [ -f lighting-report.json ] && jq -e '.pass' lighting-report.json >/dev/null && [ -f lighting-visual-diagnostics.json ] && jq -e '.pass' lighting-visual-diagnostics.json >/dev/null; then
             tar -C /tmp/runtime-lit -czf lighting-runtime-patch.tar.gz js/pedome.js js/pedome-lighting.mjs
             files+=(lighting-runtime-patch.tar.gz)
           fi
