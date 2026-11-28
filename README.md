@@ -25,6 +25,25 @@ Abrir http://localhost:8080/?webgl. Setup instala as dependências e verifica os
 
 Controlo: WASD/setas, comando ou botões táteis; M amplia o mapa; R repõe o carro. A publicação é feita pelo GitHub Pages, sem servidor de jogo.
 
+## Diagnóstico gráfico no Android
+
+A build pública 255673d8bc58 apresentou ruído cromático em taludes e riscas no pavimento em Chrome Android físico. A causa ainda não está comprovada; o hotfix não altera o TIN, os dados, a física ou as reconstruções. Usar apenas a build candidata do PR para validar, sem publicar no Pages antes da aprovação do dono.
+
+Parâmetros (podem ser combinados):
+- `?debug=1` — painel com backend efetivo, GPU/adapter quando exposto pelo browser, anisotropia máxima, filtros, POT, número de texturas cuja geração de mipmaps foi chamada, níveis GPU alocados (WebGPU), erros e sombras. Relatório integral: `window.mapslop.renderDebug()` na consola.
+- `?renderer=webgl&debug=1` — WebGL2 obrigatório; o antigo `?webgl` continua a funcionar.
+- `?ortho=0&debug=1` — sem pedidos de ortofoto; no runtime combinado mostra o TIN sem fotografia (solo liso).
+- `?anisotropy=8&debug=1` — comparação com anisotropia antiga (limitada ao máximo do dispositivo); default Android 1, outros 8. `?paving=0` e `?shadows=0` isolam camadas e sombras.
+- Sem parâmetro renderer, Three tenta WebGPU e pode recorrer a WebGL2. O painel mostra o backend real, não o solicitado. O browser pode ocultar a identificação GPU; consulta alternativa do adapter não prova que é o mesmo dispositivo. O contador de geração regista a chamada no backend, não garante que o driver produziu pixels corretos.
+
+### Candidato privado e gate
+
+No PR, o workflow Pages valida os dados aprovados, aplica o overlay e executa a condução, o gate WebGL2 (SwiftShader), o gate WebGPU quando houver adapter e, se houver /dev/dri/renderD*, o gate WebGL2 sem SwiftShader (identificação GPU obrigatória). Sem GPU real, o relatório assinala essa limitação. Capturas e JSON: artefacto `android-render-evidence`. Se passar, o artefacto `android-render-candidate` contém a build estática, sem publicação automática nesse branch.
+
+Para testar no próprio Android, extrair o ZIP e servir por HTTPS num ambiente privado ou localhost (por exemplo, Termux com Python: `python -m http.server 8080 --bind 127.0.0.1`, abrir `http://localhost:8080/mobile.html?debug=1`). HTTP de outro dispositivo na LAN não é contexto seguro para WebGPU; usar HTTPS ou localhost. Confirmar a SHA em `version.txt` e no meta `mapslop-build`.
+
+Testar no mesmo telemóvel, na mesma posição e ângulo onde ocorreram os defeitos: automático, WebGL2, orto desativada e, se necessário, sem pavimento. Filmar/capturar taludes de perfil e chão próximo ao conduzir. Anexar painel e indicar GPU, versão Chrome e qual variante elimina o ruído/riscas. **Não fazer merge nem publicar #42/#45 antes de confirmação visual do dono.**
+
 ## Documentação e dados
 
 - [AGENTS.md](AGENTS.md): regras obrigatórias para agentes.
