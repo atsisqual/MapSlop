@@ -1,6 +1,11 @@
 name: Publish MapSlop preview to GitHub Pages
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/pages.yml'
+      - 'tools/verify-pages-terrain.py'
   push:
     branches: [main]
     paths:
@@ -23,13 +28,15 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'agent/publish-road-carve')
     permissions:
       contents: write # GitHub requires write access to retrieve draft release assets
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22.16.0'
@@ -54,11 +61,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag=geodata-dgt-terrain-agent-tin-compact-binary
-          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          archive=geodata-dgt-pages-road-46085062868
           mkdir -p /tmp/pages-terrain
-          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/pages-terrain --pattern terrain-tin.bin --pattern validation.json
+          if gh release view "$archive" --repo "$GITHUB_REPOSITORY" --json isDraft >/tmp/pages-draft 2>/dev/null; then
+            tag="$archive"
+          else
+            # Only the trusted same-repository publication PR can establish
+            # the immutable private archive. Main cannot silently fall back.
+            test "$GITHUB_EVENT_NAME" = pull_request
+            test "$GITHUB_HEAD_REF" = agent/publish-road-carve
+            tag=geodata-dgt-roads-agent-smooth-road-profiles
+          fi
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/pages-terrain --pattern terrain-road-preview.bin --pattern road-validation.json
           python tools/verify-pages-terrain.py /tmp/pages-terrain
+          if [ "$tag" != "$archive" ]; then
+            gh release create "$archive" --repo "$GITHUB_REPOSITORY" --draft --target 9633c955c0c74eeb881d9e29044d5210ce64c9a4 --title "Approved Pages road derivative — run 46085062868" --notes "Private immutable source for owner-authorized Pages deployment. Do not clobber or publish this release." /tmp/pages-terrain/terrain-road-preview.bin /tmp/pages-terrain/road-validation.json
+            test "$(gh release view "$archive" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          fi
       - name: Build actual Pedome map with the approved compact TIN
         run: python tools/prepare-pedome.py /tmp/nairobi /tmp/pedome --osm-json data/pedome/pedome-osm.json --terrain-bin /tmp/pages-terrain/terrain-tin.bin --three-vendor /tmp/three-vendor
       - name: Stage only runtime, public OSM source and verified compressed TIN
@@ -137,7 +157,7 @@ jobs:
           <h1>MapSlop — prévia experimental de Pedome</h1>
           <p>Dados geográficos © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>, <a href="https://opendatacommons.org/licenses/odbl/1-0/">ODbL 1.0</a>. <a href="pedome-osm.json">Dados de origem</a> e <a href="js/nairobi-geodata.js">base derivada</a>. <a href="OSM-DATA.md">Proveniência</a>.</p>
           <p>Código adaptado de Slop Cities Nairobi (MIT declarado no README upstream) e Slop New York. <a href="LICENSE-CODE.txt">Licença</a> · <a href="UPSTREAM-README.md">README upstream</a> · <a href="THREE-LICENSE.txt">Three.js MIT</a> · <a href="https://github.com/atsisqual/MapSlop">Projeto e código de adaptação</a>.</p>
-          <p>Terreno: <a href="https://www.dgterritorio.gov.pt/dados-abertos">© Direção-Geral do Território</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Derivado do MDT LiDAR de 0,5 m, recortado, reamostrado, triangulado e comprimido por MapSlop. <a href="https://dados.gov.pt/pt/datasets/dados-lidar-de-portugal-continental/">Fonte e licença</a>. Run de validação <a href="https://github.com/atsisqual/MapSlop/actions/runs/46063386111">46063386111</a>.</p>
+          <p>Terreno: <a href="https://www.dgterritorio.gov.pt/dados-abertos">© Direção-Geral do Território</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Derivado do MDT LiDAR de 0,5 m, recortado, reamostrado, triangulado, ajustado nos corredores rodoviários e comprimido por MapSlop. <a href="https://dados.gov.pt/pt/datasets/dados-lidar-de-portugal-continental/">Fonte e licença</a>. Run de validação <a href="https://github.com/atsisqual/MapSlop/actions/runs/46085062868">46085062868</a>.</p>
           <p>Alturas de edifícios maioritariamente estimadas. Sem rasters ou LAZ originais DGT, assets capturados de PortoSlop ou Nairobi, ou credenciais.</p>
           <p><a href="./?webgl">Voltar ao jogo</a></p></html>
           EOF
@@ -198,13 +218,15 @@ jobs:
           JS
           grep -Fq '© Direção-Geral do Território, CC BY 4.0' /tmp/site/MapSlop/mobile.html
           grep -Fq '© Direção-Geral do Território, CC BY 4.0' /tmp/site/MapSlop/index.html
-          test "$(sha256sum /tmp/site/MapSlop/js/terrain.bin.gz | cut -d' ' -f1)" = 9009db14b6808e36f3457db525eef2589328ac2769fe1899a8d53598efc0758d
+          test "$(sha256sum /tmp/site/MapSlop/js/terrain.bin.gz | cut -d' ' -f1)" = 9c5ec9ecd8aceb76908e915fffaac896930e6499379a1421af88d887cb8dd991
       # No public diagnostics upload: deploy only the tested, curated site.
       - name: Upload tested static site
+        if: github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v3
         with:
           path: /tmp/site/MapSlop
   deploy:
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-24.04
     environment:
@@ -221,7 +243,7 @@ jobs:
           base="https://atsisqual.github.io/MapSlop"
           version="${GITHUB_SHA:0:12}"
           for i in {1..24}; do
-            if curl -fsSL --max-time 15 "$base/mobile.html?build=$version" -o /tmp/mobile.html && grep -Fq "pedome-$version.js" /tmp/mobile.html && curl -fsSL --max-time 15 "$base/js/pedome-ui-$version.js" -o /tmp/hud.js && grep -Fq 'data-drive="forward"' /tmp/hud.js && grep -Fq '© Direção-Geral do Território, CC BY 4.0' /tmp/mobile.html && curl -fsSL --max-time 30 "$base/js/terrain.bin.gz?build=$version" -o /tmp/public-terrain.gz && test "$(sha256sum /tmp/public-terrain.gz | cut -d' ' -f1)" = 9009db14b6808e36f3457db525eef2589328ac2769fe1899a8d53598efc0758d; then
+            if curl -fsSL --max-time 15 "$base/mobile.html?build=$version" -o /tmp/mobile.html && grep -Fq "pedome-$version.js" /tmp/mobile.html && curl -fsSL --max-time 15 "$base/js/pedome-ui-$version.js" -o /tmp/hud.js && grep -Fq 'data-drive="forward"' /tmp/hud.js && grep -Fq '© Direção-Geral do Território, CC BY 4.0' /tmp/mobile.html && curl -fsSL --max-time 30 "$base/js/terrain.bin.gz?build=$version" -o /tmp/public-terrain.gz && test "$(sha256sum /tmp/public-terrain.gz | cut -d' ' -f1)" = 9c5ec9ecd8aceb76908e915fffaac896930e6499379a1421af88d887cb8dd991; then
               echo "Public mobile entry and versioned HUD verified: $version"
               exit 0
             fi
