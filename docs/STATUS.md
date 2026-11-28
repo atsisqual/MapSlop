@@ -1,5 +1,7 @@
 # Estado do projeto
 
+Referências visuais: PR dedicado agent/visual-references cria inventário inicial de 21 edifícios, fotos próprias, registo de licenças e consulta de cobertura Mapillary apenas com secret MAPILLARY_TOKEN. Cobertura ainda desconhecida; sem imagens incorporadas. Google Street View/Earth/Maps proibidos. Comando após merge: `gh workflow run mapillary-coverage.yml --repo atsisqual/MapSlop --ref main`.
+
 > Atualizado em 2026-11-27. Fonte de verdade para retomar o projeto; ler primeiro [AGENTS](../AGENTS.md). O histórico de investigação não substitui este estado.
 
 ## Fase atual: P0 — condução livre em Pedome
