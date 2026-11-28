@@ -10,6 +10,11 @@ root=Path(__file__).resolve().parent
 for name in ("orthophoto-partition.mjs","pedome-orthophoto-preview.mjs"):
     shutil.copy2(root/name,out/"js"/name)
 shutil.copytree(tiles,out/"ortho")
+g=out/"js/ground.js"
+source=g.read_text()
+old="const map = new THREE.CanvasTexture(paintMap());\n  map.colorSpace = THREE.SRGBColorSpace;\n  map.anisotropy = renderer.getMaxAnisotropy ? renderer.getMaxAnisotropy() : 8;"
+if source.count(old)!=1:raise ValueError("Unexpected original ground texture")
+g.write_text(source.replace(old,"const map = null; // private tiled preview: no giant procedural canvas"))
 p=out/"js/pedome.js"
 s=p.read_text()
 def patch(old,new):
