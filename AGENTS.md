@@ -41,6 +41,7 @@ Abrir http://localhost:8080/?webgl. Python 3.12.10, Node 22.16.0/npm 10.9.2, Git
 4. Atribuição obrigatória: OSM (ODbL), DGT (CC BY 4.0), Copernicus, Mr.doob/Nairobi.
 5. Ficheiros > 50 MB ou dados brutos: Releases + manifest com SHA-256, nunca Git normal.
 6. Não declarar nada "validado" sem teste executado e registado (comando + resultado).
+7. Nenhuma alteração visual entra no main sem teste no telemóvel do dono via preview. O workflow Pages publica a raiz de main e a preview identificada pelo SHA no mesmo deploy manual; exigir aprovação explícita do dono do SHA testado, não apenas CI/SwiftShader. A preview é pública por URL, só com derivados autorizados; nunca dados brutos. Não fazer merge para obter uma preview.
 
 ## Fluxo de trabalho
 1. Escolher uma tarefa em `docs/STATUS.md` → "Próximos passos" (ou uma issue).
