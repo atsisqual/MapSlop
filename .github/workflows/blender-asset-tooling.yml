@@ -19,7 +19,7 @@ jobs:
       - name: Install distribution Blender for synthetic tooling test
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y blender
+          sudo apt-get install --no-install-recommends -y blender python3-numpy
           blender --version
       - name: Export and reimport synthetic LOD GLB
         run: |
