@@ -98,3 +98,9 @@ jobs:
     permissions:
       contents: write
     uses: ./.github/workflows/pedome-orthophoto.yml
+
+  lighting-preview:
+    if: inputs.mode == 'roofs' && github.ref == 'refs/heads/agent/lighting-preview'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/pedome-lighting.yml
