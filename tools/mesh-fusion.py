@@ -80,6 +80,23 @@ def clean_geometry(vertices,faces):
     r={"input_vertices":len(v),"input_faces":len(f),"output_vertices":len(vv),"output_faces":len(ff),"unique_original_nonzero_triangles":len(original),"geometry_only":True,"pass":actual==original and len(ff)==len(actual)}
     return vv,ff,r
 
+def combine_geometry(parts):
+    """Concatenate already-aligned geometry-only triangle pieces, then deduplicate."""
+    if len(parts)<2:raise ValueError("Require at least two pieces")
+    vertices=[];faces=[];offset=0
+    for v,f in parts:
+        v=np.asarray(v,float);f=np.asarray(f,np.int64)
+        if v.ndim!=2 or v.shape[1]!=3 or f.ndim!=2 or f.shape[1]!=3 or not len(f) or not np.isfinite(v).all() or f.min()<0 or f.max()>=len(v):raise ValueError("Invalid piece")
+        vertices.append(v);faces.append(f+offset);offset+=len(v)
+    v,f,r=clean_geometry(np.concatenate(vertices),np.concatenate(faces));r["pieces"]=len(parts)
+    return v,f,r
+
+def geometry_mesh(path,manifest):
+    if path.suffix.lower()!=".ply" or manifest.get("geometry_only") is not True:raise ValueError("Geometry-only inventoried PLY required")
+    mesh=o3d.io.read_triangle_mesh(str(path))
+    if mesh.has_vertex_colors() or mesh.has_triangle_uvs() or mesh.has_textures():raise ValueError("Attribute-bearing mesh rejected")
+    return np.asarray(mesh.vertices),np.asarray(mesh.triangles)
+
 def read_cloud(path):
     if path.suffix.lower()!=".ply":raise ValueError("Use explicit metric PLY point cloud")
     p=o3d.io.read_point_cloud(str(path))
@@ -96,7 +113,7 @@ def main():
     for name in ("source","target","source-manifest","target-manifest","controls","output"):a.add_argument("--"+name,type=Path,required=True)
     a.add_argument("--voxel",type=float,default=.08);a.add_argument("--max-error",type=float,default=.05);a.add_argument("--min-overlap",type=float,default=.55);a.add_argument("--method",choices=["geometry","colored"],default="geometry");a.add_argument("--glb",type=Path)
     a=sub.add_parser("clean")
-    a.add_argument("--mesh",type=Path,required=True);a.add_argument("--manifest",type=Path,required=True);a.add_argument("--output",type=Path,required=True);a.add_argument("--geometry-only",action="store_true",required=True)
+    a.add_argument("--mesh",type=Path,action="append",required=True,help="Repeat for multiple already aligned PLY pieces");a.add_argument("--manifest",type=Path,required=True);a.add_argument("--output",type=Path,required=True);a.add_argument("--geometry-only",action="store_true",required=True)
     a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
     if a.cmd=="register":
         sm=verified(a.source,a.source_manifest);tm=verified(a.target,a.target_manifest);c=json.loads(a.controls.read_text())
@@ -112,13 +129,15 @@ def main():
             if a.glb:
                 out=a.output/"aligned.glb";assets.align_glb(a.glb,out,r["matrix"]);r["glb_sha256"]=assets.sha(out)
     else:
-        m=verified(a.mesh,a.manifest)
-        if a.mesh.suffix.lower()!=".ply":raise ValueError("Geometry-only PLY required")
-        # Require declared geometry-only source; never discard textures or vertex colors silently.
-        if m.get("geometry_only") is not True:raise ValueError("Manifest must declare geometry_only")
-        mesh=o3d.io.read_triangle_mesh(str(a.mesh))
-        if mesh.has_vertex_colors() or mesh.has_triangle_uvs() or mesh.has_textures():raise ValueError("Attribute-bearing mesh rejected")
-        v,f,r=clean_geometry(np.asarray(mesh.vertices),np.asarray(mesh.triangles));r["source_manifest"]=m
+        m=verified(a.mesh[0],a.manifest)
+        root=a.mesh[0].parent.resolve()
+        if len({p.resolve() for p in a.mesh})!=len(a.mesh):raise ValueError("Duplicate input path")
+        for p in a.mesh:
+            if p.parent.resolve()!=root or p.name not in m["files"]:raise ValueError("Every piece must be inventoried in the same directory")
+        if len(a.mesh)>1 and m.get("common_metric_frame_confirmed") is not True:raise ValueError("Confirm common metric frame in manifest before merging")
+        parts=[geometry_mesh(p,m) for p in a.mesh]
+        v,f,r=combine_geometry(parts) if len(parts)>1 else clean_geometry(*parts[0])
+        r["source_manifest"]=m
         if r["pass"]:
             out=a.output/"clean.ply";mm=o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(v),o3d.utility.Vector3iVector(f));mm.compute_vertex_normals()
             if not o3d.io.write_triangle_mesh(str(out),mm):raise RuntimeError("Write failed")
