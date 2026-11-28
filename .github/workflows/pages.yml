@@ -1,11 +1,24 @@
 name: Publish MapSlop preview to GitHub Pages
 on:
   workflow_dispatch:
+    inputs:
+      preview_ref:
+        description: Same-repository agent branch with Pages preview build contract (dispatch on main)
+        required: false
+        type: string
+        default: ''
   pull_request:
     branches: [main]
     paths:
       - '.github/workflows/pages.yml'
       - 'tools/verify-pages-terrain.py'
+      - 'tools/pedome-orthophoto-preview.mjs'
+      - 'tools/pedome-render-diagnostics.mjs'
+      - 'tools/apply-android-render-hotfix.py'
+      - 'tests/android-render-gate.mjs'
+      - 'tools/build-orthophoto-tiles.py'
+      - 'tools/verify-pot-orthophoto.py'
+      - 'tools/apply-pages-preview.py'
   push:
     branches: [main]
     paths:
@@ -16,6 +29,13 @@ on:
       - 'tools/terrain_binary.py'
       - 'tools/verify-pages-terrain.py'
       - 'tools/tin-runtime.mjs'
+      - 'tools/pedome-orthophoto-preview.mjs'
+      - 'tools/pedome-render-diagnostics.mjs'
+      - 'tools/apply-android-render-hotfix.py'
+      - 'tests/android-render-gate.mjs'
+      - 'tools/build-orthophoto-tiles.py'
+      - 'tools/verify-pot-orthophoto.py'
+      - 'tools/apply-pages-preview.py'
       - 'tests/browser-smoke.mjs'
       - 'package-lock.json'
       - 'data/pedome/pedome-osm.json'
@@ -24,19 +44,97 @@ permissions:
   pages: write
   id-token: write
 concurrency:
-  group: mapslop-pages
+  group: mapslop-pages-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || 'deploy' }}
   cancel-in-progress: false
 jobs:
+  plan:
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'agent/publish-combined' || github.head_ref == 'agent/android-render-hotfix' || github.head_ref == 'agent/main-pages-preview'))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      publish: ${{ steps.plan.outputs.publish }}
+      root_sha: ${{ steps.plan.outputs.root_sha }}
+      preview_sha: ${{ steps.plan.outputs.preview_sha }}
+      preview_ref: ${{ steps.plan.outputs.preview_ref }}
+    steps:
+      - id: plan
+        env:
+          PR_REF: ${{ github.head_ref }}
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_PREVIEW: ${{ inputs.preview_ref }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root='' preview='' publish=false
+          if [ "$GITHUB_EVENT_NAME" = pull_request ] && [ "$PR_REF" = agent/main-pages-preview ]; then
+            # Exercise the two-build and assembly contract, without a deployment.
+            REQUESTED_PREVIEW=agent/android-render-hotfix
+          fi
+          if [ -n "$REQUESTED_PREVIEW" ]; then
+            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+              test "$GITHUB_REF" = refs/heads/main
+            else
+              test "$GITHUB_EVENT_NAME" = pull_request && test "$PR_REF" = agent/main-pages-preview
+            fi
+            # Strict path/ref grammar; no tags, forks, traversal or shell interpolation.
+            [[ "$REQUESTED_PREVIEW" =~ ^agent/[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$ ]]
+            root=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+            preview=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$REQUESTED_PREVIEW" --jq .object.sha)
+            matrix=$(jq -cn --arg root "$root" --arg preview "$preview" --arg ref "$REQUESTED_PREVIEW" '{include:[{role:"root",sha:$root,ref:""},{role:"preview",sha:$preview,ref:$ref}]}')
+            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then publish=true; fi
+          elif [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            matrix=$(jq -cn --arg sha "$PR_SHA" '{include:[{role:"candidate",sha:$sha,ref:""}]}')
+          elif [ "$GITHUB_REF" = refs/heads/main ]; then
+            root=$GITHUB_SHA
+            matrix=$(jq -cn --arg sha "$root" '{include:[{role:"root",sha:$sha,ref:""}]}')
+            publish=true
+          else
+            echo 'Dispatch must use --ref main' >&2; exit 1
+          fi
+          {
+            echo "matrix=$matrix"
+            echo "publish=$publish"
+            echo "root_sha=$root"
+            echo "preview_sha=$preview"
+            echo "preview_ref=$REQUESTED_PREVIEW"
+          } >> "$GITHUB_OUTPUT"
   build:
-    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'agent/publish-combined')
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     permissions:
       contents: write # GitHub requires write access to retrieve draft release assets
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 45
+    env:
+      BUILD_SHA: ${{ matrix.sha }}
+      PREVIEW_REF: ${{ matrix.ref }}
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ matrix.sha }}
           persist-credentials: false
+      - name: Identify exact checkout
+        run: |
+          test "$(git rev-parse HEAD)" = "$BUILD_SHA"
+          if [ -f tools/apply-android-render-hotfix.py ]; then
+            echo "ANDROID_HOTFIX=1" >> "$GITHUB_ENV"
+          else
+            echo "ANDROID_HOTFIX=0" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$PREVIEW_REF" ]; then
+            # The archived runtime cannot silently stand in for a changed branch.
+            # #46 implements the built-in overlay; other branches supply an explicit hook.
+            if [ "$PREVIEW_REF" = agent/android-render-hotfix ]; then
+              test -f tools/apply-android-render-hotfix.py
+            else
+              test -f tools/apply-pages-preview.py || { echo 'Branch needs tools/apply-pages-preview.py to materialize its runtime changes' >&2; exit 1; }
+            fi
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: '22.16.0'
@@ -63,22 +161,10 @@ jobs:
           set -euo pipefail
           archive=geodata-dgt-pages-road-46085062868
           mkdir -p /tmp/pages-terrain
-          if gh release view "$archive" --repo "$GITHUB_REPOSITORY" --json isDraft >/tmp/pages-draft 2>/dev/null; then
-            tag="$archive"
-          else
-            # Only the trusted same-repository publication PR can establish
-            # the immutable private archive. Main cannot silently fall back.
-            test "$GITHUB_EVENT_NAME" = pull_request
-            test "$GITHUB_HEAD_REF" = agent/publish-road-carve
-            tag=geodata-dgt-roads-agent-smooth-road-profiles
-          fi
-          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
-          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/pages-terrain --pattern terrain-road-preview.bin --pattern road-validation.json
+          # Immutable approved source already exists. No PR may bootstrap a release.
+          test "$(gh release view "$archive" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$archive" --repo "$GITHUB_REPOSITORY" --dir /tmp/pages-terrain --pattern terrain-road-preview.bin --pattern road-validation.json
           python tools/verify-pages-terrain.py /tmp/pages-terrain
-          if [ "$tag" != "$archive" ]; then
-            gh release create "$archive" --repo "$GITHUB_REPOSITORY" --draft --target 9633c955c0c74eeb881d9e29044d5210ce64c9a4 --title "Approved Pages road derivative — run 46085062868" --notes "Private immutable source for owner-authorized Pages deployment. Do not clobber or publish this release." /tmp/pages-terrain/terrain-road-preview.bin /tmp/pages-terrain/road-validation.json
-            test "$(gh release view "$archive" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
-          fi
       - name: Retrieve exact approved combined runtime — run 46098427966
         env:
           GH_TOKEN: ${{ github.token }}
@@ -94,6 +180,54 @@ jobs:
           mkdir -p /tmp/pedome/vendor
           cp -r /tmp/three-vendor /tmp/pedome/vendor/three
           cp /tmp/nairobi/README.md /tmp/pedome/UPSTREAM-README.md
+      - name: Reproject verified original DGT rasters to POT tiles (offline)
+        if: env.ANDROID_HOTFIX == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-buildings.txt Pillow==11.3.0
+          mkdir -p /tmp/pot-input /tmp/pot-evidence
+          tag=geodata-dgt-pedome-20261127
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/pot-input --pattern 'ORTOS-2025-cog-25cm-084-2_v01.tif' --pattern 'ORTOS-2025-cog-25cm-084-4_v01.tif'
+          python tools/build-orthophoto-tiles.py --input /tmp/pot-input --terrain /tmp/pages-terrain/terrain-tin.bin --output /tmp/pot-tiles
+          python tools/verify-pot-orthophoto.py /tmp/pedome/ortho /tmp/pot-tiles /tmp/pot-evidence/pot-report.json
+          cp /tmp/pot-tiles/manifest.json /tmp/pot-evidence/pot-manifest.json
+          tar -C /tmp/pot-tiles -czf /tmp/pot-evidence/pot-tiles.tar.gz .
+          (cd /tmp/pot-evidence; sha256sum pot-report.json pot-manifest.json pot-tiles.tar.gz > SHA256SUMS.txt)
+          mv /tmp/pedome/ortho /tmp/old-ortho
+          mv /tmp/pot-tiles /tmp/pedome/ortho
+          python tools/apply-android-render-hotfix.py /tmp/pedome
+          node --check /tmp/pedome/js/pedome.js
+          node --check /tmp/pedome/js/pedome-orthophoto-preview.mjs
+          node --check /tmp/pedome/js/pedome-render-diagnostics.mjs
+      - name: Preserve regenerated POT tiles and checksums as Actions artifact
+        if: always() && env.ANDROID_HOTFIX == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pot-orthophoto-${{ matrix.role }}
+          path: /tmp/pot-evidence/
+          if-no-files-found: warn
+      - name: Archive POT derivative in draft release (main only)
+        if: env.ANDROID_HOTFIX == '1' && github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd /tmp/pot-evidence; sha256sum -c SHA256SUMS.txt)
+          archive=geodata-dgt-orthophoto-pot-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${{ matrix.role }}
+          gh release create "$archive" --repo "$GITHUB_REPOSITORY" --draft --target "$BUILD_SHA" --title "POT orthophoto derivative $BUILD_SHA" --notes "Verified original DGT sources; candidate only; no raw rasters. Browser gate and owner review separate." /tmp/pot-evidence/*
+          test "$(gh release view "$archive" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+      - name: Apply explicit branch runtime contract
+        if: env.PREVIEW_REF != '' && env.PREVIEW_REF != 'agent/android-render-hotfix'
+        run: |
+          set -euo pipefail
+          python tools/apply-pages-preview.py /tmp/pedome
+          node --check /tmp/pedome/js/pedome.js
+          cmp /tmp/pedome/js/terrain.bin /tmp/pages-terrain/terrain-tin.bin
       - name: Stage only runtime, public OSM source and verified compressed TIN
         shell: bash
         run: |
@@ -184,13 +318,24 @@ jobs:
           # Give each release a new entry-point URL, including the HUD module.
           import os
           root=p.parent
-          version=os.environ['GITHUB_SHA'][:12]
+          version=os.environ['BUILD_SHA'][:12]
           main=root/'js/pedome.js'
           hud=root/'js/pedome-ui.js'
           hud_name='pedome-ui-'+version+'.js'
           main_name='pedome-'+version+'.js'
           (hud.parent/hud_name).write_text(hud.read_text(),encoding='utf-8')
-          (main.parent/main_name).write_text(main.read_text().replace('./pedome-ui.js','./'+hud_name),encoding='utf-8')
+          source=main.read_text().replace('./pedome-ui.js','./'+hud_name)
+          if os.environ['ANDROID_HOTFIX']=='1':
+              ortho_name='pedome-orthophoto-preview-'+version+'.mjs'
+              debug_name='pedome-render-diagnostics-'+version+'.mjs'
+              (main.parent/debug_name).write_text((main.parent/'pedome-render-diagnostics.mjs').read_text(),encoding='utf-8')
+              (main.parent/ortho_name).write_text((main.parent/'pedome-orthophoto-preview.mjs').read_text().replace('./pedome-render-diagnostics.mjs','./'+debug_name),encoding='utf-8')
+              source=source.replace('./pedome-orthophoto-preview.mjs','./'+ortho_name).replace('./pedome-render-diagnostics.mjs','./'+debug_name)
+          (main.parent/main_name).write_text(source,encoding='utf-8')
+          if os.environ.get('PREVIEW_REF'):
+              banner='<div id="preview-banner" style="position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:9999;background:#8c2900;color:white;padding:4px 12px;font: bold 12px system-ui;pointer-events:none">PREVIEW '+version+'</div>'
+              s=s.replace('<script type="module" src="./js/pedome.js">',banner+'<script type="module" src="./js/pedome.js">')
+              assert 'id="preview-banner"' in s
           s=s.replace('./js/pedome.js','./js/'+main_name)
           s=s.replace('</style>','</style><meta name="mapslop-build" content="'+version+'">')
           s=s.replace('A construir mapa…','A construir mapa e comandos táteis…')
@@ -212,19 +357,36 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/pedome-results
-          python -m http.server 8080 --bind 127.0.0.1 --directory /tmp/site > /tmp/pedome-results/http.log 2>&1 &
+          serve=/tmp/site
+          if [ -n "$PREVIEW_REF" ]; then
+            serve=/tmp/preview-http
+            mkdir -p "$serve/MapSlop/preview/$(dirname "$PREVIEW_REF")"
+            ln -s /tmp/site/MapSlop "$serve/MapSlop/preview/$PREVIEW_REF"
+            export MAPSLOP_TEST_URL="http://127.0.0.1:8080/MapSlop/preview/$PREVIEW_REF/mobile.html?webgl"
+          fi
+          python -m http.server 8080 --bind 127.0.0.1 --directory "$serve" > /tmp/pedome-results/http.log 2>&1 &
           server=$!
           trap 'kill "$server" || true' EXIT
-          for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/MapSlop/ >/dev/null; then break; fi; sleep 1; done
+          for i in {1..30}; do if curl -fsS "$MAPSLOP_TEST_URL" >/dev/null; then break; fi; sleep 1; done
           node tests/browser-smoke.mjs
           node tests/pages-combined-smoke.mjs
+          if [ "$ANDROID_HOTFIX" = 1 ]; then
+            node tests/android-render-gate.mjs
+            if compgen -G '/dev/dri/renderD*' >/dev/null; then
+              MAPSLOP_GPU=hardware node tests/android-render-gate.mjs
+              MAPSLOP_GPU=hardware-webgpu node tests/android-render-gate.mjs
+            else
+              echo 'No GPU render device on runner; WebGPU/physical hardware gate unavailable. SwiftShader WebGPU timed out in run 46164297512; Android WebGPU verification required.' | tee /tmp/pedome-results/android-hardware-unavailable.txt
+            fi
+          fi
           node --input-type=module - <<'JS'
           import { chromium } from 'playwright';
           const browser=await chromium.launch({headless:true});
           try {
             for (const entry of ['index.html','mobile.html']) {
               const page=await browser.newPage({viewport:{width:823,height:384}});
-              await page.goto('http://127.0.0.1:8080/MapSlop/'+entry+'?webgl');
+              await page.goto(new URL(entry+'?webgl',process.env.MAPSLOP_TEST_URL).href);
+              if(process.env.PREVIEW_REF){const banner=page.locator('#preview-banner');await banner.waitFor({state:'visible'});if(await banner.textContent()!=='PREVIEW '+process.env.BUILD_SHA.slice(0,12))throw Error('Wrong preview banner');}
               const credit=page.locator('#credits').getByText('© Direção-Geral do Território, CC BY 4.0',{exact:true});
               await credit.waitFor({state:'visible'});
               await page.close();
@@ -235,20 +397,84 @@ jobs:
           grep -Fq '© Direção-Geral do Território, CC BY 4.0' /tmp/site/MapSlop/index.html
           test "$(sha256sum /tmp/site/MapSlop/js/terrain.bin.gz | cut -d' ' -f1)" = 9c5ec9ecd8aceb76908e915fffaac896930e6499379a1421af88d887cb8dd991
           test "$(du -sb /tmp/site/MapSlop | cut -f1)" -lt 100000000
-      # No public diagnostics upload: deploy only the tested, curated site.
-      - name: Upload tested static site
-        if: github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@v3
+      - name: Preserve renderer diagnostics (no raw DGT)
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
+          name: android-render-evidence-${{ matrix.role }}
+          path: |
+            /tmp/pedome-results/android-*
+            /tmp/pot-evidence/pot-report.json
+            /tmp/pot-evidence/pot-manifest.json
+          if-no-files-found: warn
+      - name: Preserve curated tested static site
+        uses: actions/upload-artifact@v4
+        with:
+          name: mapslop-site-${{ matrix.role }}
           path: /tmp/site/MapSlop
+          include-hidden-files: true
+          if-no-files-found: error
+  assemble:
+    if: needs.plan.outputs.publish == 'true' || needs.plan.outputs.preview_sha != ''
+    needs: [plan, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      ROOT_SHA: ${{ needs.plan.outputs.root_sha }}
+      PREVIEW_SHA: ${{ needs.plan.outputs.preview_sha }}
+      PREVIEW_REF: ${{ needs.plan.outputs.preview_ref }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: mapslop-site-root
+          path: /tmp/site
+      - uses: actions/download-artifact@v4
+        if: env.PREVIEW_SHA != ''
+        with:
+          name: mapslop-site-preview
+          path: /tmp/preview
+      - name: Assemble main root and isolated preview, verify identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat /tmp/site/version.txt)" = "${ROOT_SHA:0:12}"
+          test -f /tmp/site/.nojekyll
+          ! grep -Fq 'id="preview-banner"' /tmp/site/mobile.html
+          if [ -n "$PREVIEW_SHA" ]; then
+            [[ "$PREVIEW_REF" =~ ^agent/[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$ ]]
+            test "$(cat /tmp/preview/version.txt)" = "${PREVIEW_SHA:0:12}"
+            grep -Fq "PREVIEW ${PREVIEW_SHA:0:12}" /tmp/preview/mobile.html
+            mkdir -p "/tmp/site/preview/$(dirname "$PREVIEW_REF")"
+            mv /tmp/preview "/tmp/site/preview/$PREVIEW_REF"
+            test "$(cat "/tmp/site/preview/$PREVIEW_REF/version.txt")" = "${PREVIEW_SHA:0:12}"
+          fi
+          test "$(du -sb /tmp/site | cut -f1)" -lt 200000000
+      - uses: actions/upload-pages-artifact@v3
+        if: needs.plan.outputs.publish == 'true' && github.ref == 'refs/heads/main'
+        with:
+          path: /tmp/site
   deploy:
-    if: github.ref == 'refs/heads/main'
-    needs: build
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.publish == 'true'
+    needs: [plan, assemble]
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    env:
+      ROOT_SHA: ${{ needs.plan.outputs.root_sha }}
+      PREVIEW_SHA: ${{ needs.plan.outputs.preview_sha }}
+      PREVIEW_REF: ${{ needs.plan.outputs.preview_ref }}
     runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Reject a stale main snapshot before preview deployment
+        if: env.PREVIEW_SHA != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$ROOT_SHA"
       - name: Deploy to Pages
         id: deployment
         uses: actions/deploy-pages@v4
@@ -257,10 +483,22 @@ jobs:
         run: |
           set -euo pipefail
           base="https://atsisqual.github.io/MapSlop"
-          version="${GITHUB_SHA:0:12}"
+          version="${ROOT_SHA:0:12}"
           for i in {1..24}; do
             if curl -fsSL --max-time 15 "$base/mobile.html?build=$version" -o /tmp/mobile.html && grep -Fq "pedome-$version.js" /tmp/mobile.html && curl -fsSL --max-time 15 "$base/js/pedome-ui-$version.js" -o /tmp/hud.js && grep -Fq 'data-drive="forward"' /tmp/hud.js && grep -Fq '© Direção-Geral do Território, CC BY 4.0' /tmp/mobile.html && curl -fsSL --max-time 30 "$base/js/terrain.bin.gz?build=$version" -o /tmp/public-terrain.gz && test "$(sha256sum /tmp/public-terrain.gz | cut -d' ' -f1)" = 9c5ec9ecd8aceb76908e915fffaac896930e6499379a1421af88d887cb8dd991 && curl -fsSL --max-time 15 "$base/build-report.json?build=$version" | jq -e '.estimatedBuildings == 156 and .buildings == 527' && curl -fsSL --max-time 15 "$base/ortho/manifest.json?build=$version" | jq -e '.tiles | length == 64'; then
-              echo "Public mobile entry and versioned HUD verified: $version"
+              if [ -n "$PREVIEW_SHA" ]; then
+                candidate="$base/preview/$PREVIEW_REF"
+                pversion="${PREVIEW_SHA:0:12}"
+                if ! curl -fsSL --max-time 15 "$candidate/mobile.html?build=$pversion" -o /tmp/preview-mobile.html || ! grep -Fq "PREVIEW $pversion" /tmp/preview-mobile.html || ! grep -Fq "pedome-$pversion.js" /tmp/preview-mobile.html || ! curl -fsSL --max-time 15 "$candidate/ortho/manifest.json?build=$pversion" | jq -e '(.tiles | length == 64)' ; then
+                  sleep 10
+                  continue
+                fi
+                if [ "$PREVIEW_REF" = agent/android-render-hotfix ]; then
+                  if ! curl -fsSL --max-time 15 "$candidate/ortho/manifest.json?build=$pversion" | jq -e '.sampling == "pot-v1" and all(.tiles[]; .levels.far.px == 64 and .levels.mid.px == 128 and .levels.near.px == 512)'; then sleep 10; continue; fi
+                fi
+                echo "Preview verified: $candidate/mobile.html?debug=1"
+              fi
+              echo "Public main mobile entry and versioned HUD verified: $version"
               exit 0
             fi
             sleep 10

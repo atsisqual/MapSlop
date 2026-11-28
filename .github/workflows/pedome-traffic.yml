@@ -80,10 +80,24 @@ jobs:
           files=(*.png *.json *.log)
           if [ "${#files[@]}" -eq 0 ]; then echo 'No evidence generated'; exit 1; fi
           sha256sum "${files[@]}" > SHA256SUMS.txt
+          mkdir -p /tmp/pedome-traffic-archive-artifact
+          cp --parents "${files[@]}" SHA256SUMS.txt /tmp/pedome-traffic-archive-artifact/
+          if [ "$GITHUB_REF" != refs/heads/main ] || { [ "$GITHUB_EVENT_NAME" != workflow_dispatch ] && [ "$GITHUB_EVENT_NAME" != push ]; }; then
+            echo "Release writes disabled outside main dispatch/push; preserving Actions artifact."
+            exit 0
+          fi
           tag=geodata-dgt-traffic-agent-right-hand-traffic-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
           gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Private traffic evidence run ${GITHUB_RUN_ID}" --notes "Private screenshots and measured checks. No deployment; DGT CC BY 4.0, OSM ODbL." "${files[@]}" SHA256SUMS.txt
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
           echo "PRIVATE_EVIDENCE $tag"
+      - name: Preserve curated derivatives and evidence as Actions artifact
+        if: always() && (github.ref != 'refs/heads/main' || (github.event_name != 'workflow_dispatch' && github.event_name != 'push'))
+        uses: actions/upload-artifact@v4
+        with:
+          name: pedome-traffic-evidence
+          path: /tmp/pedome-traffic-archive-artifact/
+          if-no-files-found: warn
+
       - name: Enforce real junction, driving and roundabout acceptance
         run: |
           python - <<'PY'

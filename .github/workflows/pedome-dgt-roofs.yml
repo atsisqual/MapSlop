@@ -110,6 +110,12 @@ jobs:
           done
           sha256sum "${files[@]}" > SHA256SUMS.txt
           files+=(SHA256SUMS.txt)
+          mkdir -p /tmp/pedome-dgt-roofs-archive-artifact
+          cp --parents "${files[@]}" SHA256SUMS.txt /tmp/pedome-dgt-roofs-archive-artifact/
+          if [ "$GITHUB_REF" != refs/heads/main ] || { [ "$GITHUB_EVENT_NAME" != workflow_dispatch ] && [ "$GITHUB_EVENT_NAME" != push ]; }; then
+            echo "Release writes disabled outside main dispatch/push; preserving Actions artifact."
+            exit 0
+          fi
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' > /tmp/roofs-draft 2>/dev/null; then
             test "$(cat /tmp/roofs-draft)" = true
           else
@@ -117,3 +123,10 @@ jobs:
           fi
           gh release upload "$tag" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+      - name: Preserve curated derivatives and evidence as Actions artifact
+        if: always() && (github.ref != 'refs/heads/main' || (github.event_name != 'workflow_dispatch' && github.event_name != 'push'))
+        uses: actions/upload-artifact@v4
+        with:
+          name: pedome-dgt-roofs-evidence
+          path: /tmp/pedome-dgt-roofs-archive-artifact/
+          if-no-files-found: warn

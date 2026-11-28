@@ -41,6 +41,7 @@ Abrir http://localhost:8080/?webgl. Python 3.12.10, Node 22.16.0/npm 10.9.2, Git
 4. Atribuição obrigatória: OSM (ODbL), DGT (CC BY 4.0), Copernicus, Mr.doob/Nairobi.
 5. Ficheiros > 50 MB ou dados brutos: Releases + manifest com SHA-256, nunca Git normal.
 6. Não declarar nada "validado" sem teste executado e registado (comando + resultado).
+7. Nenhuma alteração visual entra no main sem teste no telemóvel do dono via preview. Exigir aprovação explícita do SHA testado; CI/SwiftShader não substitui o teste físico. Não fazer merge visual para obter uma preview.
 
 ## Fluxo de trabalho
 1. Escolher uma tarefa em `docs/STATUS.md` → "Próximos passos" (ou uma issue).
@@ -51,6 +52,22 @@ Abrir http://localhost:8080/?webgl. Python 3.12.10, Node 22.16.0/npm 10.9.2, Git
    - Se tomaste uma decisão com alternativas, criar `docs/decisions/NNNN-titulo.md`.
    - Se recebeste ficheiros do utilizador fora do repo, registar nome, tamanho, SHA-256 e onde ficou arquivado.
 5. Commits: frase no imperativo, em português ou inglês, um tema por commit.
+
+## Preview visual antes de merge
+
+O ambiente `github-pages` autoriza apenas `main`. O dispatch do workflow Pages é sempre efetuado em main; o branch candidato é um **input**, não o ref de execução:
+
+```sh
+gh workflow run pages.yml --repo atsisqual/MapSlop --ref main -f preview_ref=agent/<tema>
+```
+
+O workflow resolve os dois SHAs, constrói e testa a raiz de main e o candidato separadamente e agrega ambos num único deploy. Abrir `https://atsisqual.github.io/MapSlop/preview/agent/<tema>/mobile.html?debug=1`; confirmar a faixa PREVIEW com o SHA. A preview é pública por URL e só contém derivados autorizados. Sem merge visual, sem dados brutos e sem autorização de deployment de branches. Um deploy normal sem preview_ref remove previews anteriores.
+
+Apenas branches do próprio repositório com nomes seguros `agent/...` são aceites. Como Pages materializa um runtime combinado arquivado, cada candidato tem de ter um contrato de build que aplique efetivamente as alterações; o #46 tem overlay próprio, outros candidatos devem fornecer `tools/apply-pages-preview.py` (argumento: diretório runtime preparado, `/tmp/pedome`). O workflow falha se não houver contrato; não publicar uma falsa preview do arquivo antigo. O hook é código confiável do próprio repositório, iniciado por mantenedor, sujeito aos gates e às regras de dados. A infraestrutura de preview pode ser integrada separadamente das alterações visuais.
+
+## Arquivo de evidência em CI
+
+Nunca criar, alterar, carregar ou apagar assets de Releases em `pull_request` ou em branches candidatos. Nesses runs preservar derivados e checksums em `actions/upload-artifact`, nunca os dados brutos. Só `workflow_dispatch` ou `push` com `github.ref == refs/heads/main` podem arquivar em Releases em rascunho. O acesso de leitura aos arquivos existentes não autoriza escritas. Artefactos não substituem o arquivo aprovado sem revisão explícita; os workflows antigos que esperam um tag de branch devem usar o arquivo aprovado existente ou um novo contrato de promoção.
 
 ## Idioma
 Documentação em português (PT-PT). Identificadores de código em inglês.

@@ -154,7 +154,20 @@ jobs:
           files=(*.json *.png *.log *.tar.gz)
           if [ "${#files[@]}" -eq 0 ]; then echo 'No evidence'; exit 1; fi
           sha256sum "${files[@]}" > SHA256SUMS.txt
+          mkdir -p /tmp/pedome-orthophoto-archive-artifact
+          cp --parents "${files[@]}" SHA256SUMS.txt /tmp/pedome-orthophoto-archive-artifact/
+          if [ "$GITHUB_REF" != refs/heads/main ] || { [ "$GITHUB_EVENT_NAME" != workflow_dispatch ] && [ "$GITHUB_EVENT_NAME" != push ]; }; then
+            echo "Release writes disabled outside main dispatch/push; preserving Actions artifact."
+            exit 0
+          fi
           tag=geodata-dgt-orthophoto-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
           gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Private combined evidence ${GITHUB_RUN_ID}" --notes "Joint preview: original data never published; visual review and Pages preflight required." "${files[@]}" SHA256SUMS.txt
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
           echo "PRIVATE_EVIDENCE $tag"
+      - name: Preserve curated derivatives and evidence as Actions artifact
+        if: always() && (github.ref != 'refs/heads/main' || (github.event_name != 'workflow_dispatch' && github.event_name != 'push'))
+        uses: actions/upload-artifact@v4
+        with:
+          name: pedome-orthophoto-evidence
+          path: /tmp/pedome-orthophoto-archive-artifact/
+          if-no-files-found: warn
