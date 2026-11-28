@@ -143,8 +143,8 @@ jobs:
           set -euo pipefail
           python -m pip install numpy==2.2.6 opencv-python-headless==4.11.0.86
           python tools/generate-photo-fixture.py /tmp/photos --aerial
-          docker pull opendronemap/odm:3.5.6
-          image=$(docker image inspect --format '{{index .RepoDigests 0}}' opendronemap/odm:3.5.6)
+          image=opendronemap/odm@sha256:56be7b87a5ef3abfc0bb2afe88df839862fd18c41d26ca13672bf79cd2d59dd1
+          docker pull "$image"
           printf '%s\n' "$image" > /tmp/odm-image.txt
           python tools/reconstruct-photos.py odm --input /tmp/photos --manifest /tmp/photos/manifest.json --output /tmp/odm-test --odm-image "$image"
       - uses: actions/upload-artifact@v4
