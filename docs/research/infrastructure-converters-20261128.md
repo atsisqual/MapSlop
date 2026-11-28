@@ -89,3 +89,5 @@ python -m pip install bpy==4.4.0 numpy==1.26.4
 python tools/bake-infrastructure-nodes.py fixture /tmp/road.blend
 python tools/bake-infrastructure-nodes.py bake /tmp/road.blend outputs/baked-road --sha256 "$(sha256sum /tmp/road.blend | cut -d' ' -f1)"
 ```
+
+Run 46146179120: GDAL PASS job 140982640251, 3.8.4, erro roundtrip 9,9476e-10m, Z preservado, CRS desconhecido rejeitado; Geometry Nodes PASS job 140982640260 Blender4.4, 2→10 triângulos, bounds [0,0,0]–[5,3,.200000003], GLB 1568B SHA 8e17c346972fb4ec050ba8ab16cc5a14a99568c786d1f45bd3ac1aac46282f02. 3dfier PASS técnico anterior job 140982640106, OBJ SHA1090bfac28b45420819e9ba801aefb315ec0e4b2a8ec65e3e993818e442b227f, 8 vertices/6 faces, bounds [-50000,180000,100]–[-49980,180004.6,100.41]; wall height not recovered (~101.3–101.7 expected). Strengthen gate in 05808d8: fixture LAS single return flags, Separation uses class17 only (synthetic, not actual DGT class attribution), compare per-material heights Road vs Separation, require both; retest pending. No actual wall reconstruction PASS yet. Do not publish or integrate these surfaces into TIN/physics.
