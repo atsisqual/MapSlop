@@ -98,6 +98,8 @@ jobs:
           assert a['pass'] and b['pass']
           (root/'clean-acceptance.json').write_text(json.dumps({'pass':True,'base_runtime_sha256':'f9f574945cfe74923076b3d430fefb2848e0cad5a1b0ce67bcbd787b7fe0f57c','mask':a['mask_m2'],'visual_preservation':{'protected_pixels_changed':a['protected_pixels_changed'],'unmasked_tile_mean_abs_rgb_max':a['unmasked_tile_mean_abs_rgb_max'],'all_variance_gates':True},'checks':b['checks'],'owner_visual_review_required':True},indent=2))
           PY
+      - name: Package playable preview only after mask and browser gates
+        run: python tools/package-playable-preview.py /tmp/pedome-after /tmp/clean-results/clean-browser-report.json /tmp/clean-results/MapSlop-Pedome-Orthophoto-Preview.zip
       - name: Archive private evidence
         if: always()
         run: |
@@ -105,7 +107,10 @@ jobs:
           mkdir -p /tmp/clean-results
           cd /tmp/clean-results
           shopt -s nullglob
-          files=(*.json *.png *.log *.tar.gz)
+          files=(*.json *.png *.log)
+          if [ -f clean-acceptance.json ] && jq -e '.pass' clean-acceptance.json >/dev/null && [ -f MapSlop-Pedome-Orthophoto-Preview.zip ]; then
+            files+=(clean-tiles.tar.gz MapSlop-Pedome-Orthophoto-Preview.zip)
+          fi
           if [ "${#files[@]}" -eq 0 ]; then echo 'No evidence generated'; exit 1; fi
           sha256sum "${files[@]}" > SHA256SUMS.txt
           tag=geodata-dgt-clean-orthophoto-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
