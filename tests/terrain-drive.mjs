@@ -214,12 +214,31 @@ export async function driveTerrainRoute({reference=null,minGrade=0.02,targetSpee
       const y=heightAt(p[0],p[1]);const pair=[-1,1].map(sign=>{const x=p[0]+Math.cos(h)*sign*track/2,z=p[1]-Math.sin(h)*sign*track/2;return {x,z,tin_y:heightAt(x,z),collision_y:c.getGroundHeight(x,z,'car',y),pavement_lift:pavementLift(x,z)};});
       sections.push({station_m:s,x_m:p[0],z_m:p[1],way:route.way,curvature_degrees:curvature,track_m:track,left:pair[0],right:pair[1],tin_roll_degrees:Math.abs(Math.atan2(pair[1].tin_y-pair[0].tin_y,track)*180/Math.PI),collision_roll_degrees:Math.abs(Math.atan2(pair[1].collision_y-pair[0].collision_y,track)*180/Math.PI)});
     }
+    // Compare with a geometry-only feasible schedule, not the driver's reactive
+    // steering cap (otherwise the controller could simply command a crawl).
+    // Allow standing-start acceleration and re-acceleration after tight bends.
+    const tracking=[];
+    if(fast){
+      const feasible=speedPlan.map(p=>({station_m:p.station_m,command_m_s:speedAt(p.station_m)}));
+      feasible[0].command_m_s=0;
+      for(let j=1;j<feasible.length;j++)feasible[j].command_m_s=Math.min(feasible[j].command_m_s,Math.sqrt(feasible[j-1].command_m_s**2+2*1.5*ds));
+      for(let j=feasible.length-2;j>=0;j--)feasible[j].command_m_s=Math.min(feasible[j].command_m_s,Math.sqrt(feasible[j+1].command_m_s**2+2*braking*ds));
+      for(let start=0;start<104;start+=5){
+        const end=Math.min(104,start+5);
+        const rows=lateral.filter(p=>p.station_m>=start&&p.station_m<end);
+        const ratios=rows.map(p=>{const j=Math.min(feasible.length-1,Math.max(0,Math.floor(p.station_m/ds)));const v=feasible[j].command_m_s;return v>=1?p.speed_m_s/v:null;}).filter(v=>v!==null);
+        const covered=rows.length?Math.max(...rows.map(p=>p.station_m))-Math.min(...rows.map(p=>p.station_m)):0;
+        tracking.push({start_m:start,end_m:end,samples:ratios.length,covered_m:covered,
+          mean_speed_ratio:ratios.length?ratios.reduce((a,b)=>a+Math.min(b,1.1),0)/ratios.length:null,
+          fraction_at_90_percent:ratios.length?ratios.filter(v=>v>=.9).length/ratios.length:null});
+      }
+    }
     let maxLateralWindow=0;
     for(let i=0;i+12<=lateral.length;i++)maxLateralWindow=Math.max(maxLateralWindow,lateral.slice(i,i+12).reduce((s,p)=>s+p.lateral_m_s2,0)/12);
     const result={route,reason,distance_m:distanceM,progress_m:progress,sample_count:samples,
       speed_policy:fast?'curvature_braking_envelope_v1':'constant_5_5',lateral_target_limit_m_s2:fast?lateralLimit:null,
       lateral_acceleration_max_m_s2:maxLateral,lateral_acceleration_window_0_2s_max_m_s2:maxLateralWindow,
-      speed_plan:fast?speedPlan:[],lateral_peaks:[...lateral].sort((a,b)=>b.lateral_m_s2-a.lateral_m_s2).slice(0,10),
+      speed_plan:fast?speedPlan:[],speed_tracking_segments:tracking,lateral_peaks:[...lateral].sort((a,b)=>b.lateral_m_s2-a.lateral_m_s2).slice(0,10),
       target_speed_m_s:targetSpeed,max_speed_m_s:maxSpeed,reached_target_speed:maxSpeed>=targetSpeed*.9,
       at_target_speed_samples:vertical.filter(v=>v.speed>=targetSpeed*.9).length,
       fixed_regression_probes:fixed,straight_cross_sections:sections,straight_wheel_worst:wheelRows.sort((a,b)=>b.roll_degrees-a.roll_degrees).slice(0,10),
