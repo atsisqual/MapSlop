@@ -6,6 +6,10 @@ on:
     paths:
       - '.github/workflows/pages.yml'
       - 'tools/verify-pages-terrain.py'
+      - 'tools/pedome-orthophoto-preview.mjs'
+      - 'tools/pedome-render-diagnostics.mjs'
+      - 'tools/apply-android-render-hotfix.py'
+      - 'tests/android-render-gate.mjs'
   push:
     branches: [main]
     paths:
@@ -16,6 +20,10 @@ on:
       - 'tools/terrain_binary.py'
       - 'tools/verify-pages-terrain.py'
       - 'tools/tin-runtime.mjs'
+      - 'tools/pedome-orthophoto-preview.mjs'
+      - 'tools/pedome-render-diagnostics.mjs'
+      - 'tools/apply-android-render-hotfix.py'
+      - 'tests/android-render-gate.mjs'
       - 'tests/browser-smoke.mjs'
       - 'package-lock.json'
       - 'data/pedome/pedome-osm.json'
@@ -28,7 +36,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
-    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'agent/publish-combined')
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'agent/publish-combined' || github.head_ref == 'agent/android-render-hotfix')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/agent/android-render-hotfix')
     permissions:
       contents: write # GitHub requires write access to retrieve draft release assets
     runs-on: ubuntu-24.04
@@ -91,6 +99,10 @@ jobs:
           (cd /tmp/combined; for f in combined-runtime.tar.gz combined-report.json combined-inputs.json; do grep -E "^[0-9a-f]{64}  $f$" SHA256SUMS.txt | sha256sum -c -; done)
           python tools/verify-combined-pages.py /tmp/combined /tmp/pedome
           cmp /tmp/pedome/js/terrain.bin /tmp/pages-terrain/terrain-tin.bin
+          python tools/apply-android-render-hotfix.py /tmp/pedome
+          node --check /tmp/pedome/js/pedome.js
+          node --check /tmp/pedome/js/pedome-orthophoto-preview.mjs
+          node --check /tmp/pedome/js/pedome-render-diagnostics.mjs
           mkdir -p /tmp/pedome/vendor
           cp -r /tmp/three-vendor /tmp/pedome/vendor/three
           cp /tmp/nairobi/README.md /tmp/pedome/UPSTREAM-README.md
@@ -190,7 +202,11 @@ jobs:
           hud_name='pedome-ui-'+version+'.js'
           main_name='pedome-'+version+'.js'
           (hud.parent/hud_name).write_text(hud.read_text(),encoding='utf-8')
-          (main.parent/main_name).write_text(main.read_text().replace('./pedome-ui.js','./'+hud_name),encoding='utf-8')
+          ortho_name='pedome-orthophoto-preview-'+version+'.mjs'
+          debug_name='pedome-render-diagnostics-'+version+'.mjs'
+          (main.parent/debug_name).write_text((main.parent/'pedome-render-diagnostics.mjs').read_text(),encoding='utf-8')
+          (main.parent/ortho_name).write_text((main.parent/'pedome-orthophoto-preview.mjs').read_text().replace('./pedome-render-diagnostics.mjs','./'+debug_name),encoding='utf-8')
+          (main.parent/main_name).write_text(main.read_text().replace('./pedome-ui.js','./'+hud_name).replace('./pedome-orthophoto-preview.mjs','./'+ortho_name).replace('./pedome-render-diagnostics.mjs','./'+debug_name),encoding='utf-8')
           s=s.replace('./js/pedome.js','./js/'+main_name)
           s=s.replace('</style>','</style><meta name="mapslop-build" content="'+version+'">')
           s=s.replace('A construir mapa…','A construir mapa e comandos táteis…')
@@ -218,6 +234,13 @@ jobs:
           for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/MapSlop/ >/dev/null; then break; fi; sleep 1; done
           node tests/browser-smoke.mjs
           node tests/pages-combined-smoke.mjs
+          node tests/android-render-gate.mjs
+          MAPSLOP_GPU=webgpu node tests/android-render-gate.mjs
+          if compgen -G '/dev/dri/renderD*' >/dev/null; then
+            MAPSLOP_GPU=hardware node tests/android-render-gate.mjs
+          else
+            echo 'No GPU render device on runner; hardware test still required on Android.' | tee /tmp/pedome-results/android-hardware-unavailable.txt
+          fi
           node --input-type=module - <<'JS'
           import { chromium } from 'playwright';
           const browser=await chromium.launch({headless:true});
@@ -235,6 +258,20 @@ jobs:
           grep -Fq '© Direção-Geral do Território, CC BY 4.0' /tmp/site/MapSlop/index.html
           test "$(sha256sum /tmp/site/MapSlop/js/terrain.bin.gz | cut -d' ' -f1)" = 9c5ec9ecd8aceb76908e915fffaac896930e6499379a1421af88d887cb8dd991
           test "$(du -sb /tmp/site/MapSlop | cut -f1)" -lt 100000000
+      - name: Preserve renderer diagnostics (no raw DGT)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-render-evidence
+          path: /tmp/pedome-results/android-*
+          if-no-files-found: warn
+      - name: Private downloadable candidate for physical Android testing
+        if: github.head_ref == 'agent/android-render-hotfix' || github.ref == 'refs/heads/agent/android-render-hotfix'
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-render-candidate
+          path: /tmp/site/MapSlop
+          if-no-files-found: error
       # No public diagnostics upload: deploy only the tested, curated site.
       - name: Upload tested static site
         if: github.ref == 'refs/heads/main'
