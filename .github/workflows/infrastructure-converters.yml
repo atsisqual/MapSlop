@@ -197,8 +197,8 @@ jobs:
           python tools/3dfier-infrastructure.py fixture /tmp/lift-input
       - name: Resolve official container and execute without network
         run: |
-          docker pull tudelft3d/3dfier:latest
-          image=$(docker image inspect --format '{{index .RepoDigests 0}}' tudelft3d/3dfier:latest)
+          image=tudelft3d/3dfier@sha256:95a8e1defe7d8f2e105758bc5ed96e7964f97bda6fb07e577c8ff67cf9dd8264
+          docker pull "$image"
           python tools/3dfier-infrastructure.py run /tmp/lift-input /tmp/lift-output --image "$image"
       - uses: actions/upload-artifact@v4
         if: always()
