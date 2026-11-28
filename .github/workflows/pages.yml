@@ -28,7 +28,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
-    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'agent/publish-road-carve')
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'agent/publish-combined')
     permissions:
       contents: write # GitHub requires write access to retrieve draft release assets
     runs-on: ubuntu-24.04
@@ -79,8 +79,21 @@ jobs:
             gh release create "$archive" --repo "$GITHUB_REPOSITORY" --draft --target 9633c955c0c74eeb881d9e29044d5210ce64c9a4 --title "Approved Pages road derivative — run 46085062868" --notes "Private immutable source for owner-authorized Pages deployment. Do not clobber or publish this release." /tmp/pages-terrain/terrain-road-preview.bin /tmp/pages-terrain/road-validation.json
             test "$(gh release view "$archive" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
           fi
-      - name: Build actual Pedome map with the approved compact TIN
-        run: python tools/prepare-pedome.py /tmp/nairobi /tmp/pedome --osm-json data/pedome/pedome-osm.json --terrain-bin /tmp/pages-terrain/terrain-tin.bin --three-vendor /tmp/three-vendor
+      - name: Retrieve exact approved combined runtime — run 46098427966
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=geodata-dgt-orthophoto-46098427966-1
+          mkdir -p /tmp/combined /tmp/pedome
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/combined --pattern combined-runtime.tar.gz --pattern combined-report.json --pattern combined-inputs.json --pattern SHA256SUMS.txt
+          (cd /tmp/combined; for f in combined-runtime.tar.gz combined-report.json combined-inputs.json; do grep -E "^[0-9a-f]{64}  $f$" SHA256SUMS.txt | sha256sum -c -; done)
+          python tools/verify-combined-pages.py /tmp/combined /tmp/pedome
+          cmp /tmp/pedome/js/terrain.bin /tmp/pages-terrain/terrain-tin.bin
+          mkdir -p /tmp/pedome/vendor
+          cp -r /tmp/three-vendor /tmp/pedome/vendor/three
+          cp /tmp/nairobi/README.md /tmp/pedome/UPSTREAM-README.md
       - name: Stage only runtime, public OSM source and verified compressed TIN
         shell: bash
         run: |
@@ -122,6 +135,7 @@ jobs:
           shutil.copy2('data/pedome/pedome-osm.json',dst/'pedome-osm.json')
           shutil.copy2('data/pedome/README.md',dst/'OSM-DATA.md')
           shutil.copy2(src/'build-report.json',dst/'build-report.json')
+          shutil.copytree(src/'ortho',dst/'ortho')
           (dst/'.nojekyll').touch()
           print('Staged',len(seen),'runtime files')
           PY
@@ -158,15 +172,15 @@ jobs:
           <p>Dados geográficos © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>, <a href="https://opendatacommons.org/licenses/odbl/1-0/">ODbL 1.0</a>. <a href="pedome-osm.json">Dados de origem</a> e <a href="js/nairobi-geodata.js">base derivada</a>. <a href="OSM-DATA.md">Proveniência</a>.</p>
           <p>Código adaptado de Slop Cities Nairobi (MIT declarado no README upstream) e Slop New York. <a href="LICENSE-CODE.txt">Licença</a> · <a href="UPSTREAM-README.md">README upstream</a> · <a href="THREE-LICENSE.txt">Three.js MIT</a> · <a href="https://github.com/atsisqual/MapSlop">Projeto e código de adaptação</a>.</p>
           <p>Terreno: <a href="https://www.dgterritorio.gov.pt/dados-abertos">© Direção-Geral do Território</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Derivado do MDT LiDAR de 0,5 m, recortado, reamostrado, triangulado, ajustado nos corredores rodoviários e comprimido por MapSlop. <a href="https://dados.gov.pt/pt/datasets/dados-lidar-de-portugal-continental/">Fonte e licença</a>. Run de validação <a href="https://github.com/atsisqual/MapSlop/actions/runs/46085062868">46085062868</a>.</p>
-          <p>Alturas de edifícios maioritariamente estimadas. Sem rasters ou LAZ originais DGT, assets capturados de PortoSlop ou Nairobi, ou credenciais.</p>
+          <p>Edifícios: 371 alturas reais (OSM e derivados LiDAR), 156 estimadas; 17 reconstruções Roofer, restantes telhados procedurais com cores amostradas. Vegetação: 5 702 picos LiDAR, modelos aproximados por contexto COS2025. Ortofoto DGT 2025, CC BY 4.0, recortada, reprojectada e comprimida por MapSlop. Sem rasters ou LAZ originais DGT, assets capturados de PortoSlop ou Nairobi, ou credenciais.</p>
           <p><a href="./?webgl">Voltar ao jogo</a></p></html>
           EOF
           python - <<'PY'
           from pathlib import Path
           p=Path('/tmp/site/MapSlop/index.html')
           s=p.read_text()
-          assert 'DGT — MDT 0,5 m (uso experimental)' in s
-          s=s.replace('DGT — MDT 0,5 m (uso experimental)', '<a href="https://creativecommons.org/licenses/by/4.0/">© Direção-Geral do Território, CC BY 4.0</a> · <a href="./ATTRIBUTION.html">Créditos e dados</a>')
+          assert 'DGT — MDT 0,5 m + ortofoto 2025 · CC BY 4.0 · pré-visualização privada' in s
+          s=s.replace('DGT — MDT 0,5 m + ortofoto 2025 · CC BY 4.0 · pré-visualização privada', '<a href="https://creativecommons.org/licenses/by/4.0/">© Direção-Geral do Território, CC BY 4.0</a> · <a href="./ATTRIBUTION.html">Créditos e dados</a>')
           # Give each release a new entry-point URL, including the HUD module.
           import os
           root=p.parent
@@ -203,6 +217,7 @@ jobs:
           trap 'kill "$server" || true' EXIT
           for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/MapSlop/ >/dev/null; then break; fi; sleep 1; done
           node tests/browser-smoke.mjs
+          node tests/pages-combined-smoke.mjs
           node --input-type=module - <<'JS'
           import { chromium } from 'playwright';
           const browser=await chromium.launch({headless:true});
@@ -219,6 +234,7 @@ jobs:
           grep -Fq '© Direção-Geral do Território, CC BY 4.0' /tmp/site/MapSlop/mobile.html
           grep -Fq '© Direção-Geral do Território, CC BY 4.0' /tmp/site/MapSlop/index.html
           test "$(sha256sum /tmp/site/MapSlop/js/terrain.bin.gz | cut -d' ' -f1)" = 9c5ec9ecd8aceb76908e915fffaac896930e6499379a1421af88d887cb8dd991
+          test "$(du -sb /tmp/site/MapSlop | cut -f1)" -lt 100000000
       # No public diagnostics upload: deploy only the tested, curated site.
       - name: Upload tested static site
         if: github.ref == 'refs/heads/main'
@@ -243,7 +259,7 @@ jobs:
           base="https://atsisqual.github.io/MapSlop"
           version="${GITHUB_SHA:0:12}"
           for i in {1..24}; do
-            if curl -fsSL --max-time 15 "$base/mobile.html?build=$version" -o /tmp/mobile.html && grep -Fq "pedome-$version.js" /tmp/mobile.html && curl -fsSL --max-time 15 "$base/js/pedome-ui-$version.js" -o /tmp/hud.js && grep -Fq 'data-drive="forward"' /tmp/hud.js && grep -Fq '© Direção-Geral do Território, CC BY 4.0' /tmp/mobile.html && curl -fsSL --max-time 30 "$base/js/terrain.bin.gz?build=$version" -o /tmp/public-terrain.gz && test "$(sha256sum /tmp/public-terrain.gz | cut -d' ' -f1)" = 9c5ec9ecd8aceb76908e915fffaac896930e6499379a1421af88d887cb8dd991; then
+            if curl -fsSL --max-time 15 "$base/mobile.html?build=$version" -o /tmp/mobile.html && grep -Fq "pedome-$version.js" /tmp/mobile.html && curl -fsSL --max-time 15 "$base/js/pedome-ui-$version.js" -o /tmp/hud.js && grep -Fq 'data-drive="forward"' /tmp/hud.js && grep -Fq '© Direção-Geral do Território, CC BY 4.0' /tmp/mobile.html && curl -fsSL --max-time 30 "$base/js/terrain.bin.gz?build=$version" -o /tmp/public-terrain.gz && test "$(sha256sum /tmp/public-terrain.gz | cut -d' ' -f1)" = 9c5ec9ecd8aceb76908e915fffaac896930e6499379a1421af88d887cb8dd991 && curl -fsSL --max-time 15 "$base/build-report.json?build=$version" | jq -e '.estimatedBuildings == 156 and .buildings == 527' && curl -fsSL --max-time 15 "$base/ortho/manifest.json?build=$version" | jq -e '.tiles | length == 64'; then
               echo "Public mobile entry and versioned HUD verified: $version"
               exit 0
             fi
