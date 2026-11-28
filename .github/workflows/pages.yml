@@ -48,7 +48,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   plan:
-    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'agent/publish-combined' || github.head_ref == 'agent/android-render-hotfix' || github.head_ref == 'agent/main-pages-preview'))
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'agent/publish-combined' || github.head_ref == 'agent/android-render-hotfix' || github.head_ref == 'agent/main-pages-preview' || github.head_ref == 'agent/xclipse-public-fallback'))
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -221,6 +221,13 @@ jobs:
           archive=geodata-dgt-orthophoto-pot-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${{ matrix.role }}
           gh release create "$archive" --repo "$GITHUB_REPOSITORY" --draft --target "$BUILD_SHA" --title "POT orthophoto derivative $BUILD_SHA" --notes "Verified original DGT sources; candidate only; no raw rasters. Browser gate and owner review separate." /tmp/pot-evidence/*
           test "$(gh release view "$archive" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+      - name: Apply minimal public Xclipse fallback (root or candidate)
+        if: env.PREVIEW_REF == '' && env.ANDROID_HOTFIX == '0'
+        run: |
+          if [ -f tools/apply-xclipse-fallback.py ]; then
+            python tools/apply-xclipse-fallback.py /tmp/pedome
+            node --check /tmp/pedome/js/pedome-orthophoto-preview.mjs
+          fi
       - name: Apply explicit branch runtime contract
         if: env.PREVIEW_REF != '' && env.PREVIEW_REF != 'agent/android-render-hotfix'
         run: |
@@ -331,6 +338,10 @@ jobs:
               (main.parent/debug_name).write_text((main.parent/'pedome-render-diagnostics.mjs').read_text(),encoding='utf-8')
               (main.parent/ortho_name).write_text((main.parent/'pedome-orthophoto-preview.mjs').read_text().replace('./pedome-render-diagnostics.mjs','./'+debug_name),encoding='utf-8')
               source=source.replace('./pedome-orthophoto-preview.mjs','./'+ortho_name).replace('./pedome-render-diagnostics.mjs','./'+debug_name)
+          elif Path('tools/apply-xclipse-fallback.py').is_file():
+              ortho_name='pedome-orthophoto-preview-'+version+'.mjs'
+              (main.parent/ortho_name).write_text((main.parent/'pedome-orthophoto-preview.mjs').read_text(),encoding='utf-8')
+              source=source.replace('./pedome-orthophoto-preview.mjs','./'+ortho_name)
           (main.parent/main_name).write_text(source,encoding='utf-8')
           if os.environ.get('PREVIEW_REF'):
               banner='<div id="preview-banner" style="position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:9999;background:#8c2900;color:white;padding:4px 12px;font: bold 12px system-ui;pointer-events:none">PREVIEW '+version+'</div>'
