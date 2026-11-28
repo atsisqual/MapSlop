@@ -26,7 +26,7 @@ jobs:
           node-version: '22.16.0'
       - name: Install offline dependencies and run synthetic cleanup tests
         run: |
-          python -m pip install -r requirements-vegetation.txt Pillow==11.3.0
+          python -m pip install -r requirements-vegetation.txt Pillow==11.3.0 opencv-python-headless==4.11.0.86
           python -m unittest discover -s tests -p 'test_clean_orthophoto.py' -v
       - name: Retrieve approved runtime and exact terrain
         run: |
@@ -96,7 +96,7 @@ jobs:
           root=Path('/tmp/clean-results')
           a=json.loads((root/'clean-mask-report.json').read_text());b=json.loads((root/'clean-browser-report.json').read_text())
           assert a['pass'] and b['pass']
-          (root/'clean-acceptance.json').write_text(json.dumps({'pass':True,'base_runtime_sha256':'f9f574945cfe74923076b3d430fefb2848e0cad5a1b0ce67bcbd787b7fe0f57c','mask':a['mask_m2'],'checks':b['checks']},indent=2))
+          (root/'clean-acceptance.json').write_text(json.dumps({'pass':True,'base_runtime_sha256':'f9f574945cfe74923076b3d430fefb2848e0cad5a1b0ce67bcbd787b7fe0f57c','mask':a['mask_m2'],'visual_preservation':{'protected_pixels_changed':a['protected_pixels_changed'],'unmasked_tile_mean_abs_rgb_max':a['unmasked_tile_mean_abs_rgb_max'],'all_variance_gates':True},'checks':b['checks'],'owner_visual_review_required':True},indent=2))
           PY
       - name: Archive private evidence
         if: always()
@@ -109,6 +109,6 @@ jobs:
           if [ "${#files[@]}" -eq 0 ]; then echo 'No evidence generated'; exit 1; fi
           sha256sum "${files[@]}" > SHA256SUMS.txt
           tag=geodata-dgt-clean-orthophoto-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
-          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Private cleaned orthophoto evidence $GITHUB_RUN_ID" --notes "Synthetic replacement ground; no raw LAZ or TIFF. Review fixed camera comparisons before publication." "${files[@]}" SHA256SUMS.txt
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Private cleaned orthophoto evidence $GITHUB_RUN_ID" --notes "Small-object inpainting only; forest and building pixels preserved; no raw LAZ or TIFF. Review fixed camera comparisons before publication." "${files[@]}" SHA256SUMS.txt
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
           echo "PRIVATE_EVIDENCE $tag"
