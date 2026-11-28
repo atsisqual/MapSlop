@@ -77,6 +77,8 @@ if "pedome-dgt-roads.yml" in workflows:
             if job.get("uses") == "./.github/workflows/pedome-dgt-roads.yml":
                 if name != "pedome-terrain.yml" or set(workflow["on"]) != {"workflow_dispatch"}:
                     errors.append("DGT roads must be called only by the manual launcher")
+if "pedome-vegetation.yml" in workflows and set(workflows["pedome-vegetation.yml"]["on"]) != {"workflow_dispatch"}:
+    errors.append("Vegetation extraction must be manual")
 if any(n.startswith("dgt-") for n in workflows):
     errors.append("Duplicated DGT workflows")
 if workflows["pages.yml"]["on"]["push"]["branches"] != ["main"]:
