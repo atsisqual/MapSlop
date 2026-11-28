@@ -53,7 +53,7 @@ def paving(osm):
 def roof_colors(geo,tiles):
     m=json.loads((tiles/"manifest.json").read_text());cache={}
     for t in m["tiles"]:
-        d=t["levels"]["near"];cache[(t["i"],t["j"])]=np.array(Image.open(tiles/d["path"]).convert("RGB"))
+        d=t["levels"]["near"];cache[(t["i"],t["j"])]=(np.array(Image.open(tiles/d["path"]).convert("RGB")),d["metres_per_pixel"])
     x0,z0,*_=m["world_extent"];s=m["tile_m"];g=m["gutter_m"]
     result={}
     for b in geo["buildings"]:
@@ -66,9 +66,10 @@ def roof_colors(geo,tiles):
         xx,zz=np.meshgrid(np.arange(x+.125,X,.5),np.arange(z+.125,Z,.5))
         inside=sh.contains_xy(inner,xx,zz);rgb=[]
         for a,c in zip(xx[inside],zz[inside]):
-            i,j=int(np.floor((a-x0)/s)),int(np.floor((c-z0)/s));im=cache.get((i,j))
-            if im is None:continue
-            u=int(np.floor((a-x0-i*s+g)/.25));v=int(np.floor((c-z0-j*s+g)/.25))
+            i,j=int(np.floor((a-x0)/s)),int(np.floor((c-z0)/s));sample=cache.get((i,j))
+            if sample is None:continue
+            im,px=sample
+            u=int(np.floor((a-x0-i*s+g)/px));v=int(np.floor((c-z0-j*s+g)/px))
             if 0<=u<im.shape[1] and 0<=v<im.shape[0]:rgb.append(im[v,u])
         if len(rgb)<4:result[str(b["id"])]={"class":"unknown","samples":len(rgb)};continue
         a=np.array(rgb,dtype=float);r,G,B=a.T
