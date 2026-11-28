@@ -29,6 +29,8 @@ v=np.array([[0,0,0],[1,0,0],[0,1,0],[1,1,0],[1,0,0],[0,1,0],[2,2,2]],float)
 f=np.array([[0,1,2],[4,3,5],[0,4,5],[1,4,2]],int)
 vv,ff,clean=m.clean_geometry(v,f)
 assert clean["pass"] and len(vv)==4 and len(ff)==2,clean
+v2,f2,merged=m.combine_geometry([(v[:3],[[0,1,2]]),(v[[4,3,5]],[[0,1,2]]),(v[:3],[[0,1,2]])])
+assert merged["pass"] and len(v2)==4 and len(f2)==2 and merged["pieces"]==3,merged
 # Test actual GLB parent transform preserves BIN chunk (UV/image data).
 import struct
 j={"asset":{"version":"2.0"},"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],"meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}],"buffers":[{"byteLength":36}],"bufferViews":[{"buffer":0,"byteLength":36}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[1,1,0]}]}
@@ -38,5 +40,5 @@ assert b2==rest and np.allclose(np.array(j2["nodes"][-1]["matrix"]).reshape(4,4)
 for name,pc in [("source",source),("target",target)]:assert o3d.io.write_point_cloud(str(out/(name+".ply")),pc)
 assert o3d.io.write_triangle_mesh(str(out/"clean.ply"),o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(vv),o3d.utility.Vector3iVector(ff)))
 from importlib.metadata import version
-report={"pass":True,"geometry_icp":r,"colored_icp":colored,"bad_control_rejected":True,"cleanup":clean,"glb_binary_unchanged":True,"pymeshlab":version("pymeshlab"),"fixture":"synthetic partial overlap, independent controls; no real town model"}
+report={"pass":True,"geometry_icp":r,"colored_icp":colored,"bad_control_rejected":True,"cleanup":clean,"merged_pieces":merged,"glb_binary_unchanged":True,"pymeshlab":version("pymeshlab"),"fixture":"synthetic partial overlap, independent controls; no real town model"}
 (out/"report.json").write_text(json.dumps(report,indent=2)+"\n");print("MESH_FUSION_QA",json.dumps(report))
