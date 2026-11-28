@@ -12,6 +12,9 @@ export async function installOrthophoto(scene,ground,renderer){
  if(!res.ok)throw Error('Missing orthophoto manifest');
  const manifest=await res.json();
  if(manifest.schema!==1||manifest.tiles.length!==manifest.cols*manifest.rows)throw Error('Invalid orthophoto manifest');
+ for(const tile of manifest.tiles)for(const l of levels){
+  if(!isPOT(tile.levels[l]?.px))throw Error('Non-POT tile in manifest: '+tile.i+','+tile.j+' '+l);
+ }
  const geom=ground.geometry;
  const partition=partitionTin(geom.attributes.position.array,geom.attributes.normal.array,geom.index.array,manifest);
  const group=new THREE.Group();group.name='PrivateOrthophotoGround';group.visible=false;scene.add(group);
