@@ -11,7 +11,8 @@ def inspect(path):
     ds=gdal.OpenEx(str(path),gdal.OF_VECTOR)
     if ds is None:raise ValueError("Cannot open vector source")
     rows=[]
-    for layer in ds:
+    for i in range(ds.GetLayerCount()):
+        layer=ds.GetLayer(i)
         crs=layer.GetSpatialRef()
         fields=[f.GetName() for f in layer.schema]
         n=0;geom=[];attrs=[]
@@ -23,6 +24,7 @@ def inspect(path):
     if not rows or not sum(r["count"] for r in rows):raise ValueError("No features")
     return rows
 def convert(source,dest,source_epsg=None,target_epsg=3763):
+    if dest.exists():raise ValueError("Refuse overwrite")
     original=inspect(source)
     if not source_epsg and any(not r["crs_wkt"] for r in original):raise ValueError("Missing source CRS, supply measured EPSG")
     if source_epsg:
