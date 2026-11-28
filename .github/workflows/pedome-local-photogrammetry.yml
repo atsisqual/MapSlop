@@ -206,14 +206,15 @@ jobs:
           MAPSLOP_RESULTS=/tmp/lighting-results node tests/lighting-real.mjs
           python tests/lighting-real-image-gate.py /tmp/lighting-results
           jq -e '.pass and .checks.same_church and .checks.tree_shadows and (.candidate.scene.church.osm_id == 149406360)' /tmp/lighting-results/lighting-report.json
+          python tools/package-playable-preview.py /tmp/runtime-lit /tmp/lighting-results/lighting-report.json /tmp/local-3d/MapSlop-Pedome-Church-Lighting-Preview.zip --church-report /tmp/local-3d/church-report.json
           tar -C /tmp/runtime-lit -czf /tmp/local-3d/church-lighting-runtime-patch.tar.gz js/pedome.js js/pedome-buildings-detail.mjs js/pedome-lighting.mjs models/church.glb
           python - <<'PY'
-          import hashlib,json,os
+          import hashlib,json,subprocess
           from pathlib import Path
           root=Path('/tmp/local-3d');lighting=Path('/tmp/lighting-results')
           report=json.loads((root/'church-report.json').read_text())
           def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
-          data={'church_commit':os.environ['GITHUB_SHA'],'lighting_commit':'db74803e8e945ec680fa267b40f845b491b56719','base_runtime_sha256':'f9f574945cfe74923076b3d430fefb2848e0cad5a1b0ce67bcbd787b7fe0f57c','patch_sha256':sha(root/'church-lighting-runtime-patch.tar.gz'),'church_sha256':report['glb_sha256'],'church_report_sha256':sha(root/'church-report.json'),'church_in_game_sha256':sha(root/'church-in-game-report.json'),'lighting_report_sha256':sha(lighting/'lighting-report.json'),'lighting_visual_sha256':sha(lighting/'lighting-visual-diagnostics.json'),'visual_review_required':True}
+          data={'church_commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'lighting_commit':'db74803e8e945ec680fa267b40f845b491b56719','base_runtime_sha256':'f9f574945cfe74923076b3d430fefb2848e0cad5a1b0ce67bcbd787b7fe0f57c','patch_sha256':sha(root/'church-lighting-runtime-patch.tar.gz'),'church_sha256':report['glb_sha256'],'church_report_sha256':sha(root/'church-report.json'),'church_in_game_sha256':sha(root/'church-in-game-report.json'),'lighting_report_sha256':sha(lighting/'lighting-report.json'),'lighting_visual_sha256':sha(lighting/'lighting-visual-diagnostics.json'),'visual_review_required':True}
           (root/'church-lighting-receipt.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
       - name: Preserve combined visual diagnostics
@@ -238,7 +239,8 @@ jobs:
             files+=(church.glb church-runtime-patch.tar.gz MapSlop-Pedome-Church-Preview.zip cc0-material-inputs.tar.gz)
           fi
           if [ -f church-lighting-receipt.json ] && [ -f church-lighting-runtime-patch.tar.gz ] && jq -e '.pass' lighting-lighting-report.json >/dev/null && jq -e '.pass' lighting-lighting-visual-diagnostics.json >/dev/null; then
-            files+=(church-lighting-runtime-patch.tar.gz)
+            test -f MapSlop-Pedome-Church-Lighting-Preview.zip
+            files+=(church-lighting-runtime-patch.tar.gz MapSlop-Pedome-Church-Lighting-Preview.zip)
           fi
           if [ "${#files[@]}" -eq 0 ]; then echo 'No evidence produced'; exit 1; fi
           sha256sum "${files[@]}" > SHA256SUMS.txt
