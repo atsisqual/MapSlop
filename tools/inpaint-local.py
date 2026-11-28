@@ -10,7 +10,7 @@ from PIL import Image
 
 def inpaint(image,mask,method,model=None):
     if image.ndim!=3 or image.shape[2]!=3 or mask.shape!=image.shape[:2] or mask.dtype!=bool or not mask.any() or mask.all():raise ValueError("Invalid RGB/mask")
-    n,labels,stats,_=cv2.connectedComponentsWithStats(mask.astype(np.uint8),8)
+    n,labels,stats,_=cv2.connectedComponentsWithStats(mask.astype(np.uint8),connectivity=8)
     if any(int(r[4])>4096 or max(r[2:4])>128 for r in stats[1:]):raise ValueError("Only small object masks accepted")
     if method in ("telea","ns"):
         pred=cv2.inpaint(image,mask.astype(np.uint8)*255,3,cv2.INPAINT_TELEA if method=="telea" else cv2.INPAINT_NS)
