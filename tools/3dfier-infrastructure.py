@@ -63,7 +63,7 @@ def run(src,out,image):
         if Path(name).name!=name or sha(src/name)!=digest:raise ValueError("Input manifest mismatch")
         shutil.copy2(src/name,work/name)
     work.chmod(0o777)
-    args=["docker","run","--rm","--network","none","-v",f"{work}:/data","-w","/data",image,"3dfier","/data/config.yml","--OBJ","/data/lifted.obj"]
+    args=["docker","run","--rm","--network","none","-v",f"{work}:/data","-w","/data","--entrypoint","3dfier",image,"/data/config.yml","--OBJ","/data/lifted.obj"]
     r={"pass":False,"source_manifest":m,"image":image,"command":args}
     try:
         with (out/"engine.log").open("w") as log:
