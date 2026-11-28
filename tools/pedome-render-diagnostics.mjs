@@ -40,7 +40,7 @@ export async function installRenderDiagnostics(renderer){
  let gpu={};
  if(b.isWebGPUBackend){
   const adapter=b.device?.adapterInfo?null:await navigator.gpu?.requestAdapter({featureLevel:'compatibility'}).catch(()=>null);
-  const info=b.device?.adapterInfo||adapter?.info||await adapter?.requestAdapterInfo?.();
+  const info=b.device?.adapterInfo||adapter?.info||await adapter?.requestAdapterInfo?.().catch(()=>null);
   gpu.infoSource=b.device?.adapterInfo?'device':adapter?'separate-adapter-query':'unavailable';
   if(info)for(const k of ['vendor','architecture','device','description','isFallbackAdapter'])if(info[k]!==undefined)gpu[k]=info[k];
  }else if(b.isWebGLBackend){
