@@ -90,5 +90,5 @@ export function installPedomeUI(GEO, controllers, spawn, cameras) {
   }
   let last=-Infinity;
   draw();
-  return {update(now){if(now-last>200){last=now;draw();}},clear};
+  return {update(now){if(now-last>200){last=now;draw();}},refresh:draw,clear};
 }
