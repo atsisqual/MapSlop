@@ -32,7 +32,16 @@ try:
     report["addons"]["BlenderGIS"].update(crs=g.crs,origin_projected=origin,local_roundtrip_error_m=err,geographic_roundtrip_error_deg=max(abs(lon+8.4),abs(lat-41.4)))
     op=bpy.ops.import_rdc.google_maps.get_rna_type()
     assert op.identifier
-    report["addons"]["MapsModelsImporter"].update(operator=op.identifier,scope="registration only; RDC import not tested")
+    from MapsModelsImporter.google_maps import addMesh,addImageMaterial
+    obj=addMesh(bpy.context,"MapSlop own triangle",[(0,0,0),(2,0,0),(0,1,0)],[(0,1,2)],[(0,0),(1,0),(0,1)])
+    img=bpy.data.images.new("Own checker",width=2,height=2)
+    img.pixels[:]=[1,0,0,1,0,1,0,1,0,0,1,1,1,1,1,1]
+    addImageMaterial("Own material",obj,img)
+    assert len(obj.data.vertices)==3 and len(obj.data.polygons)==1
+    uv={tuple(round(v,5) for v in d.uv) for d in obj.data.uv_layers.active.data}
+    assert uv=={(0.,0.),(1.,0.),(0.,1.)}
+    assert any(n.type=="TEX_IMAGE" and n.image==img for m in obj.data.materials for n in m.node_tree.nodes)
+    report["addons"]["MapsModelsImporter"].update(operator=op.identifier,synthetic_mesh_vertices=3,synthetic_mesh_faces=1,uv_verified=True,material_verified=True,scope="registration and upstream mesh/material helpers; RDC import not tested")
     report["pass"]=True
 finally:save()
 print("BLENDER_ADDON_QA",json.dumps(report))
