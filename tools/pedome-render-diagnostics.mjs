@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {texture,vec4,mix,step} from 'three/tsl';
 
-const generated=new WeakSet();
+const generated=new WeakSet(),uploaded=new WeakMap();
 const queries=()=>new URLSearchParams(location.search);
 export const isPOT=n=>Number.isInteger(n)&&n>0&&Number.isInteger(Math.log2(n));
 export function rendererOptions(){
@@ -13,7 +13,7 @@ export function groundPolicy(renderer){
  if(b.isWebGLBackend){const gl=b.gl,e=gl.getExtension('WEBGL_debug_renderer_info');gpu=String(gl.getParameter(e?e.UNMASKED_RENDERER_WEBGL:gl.RENDERER));}
  else gpu=JSON.stringify(b.device?.adapterInfo||{});
  const explicit=q.get('mips');
- return {mips:['0','gpu','offline'].includes(explicit)?explicit:/xclipse/i.test(gpu)?'0':'offline',srgb:q.get('srgb')!=='0',gpu};
+ return {mips:['0','gpu','offline'].includes(explicit)?explicit:q.get('srgb')==='0'?'gpu':/xclipse/i.test(gpu)?'0':'offline',srgb:q.get('srgb')!=='0',gpu};
 }
 export async function loadOfflineTexture(root,data){
  const d=data.offline;if(!d||d.format!=='rgba8-bottom-up-srgb-gzip-v1')throw Error('Missing offline mip chain '+data.path);
@@ -69,7 +69,7 @@ export function textureState(tex,renderer){
   minFilter:tex.minFilter,magFilter:tex.magFilter,
   trilinear:tex.minFilter===THREE.LinearMipmapLinearFilter&&tex.magFilter===THREE.LinearFilter,
   anisotropy:tex.anisotropy,expectedLevels:expected,gpuLevels:levels,
-  generated:generated.has(tex),mipMode:tex.userData?.mipMode,manualLevels:tex.mipmaps.length,colorSpace:tex.colorSpace,shaderSRGB:tex.userData?.shaderSRGB??false};
+  generated:generated.has(tex),uploadedLevels:uploaded.get(tex)??0,internalFormat:b.isWebGLBackend?(data.glInternalFormat??null):(data.textureDescriptorGPU?.format??null),mipMode:tex.userData?.mipMode,manualLevels:tex.mipmaps.length,colorSpace:tex.colorSpace,shaderSRGB:tex.userData?.shaderSRGB??false};
 }
 export async function installRenderDiagnostics(renderer){
  const b=renderer.backend, original=b.generateMipmaps;
@@ -78,6 +78,9 @@ export async function installRenderDiagnostics(renderer){
   const result=original.call(this,texture,...args);
   generated.add(texture);return result;
  };
+ const update=b.updateTexture;
+ if(typeof update!=='function')throw Error('Unknown texture upload backend');
+ b.updateTexture=function(tex,...args){const result=update.call(this,tex,...args);uploaded.set(tex,tex.mipmaps.length||1);return result;};
  const backend=b.isWebGPUBackend?'WebGPU':b.isWebGLBackend?'WebGL2':'unknown';
  let gpu={};
  if(b.isWebGPUBackend){

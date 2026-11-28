@@ -65,9 +65,12 @@ try{
     if(mips==='offline')assert.equal(t.manualLevels,t.expectedLevels);
     if(mips!=='gpu')assert.equal(t.generated,false);
     assert.equal(t.anisotropy,1,'Android conservative sampler not applied');
-    if(t.generated&&state.backend==='WebGPU')assert.equal(t.gpuLevels,t.expectedLevels,'Incomplete GPU mip allocation');
+    if(t.uploadedLevels&&state.backend==='WebGPU')assert.equal(t.gpuLevels,mips==='0'?1:t.expectedLevels,'Incomplete GPU mip allocation');
+    if(t.uploadedLevels&&mips==='offline')assert.equal(t.uploadedLevels,t.expectedLevels,'Incomplete manual upload');
+    if(t.uploadedLevels&&!srgb)assert.equal(t.internalFormat,state.backend==='WebGL2'?32856:'rgba8unorm','Unexpected linear RGBA8 format');
    }
    if(mips==='gpu')assert.ok(state.textures.some(t=>t.generated&&t.name===state.tile.texture_name),'No backend mip generation for the rendered near tile');
+   else assert.ok(state.textures.some(t=>t.uploadedLevels===(mips==='offline'?t.expectedLevels:1)&&t.name===state.tile.texture_name),'No explicit near texture upload');
   }else{
    assert.equal(requests.length,0,'Ortho disabled but tiles fetched');
    assert.equal(state.textures.length,0,'Archived plain ground should not have a texture');
