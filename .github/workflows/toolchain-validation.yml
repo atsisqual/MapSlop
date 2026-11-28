@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - 'tools/asset-pipeline.py'
+      - 'tools/mesh-fusion.py'
+      - 'tests/mesh-fusion-fixture.py'
       - 'tools/texture-atlas.py'
       - 'tests/earth3d-offline.cjs'
       - 'tests/lexsong-offline.py'
@@ -320,3 +322,33 @@ jobs:
         with:
           name: toolchain-blender-addons
           path: /tmp/blender-addons.json
+
+  mesh-fusion:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      OMP_NUM_THREADS: '2'
+      OPENBLAS_NUM_THREADS: '2'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Install pinned Open3D and PyMeshLab
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libgl1 libegl1 libopengl0 libglu1-mesa libxkbcommon0
+          python -m pip install numpy==1.26.4 open3d==0.19.0 pymeshlab==2025.7.post1
+          python -m pip freeze > /tmp/mesh-fusion-lock.txt
+      - name: Execute registration, color ICP and exact mesh cleanup
+        run: python tests/mesh-fusion-fixture.py /tmp/mesh-fusion
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: toolchain-mesh-fusion
+          path: |
+            /tmp/mesh-fusion/
+            /tmp/mesh-fusion-lock.txt
