@@ -56,11 +56,11 @@ def run_photos(root,manifest,out,backend,odm_image=None):
             if backend=="openmvs":
                 dense=out/"dense"
                 command("undistort",["colmap","image_undistorter","--image_path",images,"--input_path",model,"--output_path",dense,"--output_type","COLMAP"],[dense/"sparse/images.bin"])
-                scene=out/"scene.mvs";cloud=out/"scene_dense.mvs";mesh=out/"scene_mesh.mvs";tex=out/"scene_textured.mvs"
+                scene=out/"scene.mvs";cloud=out/"scene_dense.mvs";mesh=out/"scene_mesh.ply";tex=out/"scene_textured.mvs"
                 command("interface",["InterfaceCOLMAP","-i",dense,"-o",scene,"--image-folder",dense/"images"],[scene])
                 command("densify",["DensifyPointCloud","-i",scene,"-o",cloud,"--resolution-level","1","--max-threads","2"],[cloud])
                 command("mesh",["ReconstructMesh","-i",cloud,"-o",mesh,"--max-threads","2"],[mesh])
-                command("texture",["TextureMesh","-i",mesh,"-o",tex,"--max-threads","2","--export-type","obj"],[out/"scene_textured.obj"])
+                command("texture",["TextureMesh","-i",cloud,"--mesh-file",mesh,"-o",tex,"--max-threads","2","--export-type","obj"],[out/"scene_textured.obj"])
         report["pass"]=True
     finally:save()
     return report
