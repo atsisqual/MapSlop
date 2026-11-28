@@ -1,4 +1,5 @@
 /* Original synthetic GL fixture for RenderDoc, no external game or map. */
+#define _GNU_SOURCE
 #define GL_GLEXT_PROTOTYPES
 #include <SDL2/SDL.h>
 #include <GL/gl.h>
