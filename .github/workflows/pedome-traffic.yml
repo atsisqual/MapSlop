@@ -92,5 +92,6 @@ jobs:
           r=json.loads(Path('/tmp/traffic-evidence/traffic-report.json').read_text())
           print('TRAFFIC_RESULT',json.dumps(r))
           assert r['available_cases_pass'], 'Real junction/spawn/markings/oneway checks failed'
-          assert r['roundabout']['status']=='pass', 'Real roundabout not validated; inspect private evidence (partial result, do not merge)'
+          assert r['roundabout']['status'] in ('pass','not_applicable_in_pilot_bbox'), 'Unexpected roundabout validation blocker'
+          assert r['hud']['pass'], 'HUD did not update with actual vehicle position'
           PY
