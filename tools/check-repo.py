@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline checks for handoff docs, immutable evidence and workflow triggers."""
 import hashlib
+import csv
 import json
 import os
 from pathlib import Path
@@ -120,6 +121,15 @@ for r in inv["releases"]:
         errors.append("Duplicate asset names: " + r["tag"])
     if r["draft"] is not True:
         errors.append("Historical evidence must keep original draft state")
+if Path("tools/registry.yaml").exists():
+    registry=yaml.safe_load(Path("tools/registry.yaml").read_text())
+    with Path("docs/audit/ferramentas-estado.csv").open(newline="",encoding="utf-8") as f:
+        names=[r["ferramenta"] for r in csv.DictReader(f)]
+    recorded=[r["name"] for r in registry["tools"]]
+    if len(recorded)!=len(set(recorded)) or set(recorded)!=set(names):
+        errors.append("Tool registry differs from audited inventory")
+    if any(not r.get("level") or not r.get("evidence") or not r.get("decision") for r in registry["tools"]):
+        errors.append("Incomplete registry entry")
 if errors:
     raise SystemExit("\n".join(errors))
 print(f"Repository checks OK: {links} internal links, {len(workflows)} parsed workflows, {sum(len(r['assets']) for r in inv['releases'])} archived asset digests, 4 small dataset hashes.")

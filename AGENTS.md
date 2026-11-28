@@ -57,3 +57,6 @@ Documentação em português (PT-PT). Identificadores de código em inglês.
 
 ## Referências fotográficas — regra obrigatória
 Proibido descarregar, guardar ou processar imagens Google (Street View, Earth, Maps). Usar apenas fotos próprias autorizadas, Mapillary/KartaView/Mapilio com licença verificada e Wikimedia Commons com licença individual. Derivados CC BY-SA 4.0 isolados e creditados no ecrã do jogo; ver data/pedome/references/README.md. Notas do dono prevalecem sobre defaults procedurais, não sobre evidência métrica sem revisão. Nunca expor tokens, EXIF sensível, rostos ou matrículas desnecessários.
+
+## Prioridade pós-auditoria (28/11/2026)
+Cada PR deve alterar o que se vê no jogo ou desbloquear diretamente uma alteração visível. Investigação sem aplicação imediata fica em notas ou branch experimental, sem dependência de produção. Usar níveis N0–N9 de docs/audit e tools/registry.yaml. Um PASS sintético não equivale a real, integração ou aprovação visual. Nos PRs visuais exigir imagens comparáveis, física/desempenho e aprovação explícita do dono; nunca aplicar por ele uma aprovação visual. Preservar histórico, não o confundir com estado atual.
