@@ -8,7 +8,7 @@ if(reference.way!==149303998||reference.points.length!==61)throw Error('Unexpect
 const report={pass:false,errors:[],baseline:null,candidate:null,method:'Same approved terrain, buildings, trees and imagery in both builds; change only paving rules and fallback roof colour. Software rendering timings are diagnostic, not device FPS.'};
 const save=()=>fs.writeFileSync(path.join(root,'combined-report.json'),JSON.stringify(report,null,2)+'\n');
 const browser=await chromium.launch({headless:true,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
-const near=v=>v?.applied&&v.level==='near'&&v.metres_per_pixel===.25&&v.alignment_error_m<.02;
+const near=v=>v?.applied&&v.level==='near'&&Math.abs(v.metres_per_pixel-132/512)<1e-10&&v.alignment_error_m<.02;
 const points=[{name:'rua-das-boucas',x:-465.15545,z:-359.49089,dx:-12,dz:10,h:16},{name:'igreja',x:0,z:0,dx:0,dz:0,h:30}];
 async function run(port,suffix){
  const page=await browser.newPage({viewport:{width:823,height:384}});
