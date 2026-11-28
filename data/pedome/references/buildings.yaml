@@ -4,15 +4,42 @@ buildings:
   - osm_id: 149406360
     descricao: "Igreja de Pedome"
     zona: igreja
-    cor_fachada: null
-    material: null
+    cor_fachada: "Branco, granito cinzento nos remates"
+    material: "Granito estrutural com reboco de argamassa; granito aparente nas molduras, cunhais, cornijas e empenas"
     pisos: null
-    tipo_telhado: null
+    tipo_telhado: "Telha cerâmica avermelhada; coruchéu preservado pelo LiDAR"
     varandas: null
     portoes_muros: null
-    fonte_referencia: null
-    notas: null
-    notas_dono: null
+    fonte_referencia: "https://www.jf-pedome.pt/freguesia/locais-a-visitar/2-igreja_paroquial_de_pedome"
+    notas: "Descrição e fotografia da Junta consultadas em 2026-11-28, apenas referência; materiais CC0 genéricos, distribuição e dimensões estimadas. Aberturas V3 aprovadas pelo dono."
+    notas_dono: "Run 46156457337: geometria V1 e aberturas aprovadas; corrigir aparência da cobertura."
+    # Defaults experimentais; o dono pode corrigir azimute, aresta (índice base 0 da geometria OSM)
+    # e fração 0..1 ao longo da aresta, ou desativar cada elemento. Não são observações reais.
+    detalhes_fachada:
+      porta_principal:
+        enabled: true
+        azimute_graus: 270
+        aresta: null
+        fracao_aresta: 0.5
+        largura_m: 1.5
+        altura_m: 2.55
+      janelas:
+        enabled: true
+        largura_m: 0.75
+        altura_m: 1.4
+        peitoril_m: 2.1
+        intervalo_m: 4.2
+        posicoes: null
+      cunhais_granito:
+        enabled: true
+        largura_m: 0.28
+      cornija_granito:
+        enabled: true
+        altura_m: 0.22
+      material_parede: plaster
+      cor_parede_rgb: [0.92, 0.92, 0.90]
+      fator_luz_cobertura: 0.22
+      cor_granito_rgb: [0.47, 0.45, 0.42]
   - osm_id: 191503827
     descricao: "Salão paroquial de Pedome"
     zona: igreja
