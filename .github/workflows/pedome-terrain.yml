@@ -5,7 +5,7 @@ on:
       mode:
         description: Terrain source to validate
         type: choice
-        options: [copernicus, dgt, buildings, roofs, roads, traffic]
+        options: [copernicus, dgt, buildings, roofs, roads, traffic, orthophoto]
         default: copernicus
 permissions:
   contents: read
@@ -86,3 +86,9 @@ jobs:
     permissions:
       contents: write
     uses: ./.github/workflows/pedome-traffic.yml
+
+  orthophoto:
+    if: inputs.mode == 'orthophoto' && github.ref == 'refs/heads/agent/orthophoto-ground'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/pedome-orthophoto.yml
