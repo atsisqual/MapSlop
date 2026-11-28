@@ -36,7 +36,7 @@ def flat_dem():
     s,w,n,e=BBOX; step=.00025; nx=math.ceil((e-w+.02)/step); ny=math.ceil((n-s+.02)/step)
     return dict(source='SYNTHETIC FLAT TEST TERRAIN',west=w-.01,north=n+.01,dx=step,dy=-step,nx=nx,ny=ny,values=[0]*(nx*ny))
 def main():
-    p=argparse.ArgumentParser(); p.add_argument('upstream',type=P); p.add_argument('output',type=P); p.add_argument('--osm-json',type=P); p.add_argument('--dem-json',type=P); p.add_argument('--terrain-json',type=P,help='Legacy precomputed JSON terrain'); p.add_argument('--terrain-bin',type=P,help='MSLTERR1 binary terrain'); p.add_argument('--building-preview',action='store_true',help='Private height preview, preserve centimetres'); p.add_argument('--roof-preview',type=P,help='Private semantic roof preview JSON'); p.add_argument('--flat',action='store_true'); p.add_argument('--fixture',action='store_true'); p.add_argument('--three-vendor',type=P,help='Optional local Three.js tree (experimental version compatibility)'); a=p.parse_args()
+    p=argparse.ArgumentParser(); p.add_argument('upstream',type=P); p.add_argument('output',type=P); p.add_argument('--osm-json',type=P); p.add_argument('--dem-json',type=P); p.add_argument('--terrain-json',type=P,help='Legacy precomputed JSON terrain'); p.add_argument('--terrain-bin',type=P,help='MSLTERR1 binary terrain'); p.add_argument('--building-preview',action='store_true',help='Private height preview, preserve centimetres'); p.add_argument('--roof-preview',type=P,help='Private semantic roof preview JSON'); p.add_argument('--flat',action='store_true'); p.add_argument('--fixture',action='store_true'); p.add_argument('--three-vendor',type=P,help='Optional local Three.js tree (experimental version compatibility)'); p.add_argument('--traffic-preview',action='store_true',help='Private traffic evidence only'); a=p.parse_args()
     if a.output.exists(): p.error('output must not exist; no existing files overwritten')
     if a.fixture and a.osm_json: p.error('fixture and osm-json are mutually exclusive')
     if (a.terrain_json or a.terrain_bin) and (a.dem_json or a.flat or a.fixture or (a.terrain_json and a.terrain_bin)): p.error('terrain input is exclusive with other terrain modes')
@@ -158,6 +158,23 @@ export const tin = T.kind === 'tin' ? makeTin(T) : null;""")
     patch(f,"if (node.signal) across(f, f.len - 0.35, -f.half + 0.1, right, 0.45, WHITE);","if (node.signal) across(f, f.len - 0.35, left, right, 0.45, WHITE);")
     patch(f,"across(f, s, -f.half + 0.1, right, 0.2, WHITE, 0.6, 0.5);","across(f, s, left, right, 0.2, WHITE, 0.6, 0.5);")
     patch(f,"if (e.axis === 'ave') for (const o of half ? [-e.half + 0.4] : [-e.half + 0.4, e.half - 0.4]) along(e, o, 0.1, YELLOW);","if (e.axis === 'ave') for (const o of half ? [e.half - 0.4] : [-e.half + 0.4, e.half - 0.4]) along(e, o, 0.1, WHITE);")
+    if a.traffic_preview:
+        # Record actual emitted paint triangles, not a second simulated marking.
+        patch(f,'const lines = [];',"""const lines = [];
+  const marks=[];
+  const edgeInfo=e=>({id:e.id??null,from:[e.from.x,e.from.z],to:[e.to.x,e.to.z],
+    x0:e.x0,z0:e.z0,dx:e.dx,dz:e.dz,rx:e.rx,rz:e.rz,len:e.len,half:e.half,
+    lanes:[...e.lanes],shared:e.divided||e.centred===false});""")
+        patch(f,'strip(ax, az, bx, bz, w, col, period, duty, 0, 1, liftOf(e, fa, fa));',"""const first=index.length;
+    strip(ax, az, bx, bz, w, col, period, duty, 0, 1, liftOf(e, fa, fa));
+    marks.push({kind:w<.5&&s>=e.len-1&&s<=e.len?'stop':'crossing',edge:edgeInfo(e),
+      s,o0,o1,width:w,color:col.getHex(),first,count:index.length-first});""")
+        patch(f,'strip(ax, az, bx, bz, line.w, line.col, line.period, line.duty, line.phase, line.flow,\n        liftOf(line.e, fraction(line.e, ax, az), fraction(line.e, bx, bz)));',"""const first=index.length;
+      strip(ax, az, bx, bz, line.w, line.col, line.period, line.duty, line.phase, line.flow,
+        liftOf(line.e, fraction(line.e, ax, az), fraction(line.e, bx, bz)));
+      marks.push({kind:'longitudinal',edge:edgeInfo(line.e),offset:line.o,
+        endpoints:line.ends,width:line.w,color:line.col.getHex(),first,count:index.length-first});""")
+        patch(f,"mesh.name = 'RoadMarkings';","mesh.name = 'RoadMarkings';\n  mesh.userData.trafficMarks=marks;")
     f=out/'js/traffic.js'
     patch(f,"const ACROSS = 'R';","import { ACROSS } from './traffic-side.mjs';")
     f=out/'js/controllers.js'; patch(f,'if (l.name !== name) continue;',"if (name && l.name !== name) continue;\n    if (l.tunnel || l.bridge || (l.layer || 0) !== 0 || !['residential','unclassified','tertiary','secondary','living_street'].includes(l.kind)) continue;")
@@ -204,6 +221,11 @@ try {
         f=out/'js/pedome.js'
         patch(f,"import { buildBuildings } from './buildings.js';","import { buildDetailedBuildings as buildBuildings } from './pedome-buildings-detail.mjs';")
         patch(f,'scene.add(await buildBuildings());','const buildingGroup=await buildBuildings(); scene.add(buildingGroup); window.buildingDetailReport=buildingGroup.userData.buildingDetailReport;')
+    if a.traffic_preview:
+        if a.fixture or not a.terrain_bin or a.roof_preview:
+            p.error('--traffic-preview requires real binary terrain, without other previews')
+        f=out/'js/pedome.js'
+        patch(f,'window.mapslop={GEO,controllers,camera,world};','window.mapslop={GEO,controllers,camera,world,trafficPreview:{network,scene,renderer,roadSpawn}};')
     html=(out/'index.html').read_text(); imp=re.search(r'<script type="importmap">.*?</script>',html,re.S).group()
     if a.three_vendor:
         shutil.copytree(a.three_vendor,out/'vendor/three')

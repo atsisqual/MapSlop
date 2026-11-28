@@ -1,0 +1,95 @@
+name: Pedome private real traffic validation
+on:
+  workflow_call:
+permissions:
+  contents: write
+concurrency:
+  group: private-traffic-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/agent/right-hand-traffic'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      MAPSLOP_RESULTS: /tmp/traffic-evidence
+      MAPSLOP_TEST_URL: http://127.0.0.1:8080/?webgl
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Fetch exact published carve and verify compressed and raw hashes
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/traffic-evidence /tmp/traffic-input
+          curl -fsSL --retry 3 --max-time 60 'https://atsisqual.github.io/MapSlop/js/terrain.bin.gz?build=f256f82fef28' -o /tmp/traffic-input/terrain.bin.gz
+          echo '9c5ec9ecd8aceb76908e915fffaac896930e6499379a1421af88d887cb8dd991  /tmp/traffic-input/terrain.bin.gz' | sha256sum -c -
+          gzip -dc /tmp/traffic-input/terrain.bin.gz > /tmp/traffic-input/terrain.bin
+          echo '36019dfc27584d667555c794350107c29981da4f4ee15bac2c03078aba0d895b  /tmp/traffic-input/terrain.bin' | sha256sum -c -
+          echo '948fa4269ba8eaa9d995711005d2c8a5413ac4ea16f69838ef031e870b032037  data/pedome/pedome-osm.json' | sha256sum -c -
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          Path('/tmp/traffic-evidence/provenance.json').write_text(json.dumps({'run':os.environ['GITHUB_RUN_ID'],'commit':os.environ['GITHUB_SHA'],'terrain_run':46085062868,'pages_run':46088548235,'terrain_sha256':'36019dfc27584d667555c794350107c29981da4f4ee15bac2c03078aba0d895b','gzip_sha256':'9c5ec9ecd8aceb76908e915fffaac896930e6499379a1421af88d887cb8dd991','osm_sha256':'948fa4269ba8eaa9d995711005d2c8a5413ac4ea16f69838ef031e870b032037','source':'DGT CC BY 4.0; OpenStreetMap ODbL 1.0'},indent=2))
+          PY
+      - name: Fetch pinned upstream and Three.js
+        run: |
+          set -euo pipefail
+          git init /tmp/nairobi
+          git -C /tmp/nairobi remote add origin https://github.com/briankariuki/slop-nairobi.git
+          git -C /tmp/nairobi fetch --depth=1 origin 64b8599ae7dd7ba56ffbe68f19cc1423a9e7f903
+          git -C /tmp/nairobi checkout --detach FETCH_HEAD
+          git init /tmp/three
+          git -C /tmp/three remote add origin https://github.com/mrdoob/three.js.git
+          git -C /tmp/three sparse-checkout set build examples/jsm
+          git -C /tmp/three fetch --depth=1 --filter=blob:none origin f17eb5d689094a3fbd4cd0d64d54729a48036ce0
+          git -C /tmp/three checkout --detach FETCH_HEAD
+          mkdir /tmp/three-vendor
+          cp -r /tmp/three/build /tmp/three/examples /tmp/three/LICENSE /tmp/three-vendor/
+      - name: Build private preview with published terrain
+        run: |
+          set -euo pipefail
+          python tools/prepare-pedome.py /tmp/nairobi /tmp/pedome-traffic --osm-json data/pedome/pedome-osm.json --terrain-bin /tmp/traffic-input/terrain.bin --three-vendor /tmp/three-vendor --traffic-preview
+          cp /tmp/pedome-traffic/build-report.json /tmp/traffic-evidence/
+          cmp /tmp/traffic-input/terrain.bin /tmp/pedome-traffic/js/terrain.bin
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Real rendered driving and marking verification
+        run: |
+          set -euo pipefail
+          python -m http.server 8080 --bind 127.0.0.1 --directory /tmp/pedome-traffic > /tmp/traffic-evidence/http.log 2>&1 &
+          server=$!
+          trap 'kill "$server" || true' EXIT
+          for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
+          node tests/traffic-real.mjs
+      - name: Archive actual screenshots and measurements in a private draft
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/traffic-evidence
+          cd /tmp/traffic-evidence
+          shopt -s nullglob
+          files=(*.png *.json *.log)
+          if [ "${#files[@]}" -eq 0 ]; then echo 'No evidence generated'; exit 1; fi
+          sha256sum "${files[@]}" > SHA256SUMS.txt
+          tag=geodata-dgt-traffic-agent-right-hand-traffic-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Private traffic evidence run ${GITHUB_RUN_ID}" --notes "Private screenshots and measured checks. No deployment; DGT CC BY 4.0, OSM ODbL." "${files[@]}" SHA256SUMS.txt
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          echo "PRIVATE_EVIDENCE $tag"
+      - name: Enforce real junction, driving and roundabout acceptance
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/traffic-evidence/traffic-report.json').read_text())
+          print('TRAFFIC_RESULT',json.dumps(r))
+          assert r['available_cases_pass'], 'Real junction/spawn/markings/oneway checks failed'
+          assert r['roundabout']['status']=='pass', 'Real roundabout not validated; inspect private evidence (partial result, do not merge)'
+          PY
