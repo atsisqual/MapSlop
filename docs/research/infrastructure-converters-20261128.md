@@ -91,3 +91,18 @@ python tools/bake-infrastructure-nodes.py bake /tmp/road.blend outputs/baked-roa
 ```
 
 Run 46146179120: GDAL PASS job 140982640251, 3.8.4, erro roundtrip 9,9476e-10m, Z preservado, CRS desconhecido rejeitado; Geometry Nodes PASS job 140982640260 Blender4.4, 2→10 triângulos, bounds [0,0,0]–[5,3,.200000003], GLB 1568B SHA 8e17c346972fb4ec050ba8ab16cc5a14a99568c786d1f45bd3ac1aac46282f02. 3dfier PASS técnico anterior job 140982640106, OBJ SHA1090bfac28b45420819e9ba801aefb315ec0e4b2a8ec65e3e993818e442b227f, 8 vertices/6 faces, bounds [-50000,180000,100]–[-49980,180004.6,100.41]; wall height not recovered (~101.3–101.7 expected). Strengthen gate in 05808d8: fixture LAS single return flags, Separation uses class17 only (synthetic, not actual DGT class attribution), compare per-material heights Road vs Separation, require both; retest pending. No actual wall reconstruction PASS yet. Do not publish or integrate these surfaces into TIN/physics.
+
+### Aprovação do laboratório e ligação ao referencial do jogo
+
+Run 46146334404, head 212850c: todos os 8 jobs PASS; CI geral 46146334360 PASS. 3dfier job 140983105891 PASS com gates semânticos: Road Z100.00–100.40m, Separation Z101.31–101.69m, SeparationWall Z100.00–101.69m, 8 vértices/6 faces; SHA 8cccacc8ed3de3c6a107fe57f78364678a8bcf9192bee6d59ca34947a1eab0df. Dados LAS sintéticos, não alturas de muro reais. OSM2World job 140983105848 PASS, 341 meshes, 5125 tris, 44 imagens, GLB 30480444 bytes. SUMO 140983105904 PASS 424 edges/430 lanes/1090 roads/161 junctions. MOSAIQ 140983105886 147 meshes/2614 tris; geometria PASS, aviso ShaderNodeTexMusgrave undefined em Blender4.4 — materiais/POIs não validados. Junction 140983105868 PASS 13 roads/21 road meshes/5 junctions/14 connectors/6 signals, 41 meshes/926 tris. IFC/cjio 140983105652 PASS 12 tris cada; GIS 140983105973 PASS; Geometry Nodes 140983105910 PASS. MRoadGen original não disponível no repo, bake genérico aprovado, não equivalência.
+
+Novo tools/infrastructure-frame.py: SUMO net.xml -> lanes.json X/Z MapSlop, desfaz netOffset, CRS projetado via pyproj, compara todos junctions de ID OSM original com coordenadas originais; >=3 controls, p95<=0.5m e max<=2m para exportar. SUMO pode deslocar nós, então falha é evidência a investigar, nunca mover TIN ou forçar passagem. Sem Y, sem mudança de road graph. 3dfier OBJ -> GLB autocontido por material semântico, EPSG explícito e base vertical fornecida, mantém altura e triângulos e recalcula normais; só OBJ simples não texturado, não substitui Blender, cores estimadas. Em produção base vertical vem do terrain.bin aprovado e datum tem de corresponder; fixture base100 apenas sintética, não posicionamento real no piloto. Testes offset/controls (inclui rejeitar deslocamento5m) e GLB semântica/altura; execução de real SUMO + 3dfier sintético no CI novo, resultados pendentes.
+
+```sh
+python -m pip install numpy==1.26.4 pyproj==3.7.2
+python -m unittest discover -s tests -p test_infrastructure_frame.py -v
+python tools/infrastructure-frame.py sumo outputs/sumo/network.net.xml outputs/roads/map.osm outputs/sumo-frame
+python tools/infrastructure-frame.py 3dfier outputs/lift-output/lifted.obj outputs/lift-frame --source-crs EPSG:3763 --vertical-base 100
+```
+
+Sem alteração da versão publicada. Próxima etapa só após validação de frame, licença style, fase de ortofoto e aprovação do dono: seleção por IDs OSM, alinhamento a TIN real, colisão/replay e revisão visual. Não pedir MRoadGen por enquanto, alternativa GN suficiente para ensaios.
