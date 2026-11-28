@@ -5,6 +5,7 @@ on:
     paths:
       - 'tools/osm-json-to-xml.py'
       - 'tools/blender-infrastructure.py'
+      - 'tools/bake-infrastructure-nodes.py'
       - 'tools/3dfier-infrastructure.py'
       - 'tools/gis-infrastructure.py'
       - 'tools/convert-infrastructure.py'
@@ -207,3 +208,32 @@ jobs:
           path: |
             /tmp/lift-input/manifest.json
             /tmp/lift-output/
+
+  geometry-nodes-bake:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.9'
+      - name: Bake actual evaluated procedural geometry to GLB
+        run: |
+          python -m pip install bpy==4.4.0 numpy==1.26.4
+          python tools/bake-infrastructure-nodes.py fixture /tmp/road.blend
+          python tools/bake-infrastructure-nodes.py bake /tmp/road.blend /tmp/road-baked --sha256 "$(sha256sum /tmp/road.blend | cut -d' ' -f1)"
+          python - <<'PY'
+          import json,numpy as np,struct
+          r=json.load(open('/tmp/road-baked/report.json'));assert r['pass'] and len(r['objects'])==1
+          o=r['objects'][0];assert o['geometry_nodes']==1 and o['input_triangles']==2 and o['evaluated_triangles']>2
+          assert np.allclose(np.ptp(o['bounds_blender_xyz'],axis=0),[5,3,.2],atol=1e-5),o
+          raw=open('/tmp/road-baked/baked.glb','rb').read();n=struct.unpack_from('<I',raw,12)[0];j=json.loads(raw[20:20+n])
+          assert sum(j['accessors'][p.get('indices',p['attributes']['POSITION'])]['count']//3 for m in j['meshes'] for p in m['primitives'])==o['evaluated_triangles']
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: infrastructure-geometry-nodes-bake
+          path: /tmp/road-baked/
