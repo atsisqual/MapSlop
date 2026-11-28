@@ -16,6 +16,10 @@ Pedido do dono: estudar AIFanatic/earth-3d, projetos relacionados; uso pessoal l
 | [OpenDroneMap](https://github.com/OpenDroneMap/ODM) | [outputs](https://docs.opendronemap.org/outputs/), [arguments](https://docs.opendronemap.org/arguments/) | Fotos aéreas próprias/autorizadas -> malha OBJ texturizada georreferenciada, LAZ, MDT/MDS, ortofoto. Offline, não incorporar código GPL no runtime. |
 | [COLMAP](https://colmap.github.io/tutorial) / [OpenMVS](https://github.com/cdcseacave/openMVS) | documentação | Fotos sobrepostas -> poses, nuvem densa, malha e UV/atlas. Adequado à igreja/fachadas; exigir imagens reais com múltiplos ângulos e pontos de controlo. |
 
+## Inspeção adicional do código earth-3d
+
+Consultados src/controller/NodeManager.ts, ResourcesWorker.ts, src/node/NodeData.ts e NodeHeader.ts. O NodeManager percorre a hierarquia, devolve nós disponíveis de forma incremental, admite validação por callback, usa workers e cache; os workers transferem buffers de vértices, índices, UV e textura. NodeHeader contém metros por texel, OBB, época e nível. São conceitos reutilizáveis em streaming de fontes próprias. A integração direta é arriscada: há um endpoint proprietário predefinido, pedidos iniciados no construtor, falhas de rede convertidas em null sem diagnóstico suficiente, e getMasksForNodes usa acesso de propriedade como se Map fosse objeto em vez de get/set coerentes (suspeita estática de máscara de LOD incorreta; não executado). Não confundir seleção geográfica com seleção por erro no ecrã. O renderer normalizado oferece caminho mais robusto sem depender da disponibilidade desse protocolo.
+
 ## Direitos e cobertura
 
 - [Google Earth Additional Terms](https://www.google.com/help/terms_maps-earth/) restringe obtenção em massa; [Geo Guidelines](https://about.google/brand-resource-center/products-and-services/geo-guidelines/) exclui reconstrução de modelos 3D através de capturas de Earth/terceiros. Uso pessoal não concede licença automaticamente. Autorização do dono altera a regra interna de pesquisa, não direitos do fornecedor.
