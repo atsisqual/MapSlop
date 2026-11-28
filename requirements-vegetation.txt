@@ -1,0 +1,2 @@
+-r requirements-buildings.txt
+lazrs==0.7.0
