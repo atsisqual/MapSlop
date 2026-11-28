@@ -33,7 +33,8 @@ try{
   page.on('console',m=>{if(m.type()==='error'&&!m.text().includes('favicon'))errors.push(m.text())});
   page.on('request',r=>{if(new URL(r.url()).pathname.includes('/ortho/'))requests.push(r.url())});
   await page.goto(url.href,{waitUntil:'load',timeout:90000});
-  await page.waitForFunction(()=>window.mapslop?.ready&&window.mapslop?.renderDebug&&window.mapslop.orthoPreview?.ortho.report().settled,{},{timeout:120000});
+  await page.waitForFunction(()=>window.mapslop?.ready&&window.mapslop?.renderDebug&&window.mapslop.orthoPreview?.ortho.report().settled||document.querySelector('#status')?.textContent.startsWith('Erro:'),{},{timeout:120000});
+  assert.ok(!(await page.locator('#status').textContent()).startsWith('Erro:'),await page.locator('#status').textContent());
   const state=await page.evaluate(async()=>{
    const m=window.mapslop,b=m.orthoPreview.renderer.backend;
    await b.device?.queue?.onSubmittedWorkDone();
@@ -50,10 +51,12 @@ try{
   if(hardware)assert.ok(state.gpu.renderer&&!/swiftshader|llvmpipe|softpipe|software|lavapipe/i.test(state.gpu.renderer),'No verified hardware renderer');
   if(enabled){
    assert.ok(state.tile?.applied&&state.tile.level==='near','Spawn tile missing');
+   assert.deepEqual(state.tile.texture_px,[512,512]);assert.equal(state.tile.metres_per_pixel,132/512);
+   assert.ok(state.tile.alignment_error_m<.02,'World/UV alignment regression');
    assert.ok(state.offsets.length>0&&state.offsets.every(x=>x===-.02),'Visual separation missing');
    assert.ok(state.textures.length>=64,'Missing texture rows');
    for(const t of state.textures){
-    assert.ok(t.pot&&t.generateMipmaps&&t.autoUpdate&&t.trilinear,'Invalid texture: '+JSON.stringify(t));
+    assert.ok(t.pot&&t.generateMipmaps===true&&t.autoUpdate===true&&t.trilinear&&t.minFilter===1008&&t.magFilter===1006,'Invalid texture: '+JSON.stringify(t));
     assert.equal(t.anisotropy,1,'Android conservative sampler not applied');
     if(t.generated&&state.backend==='WebGPU')assert.equal(t.gpuLevels,t.expectedLevels,'Incomplete GPU mip allocation');
    }
