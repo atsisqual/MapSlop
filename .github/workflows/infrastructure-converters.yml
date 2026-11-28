@@ -62,6 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           curl -fL --retry 3 https://osm2world.org/download/files/0.4.0/OSM2World-0.4.0-bin.zip -o /tmp/osm2world.zip
+          echo 'c05b37920d29c26710a06e30c170ca62e5e8ea653cccbbb3243dfc7e5d20b899  /tmp/osm2world.zip' | sha256sum -c -
           sha256sum /tmp/osm2world.zip | tee /tmp/osm2world-sha256.txt
           mkdir /tmp/osm2world
           unzip -q /tmp/osm2world.zip -d /tmp/osm2world
