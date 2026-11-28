@@ -73,6 +73,7 @@ try{
   same_paving:JSON.stringify(p)===JSON.stringify(a.scene.paving),
   same_physics:JSON.stringify(a.scene.physics)===JSON.stringify(b.scene.physics)&&JSON.stringify(a.scene.buildings.rows)===JSON.stringify(b.scene.buildings.rows),
   replaced_church:!a.scene.church&&b.scene.church?.osm_id===149406360&&b.scene.church.removed_shell_triangles>0&&b.scene.church.mesh_count>=2&&b.scene.church.sha256===expected.glb_sha256&&Math.max(...b.scene.church.bounds.flat().map((v,i)=>Math.abs(v-expected.bounds.flat()[i])))<=.05,
+  pbr_materials:!expected.materials||(b.scene.church?.pbr_materials?.length>=2&&b.scene.church.pbr_materials.every(m=>m.uv)),
   roof_colors:b.scene.roof_counts.terracotta>0&&b.scene.roof_counts.gray>0&&bs.rows.every(r=>r.policy==='roofer_lod22'||r.roof_color&&(r.roof_color.class==='unknown'||r.roof_color.samples>=4&&r.roof_color.inner_margin_m>=.35)),
   buildings:bs.buildings===527&&bs.foundation_failures.length===0&&bs.measured>=17&&bs.measured_diagnostics.length===18&&measuredRejected.every(r=>String(r.osm_id)==='223354671'&&r.reason==='roof_intersects_local_terrain')&&bs.shell_triangles<=120000&&bs.all_triangles<=250000&&bs.building_draw_calls<=40,
   drive:validDrive(a.drive)&&validDrive(b.drive)&&b.drive.vertical<=Math.max(a.drive.vertical+.1,2.958)&&b.drive.roll<=Math.max(a.drive.roll+.05,.429),
