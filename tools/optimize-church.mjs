@@ -11,7 +11,7 @@ const hash=x=>crypto.createHash('sha256').update(x).digest('hex');
 const bytes=a=>Buffer.from(a.buffer,a.byteOffset,a.byteLength);
 const signature=d=>d.getRoot().listMeshes().map(m=>m.listPrimitives().map(p=>({mode:p.getMode(),attributes:p.listSemantics().sort().map(k=>[k,hash(bytes(p.getAttribute(k).getArray()))]),indices:p.getIndices()?hash(bytes(p.getIndices().getArray())):null,material:p.getMaterial()?.getName()})));
 const slots=['BaseColor','Normal','MetallicRoughness','Occlusion','Emissive'];
-const maps=d=>d.getRoot().listMaterials().map(m=>({name:m.getName(),base:m.getBaseColorFactor(),metal:m.getMetallicFactor(),rough:m.getRoughnessFactor(),normalScale:m.getNormalScale(),textures:slots.map(k=>{const t=m['get'+k+'Texture']();const i=m['get'+k+'TextureInfo']();return t?{slot:k,index:d.getRoot().listTextures().indexOf(t),texCoord:i.getTexCoord(),wrapS:i.getWrapS(),wrapT:i.getWrapT()}:null})}));
+const maps=d=>d.getRoot().listMaterials().map(m=>({name:m.getName(),base:m.getBaseColorFactor(),emissive:m.getEmissiveFactor(),metal:m.getMetallicFactor(),rough:m.getRoughnessFactor(),normalScale:m.getNormalScale(),textures:slots.map(k=>{const t=m['get'+k+'Texture']();const i=m['get'+k+'TextureInfo']();return t?{slot:k,index:d.getRoot().listTextures().indexOf(t),texCoord:i.getTexCoord(),wrapS:i.getWrapS(),wrapT:i.getWrapT()}:null})}));
 const doc=await io.read(src);const original=fs.readFileSync(src),geo=signature(doc),materials=maps(doc);
 const old=doc.getRoot().listTextures().map(t=>({image:Buffer.from(t.getImage()),mime:t.getMimeType(),size:t.getSize()}));
 await doc.transform(textureCompress({encoder:sharp,targetFormat:'webp',lossless:true}));
