@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict');const {LatLonBox,octant_to_latlong}=require(process.argv[2]);
+const b=new LatLonBox(20,10,30,40);
+assert.deepEqual(b.mid_point(),{lat:15,lon:35});
+const a=b.get_child('0'),c=b.get_child('3');
+assert.deepEqual([a.n,a.s,a.w,a.e],[15,10,30,35]);
+assert.deepEqual([c.n,c.s,c.w,c.e],[20,15,35,40]);
+assert(LatLonBox.is_overlapping(a,new LatLonBox(13,11,31,34)));
+assert(!LatLonBox.is_overlapping(a,new LatLonBox(19,17,36,39)));
+assert.throws(()=>b.get_child('x'));
+const root=octant_to_latlong('');assert.deepEqual([root.n,root.s,root.w,root.e],[90,-90,-180,180]);
+console.log(JSON.stringify({pass:true,scope:'pure geometry math only, no network, no model decoding',upstream:'54194adca25a266582200a8aa114ef1288b1e40b'}));
