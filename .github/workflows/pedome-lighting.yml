@@ -1,0 +1,114 @@
+name: Lighting preview
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/pedome-lighting.mjs'
+      - 'tools/install-lighting-preview.py'
+      - 'tests/lighting-*.mjs'
+      - '.github/workflows/pedome-lighting.yml'
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  fixture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Fetch pinned Three.js and exercise actual renderer
+        run: |
+          set -euo pipefail
+          git init /tmp/three
+          git -C /tmp/three remote add origin https://github.com/mrdoob/three.js.git
+          git -C /tmp/three sparse-checkout set build examples/jsm
+          git -C /tmp/three fetch --depth=1 --filter=blob:none origin f17eb5d689094a3fbd4cd0d64d54729a48036ce0
+          git -C /tmp/three checkout --detach FETCH_HEAD
+          mkdir -p /tmp/site/vendor/three
+          cp -r /tmp/three/build /tmp/three/examples /tmp/three/LICENSE /tmp/site/vendor/three/
+          cp tools/pedome-lighting.mjs /tmp/site/
+          echo '<script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/webgpu":"/vendor/three/build/three.webgpu.js","three/tsl":"/vendor/three/build/three.tsl.js"}}</script>' > /tmp/site/index.html
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          python -m http.server 8080 --bind 127.0.0.1 --directory /tmp/site >/tmp/lighting-http.log 2>&1 &
+          trap 'kill $! || true' EXIT
+          for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
+          node tests/lighting-fixture.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighting-synthetic-evidence
+          path: /tmp/lighting-fixture/
+  real:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/agent/lighting-preview'
+    needs: fixture
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MAPSLOP_RESULTS: /tmp/lighting-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Retrieve exact approved game and driving reference
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/combined /tmp/runtime /tmp/ortho-terrain /tmp/lighting-results
+          tag=geodata-dgt-orthophoto-46098427966-1
+          test "$(gh release view "$tag" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --dir /tmp/combined --pattern combined-runtime.tar.gz --pattern combined-report.json --pattern combined-inputs.json --pattern SHA256SUMS.txt
+          echo 'f9f574945cfe74923076b3d430fefb2848e0cad5a1b0ce67bcbd787b7fe0f57c  /tmp/combined/combined-runtime.tar.gz' | sha256sum -c -
+          python tools/verify-combined-pages.py /tmp/combined /tmp/runtime
+          tag=geodata-dgt-pages-road-46085062868
+          test "$(gh release view "$tag" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --dir /tmp/ortho-terrain --pattern terrain-road-preview.bin --pattern road-validation.json
+          python tools/verify-pages-terrain.py /tmp/ortho-terrain
+          cmp /tmp/runtime/js/terrain.bin /tmp/ortho-terrain/terrain-tin.bin
+          git init /tmp/three
+          git -C /tmp/three remote add origin https://github.com/mrdoob/three.js.git
+          git -C /tmp/three sparse-checkout set build examples/jsm
+          git -C /tmp/three fetch --depth=1 --filter=blob:none origin f17eb5d689094a3fbd4cd0d64d54729a48036ce0
+          git -C /tmp/three checkout --detach FETCH_HEAD
+          mkdir -p /tmp/runtime/vendor/three
+          cp -r /tmp/three/build /tmp/three/examples /tmp/three/LICENSE /tmp/runtime/vendor/three/
+          python tools/install-lighting-preview.py /tmp/runtime /tmp/runtime-lit
+      - name: Compare fixed cameras and same route
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          python -m http.server 8080 --bind 127.0.0.1 --directory /tmp/runtime > /tmp/lighting-results/before.log 2>&1 &
+          before=$!
+          python -m http.server 8081 --bind 127.0.0.1 --directory /tmp/runtime-lit > /tmp/lighting-results/after.log 2>&1 &
+          after=$!
+          trap 'kill "$before" "$after" || true' EXIT
+          for port in 8080 8081; do
+            for i in {1..30}; do if curl -fsS "http://127.0.0.1:$port/" >/dev/null; then break; fi; sleep 1; done
+          done
+          node tests/lighting-real.mjs
+      - name: Archive private evidence only
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/lighting-results
+          cd /tmp/lighting-results
+          shopt -s nullglob
+          files=(*.json *.png *.log)
+          test "${#files[@]}" -gt 0
+          if [ -f lighting-report.json ] && jq -e '.pass' lighting-report.json >/dev/null; then
+            tar -C /tmp/runtime-lit -czf lighting-runtime-patch.tar.gz js/pedome.js js/pedome-lighting.mjs
+            files+=(lighting-runtime-patch.tar.gz)
+          fi
+          sha256sum "${files[@]}" > SHA256SUMS.txt
+          gh release create "geodata-pedome-lighting-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --draft --target "$GITHUB_SHA" --title "Private lighting candidate" --notes "Owner visual review required. No public deployment." "${files[@]}" SHA256SUMS.txt

@@ -344,3 +344,7 @@ Suspender as fases A/B e #35 até nova autorização. Um PR por item, em ordem, 
 ## Mapillary — controlo positivo confirmado
 
 Run 46136413215 PASS (job 140952606752): Famalicão 1177 imagens, Pedome 0. Token e consulta operacionais; zero no piloto é ausência de resultados nessa consulta, não erro de autenticação. Dono confirmou que a cobertura local virá de gravação própria com a app Mapillary. Sem aquisição de imagens agora; manter token apenas como secret. Merge #39 autorizado.
+
+## Iluminação — primeira melhoria visual após auditoria
+
+Dono autorizou prosseguir com o plano de auditoria ajustado. Branch agent/lighting-preview: candidato privado sobre runtime exato aprovado #36. tools/pedome-lighting.mjs: luz solar quente, hemisfério mais neutro, nevoeiro exponencial, sombras direcionais centradas na câmara com mapa 512 low/1024 high, atualização por células 8m, só edifícios estáticos projetam sombra; quality=off preserva baseline. CSM/AO não incluídos até medir custo no WebGPURenderer/forceWebGL. tools/install-lighting-preview.py recusa alterações fora do shell e módulo novo. Fixture Chromium com Three.js fixado e modos off/low/high; real mode=roofs no branch, mesmo TIN, capturas Rua Bouças/igreja, 104m condução, gate sem regressão de geometria/física e timings relativos (não FPS móvel). CI pendente. Não publicar Pages sem revisão do dono.
