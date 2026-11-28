@@ -44,8 +44,8 @@ export async function installOrthophoto(scene,ground,renderer){
   const color=new THREE.Color().setHSL(((tile.i*17+tile.j*37)%64)/64,.65,.45);
   let m;
   if(classic)m=new Classic.MeshBasicMaterial({color:mode==='flat'?color:0xffffff});
-  else if(mode==='uv'){m=new THREE.MeshBasicNodeMaterial();m.colorNode=vec4(uv(),0,1);m.toneMapped=false;}
-  else if(mode==='flat')m=new THREE.MeshBasicNodeMaterial({color,toneMapped:false});
+  else if(mode==='uv'){m=new THREE.MeshBasicNodeMaterial();m.colorNode=vec4(uv(),0,1);m.toneMapped=false;m.fog=false;}
+  else if(mode==='flat')m=new THREE.MeshBasicNodeMaterial({color,toneMapped:false,fog:false});
   else if(mode==='basic')m=new THREE.MeshBasicNodeMaterial({toneMapped:false});
   else m=new THREE.MeshStandardNodeMaterial({roughness:.95});
   const mesh=new THREE.Mesh(g,m);mesh.name='Ortho-'+tile.i+'-'+tile.j;mesh.position.y=-0.02;group.add(mesh); // render-only separation from roads/paving; TIN unchanged
