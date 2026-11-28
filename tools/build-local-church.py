@@ -152,7 +152,8 @@ def glb(path,roofs,walls,texture,uv_extent,details=None,config=None,pbr=None):
         accessors.append(d);return i
     primitives=[]
     pbr=pbr or {}
-    material_roles={1:'plaster',2:'granite'}
+    material_roles={1:config.get('material_parede','plaster'),2:'granite'}
+    if material_roles[1] not in ('plaster','granite'):raise ValueError('Unknown wall material')
     for k,faces in enumerate((roofs,walls,details.get("granite",[]),details.get("door",[]),details.get("window",[]))):
         if not faces:continue
         a=np.asarray(faces,dtype=np.float64);normal=np.cross(a[:,1]-a[:,0],a[:,2]-a[:,0]);length=np.linalg.norm(normal,axis=1)
@@ -178,6 +179,11 @@ def glb(path,roofs,walls,texture,uv_extent,details=None,config=None,pbr=None):
     if texture:
         doc.update(images=[{"bufferView":view(texture),"mimeType":"image/png"}],textures=[{"source":0,"sampler":0}],samplers=[{"magFilter":9729,"minFilter":9987,"wrapS":33071,"wrapT":33071}])
         materials[0]["pbrMetallicRoughness"].update(baseColorFactor=[1,1,1,1],baseColorTexture={"index":0})
+        # DGT imagery already contains lighting; a modest fill avoids double-darkening
+        # in indirect light, while retaining the standard lit material and shadows.
+        fill=float(config.get("fator_luz_cobertura",0))
+        if not 0<=fill<=.35:raise ValueError("Roof fill outside allowed range")
+        if fill:materials[0].update(emissiveTexture={"index":0},emissiveFactor=[fill]*3)
     if pbr:
         images=doc.setdefault("images",[]);textures=doc.setdefault("textures",[]);samplers=doc.setdefault("samplers",[])
         repeat=len(samplers);samplers.append({"magFilter":9729,"minFilter":9987,"wrapS":10497,"wrapT":10497})
@@ -187,7 +193,7 @@ def glb(path,roofs,walls,texture,uv_extent,details=None,config=None,pbr=None):
         for k,role in material_roles.items():
             if role not in pbr:continue
             item=pbr[role];mat=materials[k];mr=mat["pbrMetallicRoughness"]
-            mr.update(baseColorFactor=[1,1,1,1],baseColorTexture=tex(item["base"],"image/jpeg"),metallicFactor=0,roughnessFactor=1,metallicRoughnessTexture=tex(item["rough"],"image/png"))
+            mr.update(baseColorFactor=[*config.get("cor_parede_rgb",[1,1,1]),1] if k==1 else [1,1,1,1],baseColorTexture=tex(item["base"],"image/jpeg"),metallicFactor=0,roughnessFactor=1,metallicRoughnessTexture=tex(item["rough"],"image/png"))
             mat["normalTexture"]={**tex(item["normal"],"image/jpeg"),"scale":.65 if role=="granite" else .4}
     while len(payload)%4:payload.append(0)
     doc.update(buffers=[{"byteLength":len(payload)}],bufferViews=views,accessors=accessors)
