@@ -1,5 +1,8 @@
 # Estado do projeto
 
+## Mapillary — controlo positivo
+Run 46134604891: 0 imagens em 16 células, complete=true, sem erros HTTP. Não prova ausência absoluta sem controlo positivo. Token criado pelo dono. Novo teste usa a mesma API, token e campos em Vila Nova de Famalicão centro; fallback Lisboa Baixa se zero. Exigir pelo menos uma imagem de controlo, preservar relatório mesmo se falhar; resultado novo pendente. `gh workflow run mapillary-coverage.yml --repo atsisqual/MapSlop --ref agent/mapillary-positive-control`.
+
 Referências visuais: PR dedicado agent/visual-references cria inventário inicial de 21 edifícios, fotos próprias, registo de licenças e consulta de cobertura Mapillary apenas com secret MAPILLARY_TOKEN. Cobertura ainda desconhecida; sem imagens incorporadas. Google Street View/Earth/Maps proibidos. Comando após merge: `gh workflow run mapillary-coverage.yml --repo atsisqual/MapSlop --ref main`.
 
 > Atualizado em 2026-11-27. Fonte de verdade para retomar o projeto; ler primeiro [AGENTS](../AGENTS.md). O histórico de investigação não substitui este estado.
@@ -337,6 +340,10 @@ CI 46098051706 PASS; run 46098427966 PASS (todos os 10 checks); dono confirmou a
 ## Prioridade do dono: realismo no piloto; expansão EM PAUSA
 
 Suspender as fases A/B e #35 até nova autorização. Um PR por item, em ordem, sobre a última versão publicada: (a) ortofoto limpa — máscara de classes LiDAR 3–6/footprints, carros detetados por evidência (não assumir classe), preenchimento com solo vizinho; preservar vias e textura original para reversão; (b) detalhe near de relva, terra, asfalto, granito por COS e superfície OSM; (c) igreja com volume/telhado medidos ou modelo dedicado LiDAR; (d) sol/sombras, céu, nevoeiro, AO leve, orçamento móvel; (e) barriers, portões, socos granito, lancis; (f) mobiliário urbano OSM. Cada PR: screenshots before/after com câmera idêntica Rua das Bouças, igreja e mata, gate de colisões/desempenho, comando manual, merge e publicação após aprovação. Não iniciar (b) antes de (a) estar publicado. Referências fotográficas em PR próprio; nenhuma imagem Google (Street View/Earth/Maps) pode ser descarregada, guardada ou processada. Notas do dono têm prioridade sobre defaults procedurais, respeitando medidas reais e validação. Token Mapillary via secret MAPILLARY_TOKEN, nunca Git/log/chat; cobertura por confirmar com token.
+
+## Mapillary — controlo positivo confirmado
+
+Run 46136413215 PASS (job 140952606752): Famalicão 1177 imagens, Pedome 0. Token e consulta operacionais; zero no piloto é ausência de resultados nessa consulta, não erro de autenticação. Dono confirmou que a cobertura local virá de gravação própria com a app Mapillary. Sem aquisição de imagens agora; manter token apenas como secret. Merge #39 autorizado.
 
 ## Laboratório local de alta fidelidade — igreja
 
