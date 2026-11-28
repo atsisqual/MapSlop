@@ -116,6 +116,12 @@ jobs:
           done
           cd /tmp/dgt-evidence
           sha256sum ./*.json ./*.bin > SHA256SUMS.txt
+          mkdir -p /tmp/pedome-dgt-terrain-archive-artifact
+          cp ./* /tmp/pedome-dgt-terrain-archive-artifact/
+          if [ "$GITHUB_REF" != refs/heads/main ] || { [ "$GITHUB_EVENT_NAME" != workflow_dispatch ] && [ "$GITHUB_EVENT_NAME" != push ]; }; then
+            echo "Release writes disabled outside main dispatch/push; preserving Actions artifact."
+            exit 0
+          fi
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' > /tmp/dgt-draft-state 2>/dev/null; then
             test "$(cat /tmp/dgt-draft-state)" = true
             gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > /tmp/dgt-old-assets
@@ -134,3 +140,10 @@ jobs:
           gh release upload "$tag" ./* --repo "$GITHUB_REPOSITORY" --clobber
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
           echo "Draft preserved: $tag"
+      - name: Preserve curated derivatives and evidence as Actions artifact
+        if: always() && (github.ref != 'refs/heads/main' || (github.event_name != 'workflow_dispatch' && github.event_name != 'push')) && inputs.archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: pedome-dgt-terrain-evidence
+          path: /tmp/pedome-dgt-terrain-archive-artifact/
+          if-no-files-found: warn

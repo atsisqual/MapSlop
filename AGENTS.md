@@ -65,6 +65,10 @@ O workflow resolve os dois SHAs, constrói e testa a raiz de main e o candidato 
 
 Apenas branches do próprio repositório com nomes seguros `agent/...` são aceites. Como Pages materializa um runtime combinado arquivado, cada candidato tem de ter um contrato de build que aplique efetivamente as alterações; o #46 tem overlay próprio, outros candidatos devem fornecer `tools/apply-pages-preview.py` (argumento: diretório runtime preparado, `/tmp/pedome`). O workflow falha se não houver contrato; não publicar uma falsa preview do arquivo antigo. O hook é código confiável do próprio repositório, iniciado por mantenedor, sujeito aos gates e às regras de dados. A infraestrutura de preview pode ser integrada separadamente das alterações visuais.
 
+## Arquivo de evidência em CI
+
+Nunca criar, alterar, carregar ou apagar assets de Releases em `pull_request` ou em branches candidatos. Nesses runs preservar derivados e checksums em `actions/upload-artifact`, nunca os dados brutos. Só `workflow_dispatch` ou `push` com `github.ref == refs/heads/main` podem arquivar em Releases em rascunho. O acesso de leitura aos arquivos existentes não autoriza escritas. Artefactos não substituem o arquivo aprovado sem revisão explícita; os workflows antigos que esperam um tag de branch devem usar o arquivo aprovado existente ou um novo contrato de promoção.
+
 ## Idioma
 Documentação em português (PT-PT). Identificadores de código em inglês.
 
