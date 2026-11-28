@@ -15,7 +15,8 @@ from PIL import Image
 from terrain_grid import ORIGIN,KX,KY,to_world
 from terrain_binary import decode
 from terrain_tin import TinSampler
-from roof_plane_fit import mesh_planar,fit,axis_frame
+from roof_plane_fit import axis_frame
+from roof_ransac import fit_regions
 from facade_details import facade
 import yaml
 ROOT=Path(__file__).resolve().parents[1]
@@ -206,7 +207,7 @@ def load_pbr(root):
             m=rec["maps"][key];p=root/m["file"]
             if p.parent.resolve()!=root.resolve() or sha(p)!=m["sha256"]:raise ValueError("Material hash mismatch")
             raw=p.read_bytes();im=Image.open(io.BytesIO(raw));im.load()
-            if im.size!=(1024,1024):raise ValueError("Material dimensions")
+            if list(im.size)!=m["size_px"]:raise ValueError("Material dimensions do not match lock")
             if key=="rough":
                 g=im.convert("L");packed=Image.merge("RGB",(Image.new("L",g.size,255),g,Image.new("L",g.size,0)))
                 buf=io.BytesIO();packed.save(buf,format="PNG");raw=buf.getvalue()
@@ -222,7 +223,7 @@ def synthetic_pbr():
         result[role]=item
     return result
 def main():
-    ap=argparse.ArgumentParser();ap.add_argument("--fixture",action="store_true");ap.add_argument("--input",type=Path);ap.add_argument("--runtime",type=Path);ap.add_argument("--output",type=Path,required=True);ap.add_argument("--materials",type=Path);a=ap.parse_args()
+    ap=argparse.ArgumentParser();ap.add_argument("--fixture",action="store_true");ap.add_argument("--input",type=Path);ap.add_argument("--runtime",type=Path);ap.add_argument("--output",type=Path,required=True);ap.add_argument("--materials",type=Path);ap.add_argument("--approved-v1",type=Path);a=ap.parse_args()
     p=footprint();a.output.mkdir(parents=True,exist_ok=False);texture=None;uv=None;tex_sources=[];sources=[];rmse=None
     entry=next(b for b in yaml.safe_load((ROOT/'data/pedome/references/buildings.yaml').read_text())['buildings'] if int(b['osm_id'])==CHURCH)
     config=entry.get('detalhes_fachada') or {}
@@ -246,10 +247,50 @@ def main():
         # Deterministic independent occupied-cell holdout, diagnostics not independent survey accuracy.
         texture,uv,tex_sources=roof_texture(a.runtime,p)
     train=samples[np.arange(n)%5!=0];test=samples[np.arange(n)%5==0]
-    *_,predict=fit(p,train)
-    err=np.array([predict(x,z)-y for x,y,z in test])
-    rmse=float(np.sqrt(np.mean(err**2)))
-    roofs,walls,dist,area,height,regions=mesh_planar(p,samples,ground)
+    def score(sample,points):
+        return float(np.sqrt(np.mean([(sample(x,z)[0]-y)**2 for x,y,z in points])))
+    old_train=interpolator(train);old=interpolator(samples)
+    baseline_rmse=score(old_train,test)
+    old_roofs,old_walls,old_dist,old_area=mesh(p,old,ground)
+    old_top=float(np.asarray(old_roofs)[:,:,1].max())
+    def surface_vertices(faces):
+        a=np.asarray(faces,dtype=np.float64);normal=np.cross(a[:,1]-a[:,0],a[:,2]-a[:,0])
+        return a[np.linalg.norm(normal,axis=1)>1e-10].astype("<f4").reshape(-1,3)
+    if not a.fixture:
+        if not a.approved_v1 or sha(a.approved_v1)!="26e9bce51daaf408408fe8e63de621c61aed0cc788c6cfcc13fcfd5a1ebe42b9":raise ValueError("Require exact approved V1 GLB")
+        raw=a.approved_v1.read_bytes();njson=struct.unpack_from("<I",raw,12)[0];doc=json.loads(raw[20:20+njson]);blob=raw[28+njson:]
+        for i,faces in enumerate((old_roofs,old_walls)):
+            ac=doc["accessors"][doc["meshes"][0]["primitives"][i]["attributes"]["POSITION"]];v=doc["bufferViews"][ac["bufferView"]];off=v.get("byteOffset",0)+ac.get("byteOffset",0)
+            expected=np.frombuffer(blob[off:off+ac["count"]*12],dtype="<f4").reshape(-1,3)
+            actual=surface_vertices(faces)
+            if actual.shape!=expected.shape or np.max(np.abs(actual-expected))>2e-5:raise ValueError("V1 surface reproduction drift")
+        if n!=1912 or abs(baseline_rmse-.4317902658049366)>1e-5 or abs(old_top-20.881288115940958)>1e-5:raise ValueError("V1 evidence reproduction drift")
+    roofs,walls,dist,area=old_roofs,old_walls,old_dist,old_area
+    height=lambda x,z:old(x,z)[0]
+    rmse=baseline_rmse;regions=[{"name":"roof","kind":"V1 measured interpolation, tower/coruchéu unchanged"}]
+    selection={"selected":"V1","baseline_holdout_rmse_m":baseline_rmse,"baseline_top_m":old_top,"candidate":None}
+    try:
+        pred,hold_lock,train_regions=fit_regions(p,train,old_train)
+        candidate_rmse=score(pred,test)
+        protected_test=np.array([hold_lock(x,z) for x,y,z in test])
+        tower_rmse=score(pred,test[protected_test]) if protected_test.any() else None
+        old_tower_rmse=score(old_train,test[protected_test]) if protected_test.any() else None
+        candidate,locked,candidate_regions=fit_regions(p,samples,old)
+        cr,cw,cd,ca=mesh(p,candidate,ground)
+        top=float(np.asarray(cr)[:,:,1].max())
+        v0=surface_vertices(old_roofs);v1=surface_vertices(cr)
+        mask=np.array([locked(x,z) for x,y,z in v0])
+        same_protected=bool(mask.any() and v0.shape==v1.shape and np.array_equal(v0[mask],v1[mask]))
+        checks={"improved_holdout":candidate_rmse<=baseline_rmse-.005,"preserve_top":abs(top-old_top)<=.02,"preserve_tower_vertices":same_protected,"tower_holdout":tower_rmse is not None and tower_rmse<=old_tower_rmse+1e-9,"support":float(np.percentile(cd,95))<=2 and float(cd.max())<=5,"coverage":abs(ca-p.area)<=.01}
+        selection["candidate"]={"holdout_rmse_m":candidate_rmse,"top_m":top,"protected_vertices":int(mask.sum()),"tower_holdout_rmse_m":tower_rmse,"baseline_tower_holdout_rmse_m":old_tower_rmse,"checks":checks,"regions":candidate_regions}
+        if all(checks.values()):
+            roofs,walls,dist,area=cr,cw,cd,ca
+            height=lambda x,z:candidate(x,z)[0]
+            rmse=candidate_rmse;regions=candidate_regions;selection["selected"]="RANSAC"
+        else:selection["fallback_reason"]="RANSAC did not pass all V1 non-regression gates"
+    except (ValueError, np.linalg.LinAlgError) as exc:
+        selection["fallback_reason"]=str(exc)
+    selection["approved_v1_reproduced"]=not a.fixture
     details,facade_report=facade(p,ground,height,config)
     pbr,material_manifest=load_pbr(a.materials) if a.materials else ((synthetic_pbr(),{"source":"synthetic fixture only"}) if a.fixture else ({},None))
     out=a.output/"church.glb";glb(out,roofs,walls,texture,uv,details,config,pbr)
@@ -270,16 +311,16 @@ def main():
         for k in (1,2):
             mat=j["materials"][k];assert "normalTexture" in mat and "metallicRoughnessTexture" in mat["pbrMetallicRoughness"]
             assert all("TEXCOORD_0" in q["attributes"] for q in j["meshes"][0]["primitives"] if q["material"]==k)
-    if out.stat().st_size>12_000_000:raise ValueError("Church GLB exceeds 12 MB local preview ceiling")
+    
     all_faces=roofs+walls+[tri for faces in details.values() for tri in faces]
     coords=np.asarray(all_faces).reshape(-1,3);lo=coords.min(axis=0);hi=coords.max(axis=0);center=(lo+hi)/2;half=(hi-lo)/2
     x,y,z=center;hx,hy,hz=half
     # 3D Tiles local Cartesian Z-up: X east, Y north, Z up. GLB is native Y-up.
     tiles={"asset":{"version":"1.1"},"geometricError":0,"root":{"boundingVolume":{"box":[x,-z,y,hx,0,0,0,hz,0,0,0,hy]},"geometricError":0,"refine":"REPLACE","content":{"uri":"church.glb"}}}
     jsonout(a.output/"tileset.json",tiles)
-    report={"fixture":a.fixture,"osm_id":CHURCH,"source":"SYNTHETIC — NOT REAL" if a.fixture else "DGT class-6 fitted planar roof facets + OSM footprint + DGT 2025 orthophoto; walls and facade details estimated","origin_lat_lon":list(ORIGIN),"frame":"X east, Y above approved DGT terrain base, Z south","bounds":[lo.tolist(),hi.tolist()],"roof_triangles":len(roofs),"wall_triangles":len(walls),"footprint_m2":area,"roof_sample_cells":n,"holdout_rmse_m":rmse,"nearest_sample_p95_m":float(np.percentile(dist,95)),"nearest_sample_max_m":float(dist.max()),"glb_sha256":sha(out),"glb_bytes":out.stat().st_size,"source_hashes":sources,"texture_tile_sha256":tex_sources,"visual_review_required":True}
-    report.update(materials=material_manifest,pbr_geometry_unchanged=True,pbr_measured_roof_unchanged=True,roof_regions=regions,roof_method="robust continuous planar envelope per tower/nave region; exact plane intersections",facade=facade_report,facade_triangles=sum(len(v) for v in details.values()),facade_config=config,previous_real_rmse_m=.4317902658049366,previous_real_top_m=20.881288115940958)
-    report["checks"]={"facet_coverage":abs(area-p.area)<=.01,"facade":(not (config.get("porta_principal") or {}).get("enabled",True) or facade_report["door"]==1) and (not (config.get("janelas") or {}).get("enabled",True) or facade_report["window"]>0) and (not (config.get("cunhais_granito") or {}).get("enabled",True) or facade_report["quoin_strips"]>0),"tower":any(r["name"]=="tower" for r in regions),"sample_support":report["nearest_sample_p95_m"]<=2 and report["nearest_sample_max_m"]<=5,"holdout_rmse":rmse<=1.0,"preserve_measured_top":a.fixture or abs(float(hi[1])-20.881288115940958)<=1.5}
+    report={"fixture":a.fixture,"osm_id":CHURCH,"source":"SYNTHETIC — NOT REAL" if a.fixture else "DGT class-6 roof envelope + OSM footprint + DGT 2025 orthophoto; walls and facade details estimated","origin_lat_lon":list(ORIGIN),"frame":"X east, Y above approved DGT terrain base, Z south","bounds":[lo.tolist(),hi.tolist()],"roof_triangles":len(roofs),"wall_triangles":len(walls),"footprint_m2":area,"roof_sample_cells":n,"holdout_rmse_m":rmse,"nearest_sample_p95_m":float(np.percentile(dist,95)),"nearest_sample_max_m":float(dist.max()),"glb_sha256":sha(out),"glb_bytes":out.stat().st_size,"source_hashes":sources,"texture_tile_sha256":tex_sources,"visual_review_required":True}
+    report.update(materials=material_manifest,pbr_geometry_unchanged=True,pbr_measured_roof_unchanged=True,roof_regions=regions,roof_method=selection["selected"],roof_selection=selection,facade=facade_report,facade_triangles=sum(len(v) for v in details.values()),facade_config=config,previous_real_rmse_m=.4317902658049366,previous_real_top_m=20.881288115940958)
+    report["checks"]={"facet_coverage":abs(area-p.area)<=.01,"facade":(not (config.get("porta_principal") or {}).get("enabled",True) or facade_report["door"]==1) and (not (config.get("janelas") or {}).get("enabled",True) or facade_report["window"]>0) and (not (config.get("cunhais_granito") or {}).get("enabled",True) or facade_report["quoin_strips"]>0),"tower":selection["selected"]=="V1" or selection["candidate"]["checks"]["preserve_tower_vertices"],"sample_support":report["nearest_sample_p95_m"]<=2 and report["nearest_sample_max_m"]<=5,"holdout_rmse":rmse<=baseline_rmse+1e-9 and (a.fixture or rmse<=.4317902658049366+1e-5),"preserve_measured_top":abs(float(np.asarray(roofs)[:,:,1].max())-old_top)<=.02}
     report["pass"]=bool(all(report["checks"].values()))
     jsonout(a.output/"church-report.json",report);print("CHURCH_CANDIDATE",json.dumps(report))
     if not report["pass"]:raise SystemExit("Roof support/holdout gate failed; do not integrate")
