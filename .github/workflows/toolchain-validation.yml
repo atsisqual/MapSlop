@@ -214,7 +214,9 @@ jobs:
           mkdir /tmp/render-evidence
           lib=$(find /usr/lib -name 'librenderdoc.so*' -type f -print -quit)
           test -n "$lib"
+          echo "Capture stage: $(realpath "$lib")"
           xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 LD_PRELOAD="$lib" /tmp/render-fixture /tmp/render-evidence/frame
+          echo "Capture completed; starting replay"
           cap=$(find /tmp/render-evidence -name '*.rdc' -print -quit)
           test -n "$cap"
           /usr/bin/python3 - "$cap" <<'PY'
@@ -313,7 +315,8 @@ jobs:
           git -C /tmp/mmi fetch --depth 1 origin 70fca735bd42b1785356622a07e13c2604ff9af1
           git -C /tmp/mmi checkout --detach FETCH_HEAD
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y libxi6 libxrender1 libxxf86vm1 libgl1 libxfixes3
+          sudo apt-get install --no-install-recommends -y libxi6 libxrender1 libxxf86vm1 libgl1 libxfixes3 libfreeimage3
+          echo "IMAGEIO_FREEIMAGE_LIB=$(find /usr/lib -name 'libfreeimage.so.3' -print -quit)" >> "$GITHUB_ENV"
       - name: Actual addon registration and BlenderGIS CRS roundtrip (no web services)
         run: |
           python tools/blender-addon-qa.py -- /tmp/BlenderGIS /tmp/mmi/blender/MapsModelsImporter /tmp/blender-addons.json
