@@ -33,10 +33,10 @@ def main():
             if e["asset"]!=asset or set(e["maps"])!=set(MAPS):raise ValueError("Unexpected lock entry")
             for key,m in e["maps"].items():
                 if m["file"]!=role+"-"+key+".jpg":raise ValueError("Unexpected filename")
-                raw=get(m["url"],4_000_000)
+                raw=get(m["url"],int(m["bytes"]))
                 if len(raw)!=m["bytes"] or sha(raw)!=m["sha256"] or hashlib.md5(raw).hexdigest()!=m["provider_md5"]:raise ValueError("Locked material hash mismatch")
                 im=Image.open(io.BytesIO(raw));im.load()
-                if im.format!="JPEG" or im.size!=(1024,1024):raise ValueError("Unexpected locked texture")
+                if im.format!="JPEG" or list(im.size)!=m["size_px"]:raise ValueError("Unexpected locked texture")
                 (a.output/m["file"]).write_bytes(raw)
         for name in ("manifest.json","materials.lock.json"):(a.output/name).write_text(json.dumps(lock,indent=2)+"\n")
         print("PBR_LOCKED",json.dumps(lock));return
