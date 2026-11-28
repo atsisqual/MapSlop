@@ -22,7 +22,8 @@ int main(int argc,char**argv){
  GLuint p=glCreateProgram();glAttachShader(p,v);glAttachShader(p,f);glLinkProgram(p);GLint ok;glGetProgramiv(p,GL_LINK_STATUS,&ok);if(!ok)return 5;
  GLuint vao;glGenVertexArrays(1,&vao);glBindVertexArray(vao);glUseProgram(p);
  SDL_GL_SwapWindow(w);api->StartFrameCapture(NULL,NULL);
- glViewport(0,0,320,240);glClearColor(.1,.1,.1,1);glClear(GL_COLOR_BUFFER_BIT);glDrawArrays(GL_TRIANGLES,0,3);glFinish();SDL_GL_SwapWindow(w);
+ glViewport(0,0,320,240);glClearColor(.1,.1,.1,1);glClear(GL_COLOR_BUFFER_BIT);glDrawArrays(GL_TRIANGLES,0,3);glFinish();
  if(!api->EndFrameCapture(NULL,NULL))return 6;
+ SDL_GL_SwapWindow(w);
  SDL_GL_DeleteContext(ctx);SDL_DestroyWindow(w);SDL_Quit();return 0;
 }
