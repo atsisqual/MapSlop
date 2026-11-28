@@ -8,6 +8,9 @@ on:
       - 'data/pedome/references/materials.lock.json'
       - 'tools/package-playable-preview.py'
       - 'tools/roof_plane_fit.py'
+      - 'tools/roof_ransac.py'
+      - 'tools/optimize-church.mjs'
+      - 'tools/optimize-church.sh'
       - 'tools/facade_details.py'
       - 'tools/install-local-church.py'
       - 'tests/church-in-game.mjs'
@@ -37,6 +40,7 @@ jobs:
         run: |
           python -m pip install -r requirements-vegetation.txt Pillow==11.3.0 PyYAML==6.0.3
           python tools/build-local-church.py --fixture --output /tmp/local-3d
+          bash tools/optimize-church.sh /tmp/local-3d
           bash tools/stage-local-3d.sh /tmp/local-3d
       - name: Compare GLB and 3D Tiles renderers
         run: |
@@ -66,11 +70,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12.10'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
       - name: Verify real CC0 maps on synthetic geometry
         run: |
           python -m pip install -r requirements-vegetation.txt Pillow==11.3.0 PyYAML==6.0.3
           python tools/fetch-cc0-materials.py /tmp/cc0-materials --lock data/pedome/references/materials.lock.json
           python tools/build-local-church.py --fixture --materials /tmp/cc0-materials --output /tmp/cc0-fixture
+          bash tools/optimize-church.sh /tmp/cc0-fixture
           jq -e '.pass and .pbr_geometry_unchanged and .pbr_measured_roof_unchanged and .materials.license == "CC0-1.0"' /tmp/cc0-fixture/church-report.json
       - uses: actions/upload-artifact@v4
         if: always()
@@ -78,7 +86,7 @@ jobs:
           name: cc0-pbr-source-evidence
           path: |
             /tmp/cc0-materials/*.json
-            /tmp/cc0-fixture/church-report.json
+            /tmp/cc0-fixture/*.json
   real:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/agent/local-photogrammetry'
     needs: fixture
@@ -103,7 +111,11 @@ jobs:
       - name: Retrieve immutable approved DGT derivatives
         run: |
           set -euo pipefail
-          mkdir -p /tmp/combined /tmp/runtime /tmp/church-input
+          mkdir -p /tmp/combined /tmp/runtime /tmp/church-input /tmp/approved-v1
+          tag=geodata-dgt-local-church-46138928840-1
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/approved-v1 --pattern church.glb
+          echo '26e9bce51daaf408408fe8e63de621c61aed0cc788c6cfcc13fcfd5a1ebe42b9  /tmp/approved-v1/church.glb' | sha256sum -c -
           tag=geodata-dgt-orthophoto-46098427966-1
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/combined --pattern combined-runtime.tar.gz --pattern combined-report.json --pattern combined-inputs.json --pattern SHA256SUMS.txt
@@ -117,9 +129,10 @@ jobs:
           done
       - name: Retrieve CC0 material maps and record exact provenance
         run: python tools/fetch-cc0-materials.py /tmp/cc0-materials --lock data/pedome/references/materials.lock.json
-      - name: Fit roof planes and configurable facade details
+      - name: Compare RANSAC with exact approved V1, protect tower and optimize materials
         run: |
-          python tools/build-local-church.py --input /tmp/church-input --runtime /tmp/runtime --materials /tmp/cc0-materials --output /tmp/local-3d
+          python tools/build-local-church.py --input /tmp/church-input --runtime /tmp/runtime --materials /tmp/cc0-materials --approved-v1 /tmp/approved-v1/church.glb --output /tmp/local-3d
+          bash tools/optimize-church.sh /tmp/local-3d
           bash tools/stage-local-3d.sh /tmp/local-3d
       - name: Render real candidate with both loaders
         run: |
@@ -174,6 +187,6 @@ jobs:
           if [ "${#files[@]}" -eq 0 ]; then echo 'No evidence produced'; exit 1; fi
           sha256sum "${files[@]}" > SHA256SUMS.txt
           tag=geodata-dgt-local-church-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
-          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Local DGT church candidate $GITHUB_RUN_ID" --notes "Fitted roof facets from LiDAR, procedural estimated facades, private standalone and in-game validation. Not approved for publication." "${files[@]}" SHA256SUMS.txt
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Local DGT church candidate $GITHUB_RUN_ID" --notes "V1 or non-regressive RANSAC roof, procedural estimated facades, resolution-preserving compression, private standalone and in-game validation. Not approved for publication." "${files[@]}" SHA256SUMS.txt
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
           echo "PRIVATE_EVIDENCE $tag"
