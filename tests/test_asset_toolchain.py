@@ -28,6 +28,21 @@ class AssetTests(unittest.TestCase):
         t=a.tile_set([{"uri":"one.glb","bounds":[[0,0,-5],[2,4,-1]]},{"uri":"two.glb","bounds":[[2,0,-1],[6,2,3]]}])
         self.assertEqual(t["root"]["children"][0]["boundingVolume"]["box"][:3],[1,3,2])
         with self.assertRaises(ValueError):a.tile_set([{"uri":"../bad.glb","bounds":[[0,0,0],[1,1,1]]}])
+    def test_atlas_pixels_and_uv(self):
+        from PIL import Image
+        m=load("texture-atlas")
+        im1=np.arange(8*10*4,dtype=np.uint8).reshape(8,10,4)
+        im2=np.full((7,9,4),[70,120,40,255],dtype=np.uint8)
+        im,remaps=m.atlas({"a":Image.fromarray(im1),"b":Image.fromarray(im2)})
+        a1=np.array(im)
+        for key,src in (("a",im1),("b",im2)):
+            x,y,w,h=remaps[key]["rect_px"]
+            self.assertTrue(np.array_equal(a1[y:y+h,x:x+w],src))
+            self.assertTrue(np.array_equal(a1[y-1,x:x+w],src[0]))
+            u=m.transform_uv([[0,0],[1,1]],remaps[key])
+            self.assertTrue(np.allclose(u[0],[x/im.width,y/im.height]))
+            self.assertTrue(np.allclose(u[1],[(x+w)/im.width,(y+h)/im.height]))
+        with self.assertRaises(ValueError):m.transform_uv([[2,0]],remaps["a"])
     def test_inpainting(self):
         m=load("inpaint-local");yy,xx=np.indices((96,96));rgb=np.stack([80+xx,60+yy,70+xx//2],axis=2).astype(np.uint8)
         mask=np.zeros((96,96),bool);mask[36:49,30:53]=True;damaged=rgb.copy();damaged[mask]=255
