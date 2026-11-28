@@ -6,6 +6,7 @@ on:
       - 'tools/pedome-lighting.mjs'
       - 'tools/install-lighting-preview.py'
       - 'tests/lighting-*.mjs'
+      - 'tests/lighting-image-gate.py'
       - '.github/workflows/pedome-lighting.yml'
   workflow_call:
 permissions:
@@ -39,6 +40,8 @@ jobs:
           trap 'kill $! || true' EXIT
           for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
           node tests/lighting-fixture.mjs
+          python -m pip install Pillow==11.3.0
+          python tests/lighting-image-gate.py /tmp/lighting-fixture
       - uses: actions/upload-artifact@v4
         if: always()
         with:
