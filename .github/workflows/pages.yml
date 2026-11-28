@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       preview_ref:
-        description: Same-repository branch to publish under /preview/ (empty = normal main build)
+        description: Same-repository agent branch with Pages preview build contract (dispatch on main)
         required: false
         type: string
         default: ''
@@ -18,6 +18,7 @@ on:
       - 'tests/android-render-gate.mjs'
       - 'tools/build-orthophoto-tiles.py'
       - 'tools/verify-pot-orthophoto.py'
+      - 'tools/apply-pages-preview.py'
   push:
     branches: [main]
     paths:
@@ -34,6 +35,7 @@ on:
       - 'tests/android-render-gate.mjs'
       - 'tools/build-orthophoto-tiles.py'
       - 'tools/verify-pot-orthophoto.py'
+      - 'tools/apply-pages-preview.py'
       - 'tests/browser-smoke.mjs'
       - 'package-lock.json'
       - 'data/pedome/pedome-osm.json'
@@ -46,7 +48,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   plan:
-    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'agent/publish-combined' || github.head_ref == 'agent/android-render-hotfix')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/agent/android-render-hotfix')
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'agent/publish-combined' || github.head_ref == 'agent/android-render-hotfix' || github.head_ref == 'agent/main-pages-preview'))
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -59,6 +61,7 @@ jobs:
     steps:
       - id: plan
         env:
+          PR_REF: ${{ github.head_ref }}
           GH_TOKEN: ${{ github.token }}
           REQUESTED_PREVIEW: ${{ inputs.preview_ref }}
           PR_SHA: ${{ github.event.pull_request.head.sha }}
@@ -66,15 +69,22 @@ jobs:
         run: |
           set -euo pipefail
           root='' preview='' publish=false
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ -n "$REQUESTED_PREVIEW" ]; then
-            # Only the reviewed same-repository runtime overlay is supported initially.
-            # Expand explicitly when each visual branch has a Pages build contract.
-            test "$REQUESTED_PREVIEW" = agent/android-render-hotfix
-            test "$GITHUB_REF" = refs/heads/main || test "$GITHUB_REF" = "refs/heads/$REQUESTED_PREVIEW"
+          if [ "$GITHUB_EVENT_NAME" = pull_request ] && [ "$PR_REF" = agent/main-pages-preview ]; then
+            # Exercise the two-build and assembly contract, without a deployment.
+            REQUESTED_PREVIEW=agent/android-render-hotfix
+          fi
+          if [ -n "$REQUESTED_PREVIEW" ]; then
+            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+              test "$GITHUB_REF" = refs/heads/main
+            else
+              test "$GITHUB_EVENT_NAME" = pull_request && test "$PR_REF" = agent/main-pages-preview
+            fi
+            # Strict path/ref grammar; no tags, forks, traversal or shell interpolation.
+            [[ "$REQUESTED_PREVIEW" =~ ^agent/[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$ ]]
             root=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
             preview=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$REQUESTED_PREVIEW" --jq .object.sha)
             matrix=$(jq -cn --arg root "$root" --arg preview "$preview" --arg ref "$REQUESTED_PREVIEW" '{include:[{role:"root",sha:$root,ref:""},{role:"preview",sha:$preview,ref:$ref}]}')
-            publish=true
+            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then publish=true; fi
           elif [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             matrix=$(jq -cn --arg sha "$PR_SHA" '{include:[{role:"candidate",sha:$sha,ref:""}]}')
           elif [ "$GITHUB_REF" = refs/heads/main ]; then
@@ -82,7 +92,7 @@ jobs:
             matrix=$(jq -cn --arg sha "$root" '{include:[{role:"root",sha:$sha,ref:""}]}')
             publish=true
           else
-            matrix=$(jq -cn --arg sha "$GITHUB_SHA" '{include:[{role:"candidate",sha:$sha,ref:""}]}')
+            echo 'Dispatch must use --ref main' >&2; exit 1
           fi
           {
             echo "matrix=$matrix"
@@ -114,8 +124,16 @@ jobs:
           if [ -f tools/apply-android-render-hotfix.py ]; then
             echo "ANDROID_HOTFIX=1" >> "$GITHUB_ENV"
           else
-            test -z "$PREVIEW_REF"
             echo "ANDROID_HOTFIX=0" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$PREVIEW_REF" ]; then
+            # The archived runtime cannot silently stand in for a changed branch.
+            # #46 implements the built-in overlay; other branches supply an explicit hook.
+            if [ "$PREVIEW_REF" = agent/android-render-hotfix ]; then
+              test -f tools/apply-android-render-hotfix.py
+            else
+              test -f tools/apply-pages-preview.py || { echo 'Branch needs tools/apply-pages-preview.py to materialize its runtime changes' >&2; exit 1; }
+            fi
           fi
       - uses: actions/setup-node@v4
         with:
@@ -200,6 +218,13 @@ jobs:
           node --check /tmp/pedome/js/pedome.js
           node --check /tmp/pedome/js/pedome-orthophoto-preview.mjs
           node --check /tmp/pedome/js/pedome-render-diagnostics.mjs
+      - name: Apply explicit branch runtime contract
+        if: env.PREVIEW_REF != '' && env.PREVIEW_REF != 'agent/android-render-hotfix'
+        run: |
+          set -euo pipefail
+          python tools/apply-pages-preview.py /tmp/pedome
+          node --check /tmp/pedome/js/pedome.js
+          cmp /tmp/pedome/js/terrain.bin /tmp/pages-terrain/terrain-tin.bin
       - name: Stage only runtime, public OSM source and verified compressed TIN
         shell: bash
         run: |
@@ -387,7 +412,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
   assemble:
-    if: needs.plan.outputs.publish == 'true'
+    if: needs.plan.outputs.publish == 'true' || needs.plan.outputs.preview_sha != ''
     needs: [plan, build]
     runs-on: ubuntu-24.04
     permissions:
@@ -414,7 +439,7 @@ jobs:
           test -f /tmp/site/.nojekyll
           ! grep -Fq 'id="preview-banner"' /tmp/site/mobile.html
           if [ -n "$PREVIEW_SHA" ]; then
-            test "$PREVIEW_REF" = agent/android-render-hotfix
+            [[ "$PREVIEW_REF" =~ ^agent/[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$ ]]
             test "$(cat /tmp/preview/version.txt)" = "${PREVIEW_SHA:0:12}"
             grep -Fq "PREVIEW ${PREVIEW_SHA:0:12}" /tmp/preview/mobile.html
             mkdir -p "/tmp/site/preview/$(dirname "$PREVIEW_REF")"
@@ -423,10 +448,11 @@ jobs:
           fi
           test "$(du -sb /tmp/site | cut -f1)" -lt 200000000
       - uses: actions/upload-pages-artifact@v3
+        if: needs.plan.outputs.publish == 'true' && github.ref == 'refs/heads/main'
         with:
           path: /tmp/site
   deploy:
-    if: needs.plan.outputs.publish == 'true'
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.publish == 'true'
     needs: [plan, assemble]
     permissions:
       contents: read
@@ -460,9 +486,12 @@ jobs:
               if [ -n "$PREVIEW_SHA" ]; then
                 candidate="$base/preview/$PREVIEW_REF"
                 pversion="${PREVIEW_SHA:0:12}"
-                if ! curl -fsSL --max-time 15 "$candidate/mobile.html?build=$pversion" -o /tmp/preview-mobile.html || ! grep -Fq "PREVIEW $pversion" /tmp/preview-mobile.html || ! grep -Fq "pedome-$pversion.js" /tmp/preview-mobile.html || ! curl -fsSL --max-time 15 "$candidate/ortho/manifest.json?build=$pversion" | jq -e '.sampling == "pot-v1" and (.tiles | length == 64) and all(.tiles[]; .levels.far.px == 64 and .levels.mid.px == 128 and .levels.near.px == 512)' ; then
+                if ! curl -fsSL --max-time 15 "$candidate/mobile.html?build=$pversion" -o /tmp/preview-mobile.html || ! grep -Fq "PREVIEW $pversion" /tmp/preview-mobile.html || ! grep -Fq "pedome-$pversion.js" /tmp/preview-mobile.html || ! curl -fsSL --max-time 15 "$candidate/ortho/manifest.json?build=$pversion" | jq -e '(.tiles | length == 64)' ; then
                   sleep 10
                   continue
+                fi
+                if [ "$PREVIEW_REF" = agent/android-render-hotfix ]; then
+                  if ! curl -fsSL --max-time 15 "$candidate/ortho/manifest.json?build=$pversion" | jq -e '.sampling == "pot-v1" and all(.tiles[]; .levels.far.px == 64 and .levels.mid.px == 128 and .levels.near.px == 512)'; then sleep 10; continue; fi
                 fi
                 echo "Preview verified: $candidate/mobile.html?debug=1"
               fi
