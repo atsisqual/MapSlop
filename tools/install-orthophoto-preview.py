@@ -23,7 +23,7 @@ def patch(old,new):
     s=s.replace(old,new)
 patch("import { buildGround } from './ground.js';","import { buildGround } from './ground.js';\nimport { installOrthophoto } from './pedome-orthophoto-preview.mjs';")
 patch("scene.add(buildGround(renderer));","const ground=buildGround(renderer);scene.add(ground);const ortho=await installOrthophoto(scene,ground,renderer);")
-patch("window.mapslop={GEO,controllers,camera,world};","window.mapslop={GEO,controllers,camera,world,orthoPreview:{ortho,scene,renderer}};")
+patch("window.mapslop={GEO,controllers,camera,world};","window.mapslop={GEO,controllers,camera,world,orthoPreview:{ortho,scene,renderer,renderDrive:async(dt,t)=>{cameras.update(dt,t);ortho.update(camera);renderer.render(scene,camera);ui.update(t*1000);await new Promise(r=>requestAnimationFrame(r));}}};")
 patch("renderer.render(scene,camera);ui.update(now);","ortho.update(camera);renderer.render(scene,camera);ui.update(now);")
 p.write_text(s)
 p=out/"index.html"
