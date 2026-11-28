@@ -1,3 +1,6 @@
+## Auditoria técnica 2026-11-28
+Ver [docs/audit/2026-11-28-auditoria-tecnica.md](audit/2026-11-28-auditoria-tecnica.md): diagnóstico de #40–#43, inventário de ferramentas por nível N0–N9, backlog P0–P4 e recomendação de PRs. Proposta; aguarda aprovação do dono. Nada no jogo/Pages foi alterado.
+
 # Estado do projeto
 
 ## Mapillary — controlo positivo
