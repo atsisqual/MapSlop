@@ -2,7 +2,7 @@
 """Run selected offline infrastructure converters and retain exact receipts.
 Outputs are candidates only, never install directly over approved terrain/physics.
 """
-import argparse,hashlib,json,math,os,shutil,struct,subprocess,xml.etree.ElementTree as ET
+import argparse,hashlib,json,math,os,shutil,struct,subprocess,sys,xml.etree.ElementTree as ET
 from pathlib import Path
 def sha(p):
     h=hashlib.sha256()
@@ -55,7 +55,7 @@ def run(mode,src,out,exe=None):
         elif mode=="cityjson":
             doc=json.loads(src.read_text())
             if doc.get("appearance",{}).get("textures"):raise ValueError("Textured CityJSON must use OBJ workflow; cjio GLB loses texture")
-            dest=out/"scene.glb";command([exe or "cjio",src,"export","glb",dest]);r.update(glb=glb_info(dest),object_ids=sorted(doc["CityObjects"]),source_crs=doc.get("metadata",{}).get("referenceSystem"),source_transform=doc.get("transform"),limitations="GLB conversion only; local axes/scale and independent controls must be validated before use")
+            dest=out/"scene.glb";command([sys.executable,Path(__file__).resolve().with_name("cityjson-earcut-glb.py"),src,dest]);r.update(glb=glb_info(dest),object_ids=sorted(doc["CityObjects"]),source_crs=doc.get("metadata",{}).get("referenceSystem"),source_transform=doc.get("transform"),limitations="GLB conversion only; local axes/scale and independent controls must be validated before use")
         else:raise ValueError("Unknown mode")
         r["pass"]=True
     except Exception as e:r["error"]=str(e);raise
