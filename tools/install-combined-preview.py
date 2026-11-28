@@ -44,7 +44,7 @@ def paving(osm):
         if not (t.get("area")=="yes" and t.get("highway") in ("pedestrian","footway") or t.get("surface") in PAVED and (t.get("area")=="yes" or t.get("amenity")=="parking" or t.get("landuse")=="plaza")):continue
         p=Polygon([to_world(v["lon"],v["lat"]) for v in g]).buffer(0)
         if p.is_empty or not p.is_valid:continue
-        ts=[q for q in triangulate(p) if p.covers(q)]
+        ts=list(sh.constrained_delaunay_triangles(p).geoms)
         if abs(sum(q.area for q in ts)-p.area)>.01:raise ValueError("Incomplete explicit paving polygon "+id)
         for q in ts:
             q=sh.orient_polygons(q,exterior_cw=False) if hasattr(sh,"orient_polygons") else q
@@ -96,7 +96,6 @@ def main():
     patch(shell,"import { installPedomeUI } from './pedome-ui.js';","import { installPedomeUI } from './pedome-ui.js';\nimport { installVegetation } from './pedome-vegetation-preview.mjs';\nimport { trees } from './pedome-trees.mjs';")
     patch(shell,"const camera=cameras.camera;","const camera=cameras.camera;const vegetation=installVegetation(scene,trees);")
     patch(shell,"orthoPreview:{ortho,scene,renderer,","vegetationPreview:{vegetation,scene,renderer},orthoPreview:{ortho,scene,renderer,")
-    patch(shell,"ortho.update(camera);renderer.render(scene,camera);","ortho.update(camera);vegetation.update(camera);renderer.render(scene,camera);") if False else None
     s=shell.read_text();old="ortho.update(camera);renderer.render(scene,camera);"
     if s.count(old)!=2:raise ValueError("Expected both render paths")
     shell.write_text(s.replace(old,"ortho.update(camera);vegetation.update(camera);renderer.render(scene,camera);"))
@@ -114,6 +113,7 @@ def main():
     patch(street,"for (const side of [-1, 1]) {\n      // (a metre past","for (const side of [-1, 1]) {\n      const sourceSide=(side*(e.osmForward?1:-1))>0?'right':'left';\n      const width=GEO.explicitPaving.sidewalks[e.osmWay]?.[sourceSide];\n      if(!width||e.divided)continue;\n      // (a metre past")
     patch(street,"side * (e.half + SIDEWALK), 1","side * (e.half + width), .25")
     patch(street,"const w = Math.max(1.6, r.w || 2) / 2;","const width=GEO.explicitPaving.paths[r.id];if(!width)continue;const w=width/2;")
+    patch(street,"paths.add(q);","paths.add(q,{osmWay:r.id});")
     patch(street,"return { carriageways, service, sidewalks, paths };","for(const a of GEO.explicitPaving.areas)for(const q of offRoad(a.ring))paths.add(q,{osmWay:a.id});\n  return { carriageways, service, sidewalks, paths };")
     # Explicit at-grade paving should retain photographic detail.
     streets=js/"streets.js"
