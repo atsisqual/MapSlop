@@ -38,7 +38,7 @@ class CombinedTests(unittest.TestCase):
             rgb=np.full((48,48,3),[170,80,45],dtype=np.uint8)
             rgb[4:44,25:44]=[140,140,140]
             Image.fromarray(rgb).save(p/"near.webp",lossless=True)
-            (p/"manifest.json").write_text(json.dumps({"world_extent":[0,0,12,12],"tile_m":12,"gutter_m":0,"tiles":[{"i":0,"j":0,"levels":{"near":{"path":"near.webp"}}}]}))
+            (p/"manifest.json").write_text(json.dumps({"world_extent":[0,0,12,12],"tile_m":12,"gutter_m":0,"tiles":[{"i":0,"j":0,"levels":{"near":{"path":"near.webp","px":48,"metres_per_pixel":0.25}}}]}))
             geo={"buildings":[{"id":1,"ring":[1,1,5,1,5,10,1,10]},{"id":2,"ring":[7,1,10,1,10,10,7,10]}]}
             result=m.roof_colors(geo,p)
             self.assertEqual(result["1"]["class"],"terracotta")
