@@ -26,7 +26,9 @@ def run_photos(root,manifest,out,backend,odm_image=None):
                 result=subprocess.run(list(map(str,args)),cwd=out,stdout=log,stderr=subprocess.STDOUT,timeout=7200)
             r.update(exit_code=result.returncode,seconds=round(time.monotonic()-start,2),outputs={str(p):p.stat().st_size if p.is_file() else None for p in expected})
             r["status"]="pass" if result.returncode==0 and all(p.is_file() and p.stat().st_size>0 for p in expected) else "failed"
-            if r["status"]!="pass":raise RuntimeError("Failed stage "+name)
+            if r["status"]!="pass":
+                print((out/(name+".log")).read_text(errors="replace")[-16000:],flush=True)
+                raise RuntimeError("Failed stage "+name)
         except Exception as e:r["error"]=str(e);r["status"]="failed";raise
         finally:save()
     try:
@@ -57,8 +59,8 @@ def run_photos(root,manifest,out,backend,odm_image=None):
                 scene=out/"scene.mvs";cloud=out/"scene_dense.mvs";mesh=out/"scene_mesh.mvs";tex=out/"scene_textured.mvs"
                 command("interface",["InterfaceCOLMAP","-i",dense,"-o",scene,"--image-folder",dense/"images"],[scene])
                 command("densify",["DensifyPointCloud","-i",scene,"-o",cloud,"--resolution-level","1","--max-threads","2"],[cloud])
-                command("mesh",["ReconstructMesh","-i",cloud,"-o",mesh],[mesh])
-                command("texture",["TextureMesh","-i",mesh,"-o",tex,"--export-type","obj"],[out/"scene_textured.obj"])
+                command("mesh",["ReconstructMesh","-i",cloud,"-o",mesh,"--max-threads","2"],[mesh])
+                command("texture",["TextureMesh","-i",mesh,"-o",tex,"--max-threads","2","--export-type","obj"],[out/"scene_textured.obj"])
         report["pass"]=True
     finally:save()
     return report
