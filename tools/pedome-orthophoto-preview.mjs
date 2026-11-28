@@ -1,8 +1,13 @@
 import * as THREE from 'three/webgpu';
+import {configureGroundTexture,isPOT} from './pedome-render-diagnostics.mjs';
 import {partitionTin} from './orthophoto-partition.mjs';
 const levels=['far','mid','near'];
 const maxActive={near:8,mid:20};
 export async function installOrthophoto(scene,ground,renderer){
+ if(new URLSearchParams(location.search).get('ortho')==='0'){
+  const group=new THREE.Group();group.name='PrivateOrthophotoGround';group.visible=false;scene.add(group);ground.visible=true;
+  return {group,ground,update(){},inspect(){return null;},report(){return {enabled:false,settled:true,errors:[],tile_count:0};}};
+ }
  const root=new URL('../ortho/',import.meta.url),res=await fetch(new URL('manifest.json',root));
  if(!res.ok)throw Error('Missing orthophoto manifest');
  const manifest=await res.json();
@@ -15,8 +20,8 @@ export async function installOrthophoto(scene,ground,renderer){
   const data=r.tile.levels[l];stats.bytes_requested+=data.bytes;stats.loads++;
   const tex=await loader.loadAsync(new URL(data.path,root).href);
   tex.name=data.path;tex.userData={level:l,metres_per_pixel:data.metres_per_pixel,expected_px:data.px};
-  if(tex.image.width!==data.px||tex.image.height!==data.px){tex.dispose();throw Error('Unexpected tile dimensions '+data.path);}
-  tex.colorSpace=THREE.SRGBColorSpace;tex.anisotropy=Math.min(8,renderer.getMaxAnisotropy?.()||4);
+  if(!isPOT(data.px)||tex.image.width!==data.px||tex.image.height!==data.px){tex.dispose();throw Error('Unexpected tile dimensions '+data.path);}
+  tex.colorSpace=THREE.SRGBColorSpace;configureGroundTexture(tex,renderer);
   return tex;
  }
  for(const tile of manifest.tiles){
@@ -24,7 +29,7 @@ export async function installOrthophoto(scene,ground,renderer){
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(p.positions,3));g.setAttribute('normal',new THREE.Float32BufferAttribute(p.normals,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(p.uv,2));g.setIndex(p.indices);
   const m=new THREE.MeshStandardMaterial({roughness:.95});
-  const mesh=new THREE.Mesh(g,m);mesh.name='Ortho-'+tile.i+'-'+tile.j;group.add(mesh);
+  const mesh=new THREE.Mesh(g,m);mesh.name='Ortho-'+tile.i+'-'+tile.j;mesh.position.y=-0.02;group.add(mesh); // render-only separation from roads/paving; TIN unchanged
   records.push({tile,mesh,base:null,current:null,level:'far',want:'far',pending:false,d:Infinity});
  }
  let cursor=0;
