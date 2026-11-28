@@ -144,6 +144,22 @@ export const tin = T.kind === 'tin' ? makeTin(T) : null;""")
     else:
         geo_path.write_text('// Geographic data © OpenStreetMap contributors, ODbL 1.0 (real mode). See upstream README for terrain attribution.\nexport const GEO = '+json.dumps(geo,ensure_ascii=False)+';\n',encoding='utf-8')
     (out/'js/nairobi-models.js').write_text('export const MODEL_HEIGHTS = {};\nexport const MODEL_BUILDINGS = [];\n')
+    # Localise road graph, turn priority and paint together. No physics change.
+    shutil.copy2(P(__file__).resolve().parent/'traffic-side.mjs',out/'js/traffic-side.mjs')
+    f=out/'js/road-network.js'
+    patch(f,"import { GEO } from './nairobi-geodata.js';","import { GEO } from './nairobi-geodata.js';\nimport { rightLanes, rightOf } from './traffic-side.mjs';")
+    patch(f,'const each = Array.from({ length: n }, (_, i) => -(step / 2 + (n - 1 - i) * step)); // kerb lane first','const each = rightLanes(n,step); // inner lane first, offsets left to right')
+    patch(f,"const leftOf = (lanes) => {\n    const keep = lanes.length > 1 ? (lanes[1] - lanes[0]) / 2 : 1.65;\n    return lanes.map((x) => x - lanes[lanes.length - 1] - keep);\n  };","const leftOf = rightOf; // shared centreline: positive right-hand offsets")
+    # Preserve true divided-carriageway side: merge only geometrically right-hand pairs.
+    patch(f,'const offset = offsetOf(e, f);','const offset = offsetOf(e, f);\n          if(offset>0.25 || offsetOf(f,e)>0.25) continue; // opposing carriageway must be left of travel')
+    f=out/'js/road-paint.js'
+    patch(f,"import * as THREE from 'three/webgpu';","import * as THREE from 'three/webgpu';\nimport { stopBand } from './traffic-side.mjs';")
+    patch(f,"const right = back ? Math.min(f.half - 0.1, f.lanes[f.lanes.length - 1] + 1.8) : f.half - 0.1;","const [left,right] = stopBand(f,!!back);")
+    patch(f,"if (node.signal) across(f, f.len - 0.35, -f.half + 0.1, right, 0.45, WHITE);","if (node.signal) across(f, f.len - 0.35, left, right, 0.45, WHITE);")
+    patch(f,"across(f, s, -f.half + 0.1, right, 0.2, WHITE, 0.6, 0.5);","across(f, s, left, right, 0.2, WHITE, 0.6, 0.5);")
+    patch(f,"if (e.axis === 'ave') for (const o of half ? [-e.half + 0.4] : [-e.half + 0.4, e.half - 0.4]) along(e, o, 0.1, YELLOW);","if (e.axis === 'ave') for (const o of half ? [e.half - 0.4] : [-e.half + 0.4, e.half - 0.4]) along(e, o, 0.1, WHITE);")
+    f=out/'js/traffic.js'
+    patch(f,"const ACROSS = 'R';","import { ACROSS } from './traffic-side.mjs';")
     f=out/'js/controllers.js'; patch(f,'if (l.name !== name) continue;',"if (name && l.name !== name) continue;\n    if (l.tunnel || l.bridge || (l.layer || 0) !== 0 || !['residential','unclassified','tertiary','secondary','living_street'].includes(l.kind)) continue;")
     patch(f,'const len = Math.hypot(best.dx, best.dz);',"if (!best && name) return roadSpawn(null, x, z);\n  if (!best) throw new Error('No surface road for spawn');\n  const len = Math.hypot(best.dx, best.dz);")
     patch(f,'const fx = best.dx / len, fz = best.dz / len;', 'const dir = best.l.oneway === -1 ? -1 : 1;\n  const fx = dir * best.dx / len, fz = dir * best.dz / len;')
