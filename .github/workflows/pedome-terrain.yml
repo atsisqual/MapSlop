@@ -98,3 +98,9 @@ jobs:
     permissions:
       contents: write
     uses: ./.github/workflows/pedome-orthophoto.yml
+
+  clean-orthophoto:
+    if: inputs.mode == 'orthophoto' && github.ref == 'refs/heads/agent/clean-orthophoto'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/pedome-clean-orthophoto.yml
