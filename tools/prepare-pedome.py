@@ -225,7 +225,7 @@ try {
         if a.fixture or not a.terrain_bin or a.roof_preview:
             p.error('--traffic-preview requires real binary terrain, without other previews')
         f=out/'js/pedome.js'
-        patch(f,'window.mapslop={GEO,controllers,camera,world};','window.mapslop={GEO,controllers,camera,world,trafficPreview:{network,scene,renderer,roadSpawn}};')
+        patch(f,'window.mapslop={GEO,controllers,camera,world};','window.mapslop={GEO,controllers,camera,world,trafficPreview:{network,scene,renderer,roadSpawn,getUI:()=>ui}};')
     html=(out/'index.html').read_text(); imp=re.search(r'<script type="importmap">.*?</script>',html,re.S).group()
     if a.three_vendor:
         shutil.copytree(a.three_vendor,out/'vendor/three')
