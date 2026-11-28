@@ -77,9 +77,26 @@ try{
   }
   await page.close();
  }
- result.webgpuExercised=result.cases.some(c=>c.state.backend==='WebGPU');
+ if(!result.skipped&&!tryWebGPU)for(const [ortho,engine] of [['uv','node'],['flat','node'],['basic','node'],['basic','classic']]){
+  const url=new URL(base);url.search='';url.searchParams.set('debug','1');url.searchParams.set('renderer','webgl');url.searchParams.set('ortho',ortho);url.searchParams.set('mips','0');if(engine==='classic')url.searchParams.set('engine','classic');
+  const page=await browser.newPage({viewport:{width:823,height:384},isMobile:true,hasTouch:true});
+  const errors=[],requests=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&!m.text().includes('favicon'))errors.push(m.text())});page.on('request',r=>{if(new URL(r.url()).pathname.includes('/ortho/'))requests.push(r.url())});
+  try{
+   await page.goto(url.href,{waitUntil:'load',timeout:90000});
+   await page.waitForFunction(()=>window.mapslop?.ready&&window.mapslop?.orthoPreview?.ortho.report().settled||document.querySelector('#status')?.textContent.startsWith('Erro:'),{},{timeout:120000,polling:250});
+   const state=await page.evaluate(()=>{const m=window.mapslop,o=m?.orthoPreview?.ortho,r=m?.orthoPreview?.renderer;return {status:document.querySelector('#status')?.textContent,ready:m?.ready,debug:m?.renderDebug?.(),report:o?.report(),classic:r?.isWebGLRenderer===true,tiles:o?.group.children.length,material:o?.group.children[0]?.material.type,car:!!m?.orthoPreview?.scene.getObjectByName('PlayerCar'),road:!!m?.orthoPreview?.scene.getObjectByName('streets'),programs:r?.info?.programs?.length};});
+   result.cases.push({diagnostic:ortho,engine,state,errors,requests:requests.length});
+   assert.ok(state.ready,state.status);assert.deepEqual(errors,[]);assert.ok(state.tiles>0&&state.car&&state.road);assert.equal(state.classic,engine==='classic');assert.equal(state.report.mode,ortho);
+   assert.equal(state.material,engine==='classic'?'MeshBasicMaterial':'MeshBasicNodeMaterial');
+   if(ortho==='uv'||ortho==='flat'){assert.equal(state.debug.textures.length,0);assert.equal(state.report.loads,0);assert.equal(requests.filter(x=>!x.endsWith('/manifest.json')).length,0);}
+   else {assert.ok(state.debug.textures.length>=64);assert.ok(state.report.loads>=64);}
+   if(engine==='classic')assert.ok(state.programs>0,'Classic renderer did not compile programs');
+   await page.screenshot({path:join(dir,'android-'+mode+'-diagnostic-'+ortho+'-'+engine+'.png')});
+  }finally{await page.close();}
+ }
+ result.webgpuExercised=result.cases.some(c=>c.state?.backend==='WebGPU');
  result.pass=!result.skipped;
- console.log('ANDROID_RENDER_GATE',mode,JSON.stringify(result.cases.map(c=>({enabled:c.enabled,backend:c.state.backend,gpu:c.state.gpu,textures:c.state.textures.length,generated:c.state.textures.filter(t=>t.generated).length}))));
+ console.log('ANDROID_RENDER_GATE',mode,JSON.stringify(result.cases.map(c=>c.diagnostic?{diagnostic:c.diagnostic,engine:c.engine,material:c.state.material,loads:c.state.report.loads}:({enabled:c.enabled,backend:c.state.backend,gpu:c.state.gpu,textures:c.state.textures.length,generated:c.state.textures.filter(t=>t.generated).length}))));
 }finally{
  await writeFile(join(dir,'android-'+mode+'.json'),JSON.stringify(result,null,2)+'\n');
  await browser.close();

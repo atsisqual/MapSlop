@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import {texture,vec4,mix,step} from 'three/tsl';
+import * as Classic from '../vendor/three/build/three.module.js';
 
 const generated=new WeakSet(),uploaded=new WeakMap();
 const queries=()=>new URLSearchParams(location.search);
@@ -8,9 +9,34 @@ export function rendererOptions(){
  const q=queries();
  return {antialias:true,forceWebGL:!navigator.gpu||q.has('webgl')||q.get('renderer')==='webgl'};
 }
+export function createRenderer(){
+ if(queries().get('engine')==='classic')return new Classic.WebGLRenderer({antialias:true,precision:'highp'});
+ return new THREE.WebGPURenderer(rendererOptions());
+}
+export function renderDiagnosticScene(renderer,scene,camera){
+ if(renderer.isWebGLRenderer){
+  // Keep the exact mesh buffers, camera and controllers. Suppress unrelated TSL effects.
+  const allowed=new Set(['ground','PrivateOrthophotoGround','streets','PlayerCar','RoadMarkings']);
+  for(const o of scene.children){
+   if(!allowed.has(o.name)&&!o.isLight){o.visible=false;continue;}
+   if(o.isLight)continue;
+   o.traverse(m=>{
+    if(!m.isMesh||!m.material)return;
+    if(m.geometry?.attributes?.position===undefined){m.visible=false;return;}
+    const convert=mat=>{
+     if(!mat?.isNodeMaterial)return mat;
+     const color=m.name==='asphalt'?0x444444:m.name==='sidewalks'||m.name==='kerbs'||m.name==='footpaths'?0x99958e:o.name==='PlayerCar'?0x1f6f4a:mat.color||0xffffff;
+     return new Classic.MeshBasicMaterial({color,map:mat.map||null,side:mat.side,transparent:mat.transparent,opacity:mat.opacity,depthWrite:mat.depthWrite});
+    };
+    if(Array.isArray(m.material)){if(m.material.some(x=>x.isNodeMaterial))m.material=m.material.map(convert);}else if(m.material.isNodeMaterial)m.material=convert(m.material);
+   });
+  }
+ }
+ renderer.render(scene,camera);
+}
 export function groundPolicy(renderer){
  const q=queries(),b=renderer.backend;let gpu='';
- if(b.isWebGLBackend){const gl=b.gl,e=gl.getExtension('WEBGL_debug_renderer_info');gpu=String(gl.getParameter(e?e.UNMASKED_RENDERER_WEBGL:gl.RENDERER));}
+ if(renderer.isWebGLRenderer||b?.isWebGLBackend){const gl=renderer.isWebGLRenderer?renderer.getContext():b.gl,e=gl.getExtension('WEBGL_debug_renderer_info');gpu=String(gl.getParameter(e?e.UNMASKED_RENDERER_WEBGL:gl.RENDERER));}
  else gpu=JSON.stringify(b.device?.adapterInfo||{});
  const explicit=q.get('mips');
  return {mips:['0','gpu','offline'].includes(explicit)?explicit:q.get('srgb')==='0'?'gpu':/xclipse/i.test(gpu)?'0':'offline',srgb:q.get('srgb')!=='0',gpu};
@@ -38,7 +64,7 @@ export function setGroundMap(material,tex,renderer){
  material.needsUpdate=true;
 }
 export function configureGroundTexture(tex,renderer){
- const max=Math.max(1,renderer.getMaxAnisotropy()||1);
+ const max=Math.max(1,(renderer.isWebGLRenderer?renderer.capabilities.getMaxAnisotropy():renderer.getMaxAnisotropy())||1);
  const mobile=/Android/i.test(navigator.userAgent);
  const requested=Number(queries().get('anisotropy')|| (mobile?1:8));
  const policy=groundPolicy(renderer);
@@ -61,18 +87,19 @@ export function configureGroundTexture(tex,renderer){
 }
 export function textureState(tex,renderer){
  const w=tex.image?.width,h=tex.image?.height;
- const b=renderer.backend, data=b.get(tex);
+ const b=renderer.backend, data=b?.get(tex)||{};
  const expected=isPOT(w)&&isPOT(h)?1+Math.log2(Math.max(w,h)):null;
- const levels=b.isWebGPUBackend?data.texture?.mipLevelCount??null:null;
+ const levels=b?.isWebGPUBackend?data.texture?.mipLevelCount??null:null;
  return {name:tex.name,width:w,height:h,pot:isPOT(w)&&isPOT(h),
   generateMipmaps:tex.generateMipmaps,autoUpdate:tex.mipmapsAutoUpdate,
   minFilter:tex.minFilter,magFilter:tex.magFilter,
   trilinear:tex.minFilter===THREE.LinearMipmapLinearFilter&&tex.magFilter===THREE.LinearFilter,
   anisotropy:tex.anisotropy,expectedLevels:expected,gpuLevels:levels,
-  generated:generated.has(tex),uploadedLevels:uploaded.get(tex)??0,internalFormat:b.isWebGLBackend?(data.glInternalFormat??null):(data.textureDescriptorGPU?.format??null),mipMode:tex.userData?.mipMode,manualLevels:tex.mipmaps.length,colorSpace:tex.colorSpace,shaderSRGB:tex.userData?.shaderSRGB??false};
+  generated:generated.has(tex),uploadedLevels:uploaded.get(tex)??0,internalFormat:b?.isWebGLBackend?(data.glInternalFormat??null):(data.textureDescriptorGPU?.format??null),mipMode:tex.userData?.mipMode,manualLevels:tex.mipmaps.length,colorSpace:tex.colorSpace,shaderSRGB:tex.userData?.shaderSRGB??false};
 }
 export async function installRenderDiagnostics(renderer){
- const b=renderer.backend, original=b.generateMipmaps;
+ const classic=renderer.isWebGLRenderer===true,b=renderer.backend;
+ if(!classic){const original=b.generateMipmaps;
  if(typeof original!=='function')throw Error('Unknown mipmap backend');
  b.generateMipmaps=function(texture,...args){
   const result=original.call(this,texture,...args);
@@ -81,19 +108,20 @@ export async function installRenderDiagnostics(renderer){
  const update=b.updateTexture;
  if(typeof update!=='function')throw Error('Unknown texture upload backend');
  b.updateTexture=function(tex,...args){const result=update.call(this,tex,...args);uploaded.set(tex,tex.mipmaps.length||1);return result;};
- const backend=b.isWebGPUBackend?'WebGPU':b.isWebGLBackend?'WebGL2':'unknown';
+ }
+ const backend=classic?'WebGLRenderer (classic)':b.isWebGPUBackend?'WebGPU':b.isWebGLBackend?'WebGL2':'unknown';
  let gpu={};
- if(b.isWebGPUBackend){
+ if(b?.isWebGPUBackend){
   const adapter=b.device?.adapterInfo?null:await navigator.gpu?.requestAdapter({featureLevel:'compatibility'}).catch(()=>null);
   const info=b.device?.adapterInfo||adapter?.info||await adapter?.requestAdapterInfo?.().catch(()=>null);
   gpu.infoSource=b.device?.adapterInfo?'device':adapter?'separate-adapter-query':'unavailable';
   if(info)for(const k of ['vendor','architecture','device','description','isFallbackAdapter'])if(info[k]!==undefined)gpu[k]=info[k];
- }else if(b.isWebGLBackend){
-  const gl=b.gl,ext=gl.getExtension('WEBGL_debug_renderer_info');
+ }else if(classic||b?.isWebGLBackend){
+  const gl=classic?renderer.getContext():b.gl,ext=gl.getExtension('WEBGL_debug_renderer_info');
   gpu={vendor:gl.getParameter(ext?ext.UNMASKED_VENDOR_WEBGL:gl.VENDOR),renderer:gl.getParameter(ext?ext.UNMASKED_RENDERER_WEBGL:gl.RENDERER),depthBits:gl.getParameter(gl.DEPTH_BITS),masked:!ext};
  }
  const errors=[];
- b.device?.addEventListener?.('uncapturederror',e=>errors.push(String(e.error?.message||e.error)));
+ b?.device?.addEventListener?.('uncapturederror',e=>errors.push(String(e.error?.message||e.error)));
  const q=queries(),debug=q.get('debug')==='1';
  if(debug){
   const panel=document.createElement('pre');panel.id='render-debug';
@@ -108,7 +136,7 @@ export async function installRenderDiagnostics(renderer){
  return (scene,ortho,camera)=>{
   const textures=new Set();
   scene.traverse(o=>{if(o.name==='ground'||o.name.startsWith('Ortho-')||['asphalt','sidewalks','footpaths','kerbs'].includes(o.name))for(const m of (Array.isArray(o.material)?o.material:[o.material]))if(m?.map)textures.add(m.map);});
-  return {backend,gpu,groundPolicy:groundPolicy(renderer),maxAnisotropy:renderer.getMaxAnisotropy(),orthoEnabled:ortho?.group?.visible??false,
+  return {backend,engine:classic?'classic':'webgpu-renderer',orthoMode:ortho?.report().mode||null,gpu,groundPolicy:groundPolicy(renderer),maxAnisotropy:classic?renderer.capabilities.getMaxAnisotropy():renderer.getMaxAnisotropy(),orthoEnabled:ortho?.group?.visible??false,
    baseGroundVisible:ortho?.ground?.visible??scene.getObjectByName('ground')?.visible??null,
    shadows:renderer.shadowMap?.enabled??false,near:camera.near,far:camera.far,errors:[...errors],
    textures:[...textures].map(t=>textureState(t,renderer))};

@@ -64,3 +64,6 @@ Dados © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), 
 
 ### Diagnóstico Xclipse — segunda revisão #46
 `?mips=0` desativa mipmaps e anisotropia; `?mips=gpu&srgb=0` isola RGBA8 + EOTF no shader; `?mips=offline` envia a cadeia RGBA8 pré-calculada, sem generateMipmap. Default offline, Xclipse default 0; `mips=gpu` apenas diagnóstico. Packs gzip por LOD, base WebP descodificada offline, downsample em luz linear, SHA de cada nível, sem resize no browser. CanvasTexture procedural usa mipmaps CPU (não existem na ortofoto arquivada). Teste físico obrigatório.
+
+### Isolamento de UV e renderer clássico
+`?ortho=uv` e `?ortho=flat` não carregam imagens; `?ortho=basic` usa MeshBasicNodeMaterial. `?engine=classic&ortho=basic&mips=0` usa o WebGLRenderer clássico verdadeiro, com as mesmas malhas e UV, câmara, controlos e ortofoto; estrada e carro têm materiais simplificados e outros efeitos ocultos. Não confundir `renderer=webgl` (fallback WebGPURenderer) com `engine=classic`. O modo clássico usa sRGB nativo.

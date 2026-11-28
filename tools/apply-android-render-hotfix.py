@@ -14,12 +14,14 @@ def patch(old,new):
         raise ValueError('Unexpected archived runtime: '+old)
     s=s.replace(old,new,1)
 patch("import { installPedomeUI } from './pedome-ui.js';",
-      "import { installPedomeUI } from './pedome-ui.js';\nimport { rendererOptions,installRenderDiagnostics,improveDepth } from './pedome-render-diagnostics.mjs';")
+      "import { installPedomeUI } from './pedome-ui.js';\nimport { createRenderer,renderDiagnosticScene,installRenderDiagnostics,improveDepth } from './pedome-render-diagnostics.mjs';")
 patch("new THREE.WebGPURenderer({antialias:true,forceWebGL:!navigator.gpu||new URLSearchParams(location.search).has('webgl')})",
-      "new THREE.WebGPURenderer(rendererOptions())")
-patch("await renderer.init();","await renderer.init();const renderDiagnostics=await installRenderDiagnostics(renderer);")
+      "createRenderer()")
+patch("await renderer.init();","if(!renderer.isWebGLRenderer)await renderer.init();const renderDiagnostics=await installRenderDiagnostics(renderer);")
 patch("const camera=cameras.camera;","const camera=cameras.camera;improveDepth(camera,scene);")
 patch("const spawn=roadSpawn(null,0,0);","window.mapslop.renderDebug=()=>renderDiagnostics(scene,ortho,camera); const spawn=roadSpawn(null,0,0);")
+if s.count('renderer.render(scene,camera);')!=2:raise ValueError('Unexpected archived render paths')
+s=s.replace('renderer.render(scene,camera);','renderDiagnosticScene(renderer,scene,camera);')
 entry.write_text(s)
 for name in ("pedome-orthophoto-preview.mjs","pedome-render-diagnostics.mjs"):
     shutil.copy2(root/name,js/name)

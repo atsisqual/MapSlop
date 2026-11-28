@@ -1,5 +1,9 @@
 # Estado do projeto
 
+## Android Xclipse — isolamento TSL vs WebGLRenderer clássico
+Teste físico 9e9de28: as quatro variantes de mip/sRGB falharam; ortofoto apresenta cores baralhadas, estrada e carro limpos. Introduzidos ortho=uv (TSL), flat, basic, engine=classic (WebGLRenderer real, material simplificado para estrada/carro, mesma geometria/UV/texture/câmara/física). O fallback WebGL2 do WebGPURenderer não é o renderer clássico. Gates de material e pedidos de rede; CI e teste físico pendentes. Não promover #46/#48.
+
+
 ## Android Xclipse — regressão física 85b1d81
 Dono: ruído pior em WebGL2 (ANGLE Samsung Xclipse 920 Vulkan), erros vazios, sombras false. Hipótese GPU mipmaps/SRGB8_ALPHA8 não provada. Segunda revisão: no-mips, RGBA8+EOTF shader, cadeia offline RGBA8 gzip verificada por nível, default offline com fallback Xclipse no-mips. GPU mipmaps só por query de diagnóstico. Gate das variantes; novo CI e teste físico pendentes. Não promover #46 antes da aprovação.
 
