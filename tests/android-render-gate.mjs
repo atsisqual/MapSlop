@@ -6,9 +6,10 @@ import {chromium} from 'playwright';
 const dir=process.env.MAPSLOP_RESULTS||'/tmp/pedome-results';
 const base=new URL(process.env.MAPSLOP_TEST_URL);
 const hardware=process.env.MAPSLOP_GPU==='hardware';
-const tryWebGPU=process.env.MAPSLOP_GPU==='webgpu';
-const mode=hardware?'hardware':tryWebGPU?'webgpu':'swiftshader';
-const args=hardware?['--enable-gpu','--disable-software-rasterizer']:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'];
+const tryWebGPU=process.env.MAPSLOP_GPU==='webgpu'||process.env.MAPSLOP_GPU==='hardware-webgpu';
+const realGPU=hardware||process.env.MAPSLOP_GPU==='hardware-webgpu';
+const mode=realGPU?(tryWebGPU?'hardware-webgpu':'hardware'):tryWebGPU?'webgpu':'swiftshader';
+const args=realGPU?['--enable-gpu','--disable-software-rasterizer']:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'];
 if(tryWebGPU)args.push('--enable-unsafe-webgpu');
 await mkdir(dir,{recursive:true});
 const browser=await chromium.launch({headless:true,args});
@@ -33,7 +34,10 @@ try{
   page.on('console',m=>{if(m.type()==='error'&&!m.text().includes('favicon'))errors.push(m.text())});
   page.on('request',r=>{if(new URL(r.url()).pathname.includes('/ortho/'))requests.push(r.url())});
   await page.goto(url.href,{waitUntil:'load',timeout:90000});
-  await page.waitForFunction(()=>window.mapslop?.ready&&window.mapslop?.renderDebug&&window.mapslop.orthoPreview?.ortho.report().settled||document.querySelector('#status')?.textContent.startsWith('Erro:'),{},{timeout:120000});
+  try{await page.waitForFunction(()=>window.mapslop?.ready&&window.mapslop?.renderDebug&&window.mapslop.orthoPreview?.ortho.report().settled||document.querySelector('#status')?.textContent.startsWith('Erro:'),{},{timeout:120000,polling:250});}catch(e){
+   const partial=await page.evaluate(()=>({status:document.querySelector('#status')?.textContent,ready:window.mapslop?.ready,stream:window.mapslop?.orthoPreview?.ortho.report(),hasDebug:!!window.mapslop?.renderDebug,backend:window.mapslop?.orthoPreview?.renderer.backend.isWebGPUBackend?'WebGPU':'other'})).catch(()=>null);
+   result.cases.push({enabled,partial,errors,orthoRequests:requests.length});console.error('ANDROID_GATE_TIMEOUT',JSON.stringify(result.cases.at(-1)));throw e;
+  }
   assert.ok(!(await page.locator('#status').textContent()).startsWith('Erro:'),await page.locator('#status').textContent());
   const state=await page.evaluate(async()=>{
    const m=window.mapslop,b=m.orthoPreview.renderer.backend;
@@ -48,7 +52,8 @@ try{
   assert.equal(state.far,2500);
   assert.deepEqual(errors,[]);assert.deepEqual(state.errors,[]);
   assert.equal(state.backend,tryWebGPU?'WebGPU':'WebGL2');
-  if(hardware)assert.ok(state.gpu.renderer&&!/swiftshader|llvmpipe|softpipe|software|lavapipe/i.test(state.gpu.renderer),'No verified hardware renderer');
+  if(realGPU&&!tryWebGPU)assert.ok(state.gpu.renderer&&!/swiftshader|llvmpipe|softpipe|software|lavapipe/i.test(state.gpu.renderer),'No verified hardware renderer');
+  if(realGPU&&tryWebGPU)assert.ok(state.gpu.isFallbackAdapter!==true&&!/swiftshader|llvmpipe|lavapipe|software/i.test(JSON.stringify(state.gpu)),'Software WebGPU adapter');
   if(enabled){
    assert.ok(state.tile?.applied&&state.tile.level==='near','Spawn tile missing');
    assert.deepEqual(state.tile.texture_px,[512,512]);assert.equal(state.tile.metres_per_pixel,132/512);
