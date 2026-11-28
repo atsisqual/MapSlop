@@ -1,0 +1,115 @@
+name: Local high fidelity 3D prototype
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/build-local-church.py'
+      - 'tools/local-3d/**'
+      - 'tools/stage-local-3d.sh'
+      - 'tests/local-3d-browser.mjs'
+      - '.github/workflows/pedome-local-photogrammetry.yml'
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  fixture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Build synthetic mesh and isolated viewer
+        run: |
+          python -m pip install -r requirements-vegetation.txt Pillow==11.3.0
+          python tools/build-local-church.py --fixture --output /tmp/local-3d
+          bash tools/stage-local-3d.sh /tmp/local-3d
+      - name: Compare GLB and 3D Tiles renderers
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          python -m http.server 8080 --bind 127.0.0.1 --directory /tmp/local-3d >/tmp/local-3d/http.log 2>&1 &
+          trap 'kill $! || true' EXIT
+          for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
+          node tests/local-3d-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-3d-synthetic-evidence
+          path: |
+            /tmp/local-3d/*.json
+            /tmp/local-3d/*.png
+            /tmp/local-3d/*.log
+  real:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/agent/local-photogrammetry'
+    needs: fixture
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Install offline tools
+        run: python -m pip install -r requirements-vegetation.txt Pillow==11.3.0
+      - name: Retrieve immutable approved DGT derivatives
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/combined /tmp/runtime /tmp/church-input
+          tag=geodata-dgt-orthophoto-46098427966-1
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/combined --pattern combined-runtime.tar.gz --pattern combined-report.json --pattern combined-inputs.json --pattern SHA256SUMS.txt
+          (cd /tmp/combined; for f in combined-runtime.tar.gz combined-report.json combined-inputs.json; do grep -E "^[0-9a-f]{64}  $f$" SHA256SUMS.txt | sha256sum -c -; done)
+          echo 'f9f574945cfe74923076b3d430fefb2848e0cad5a1b0ce67bcbd787b7fe0f57c  /tmp/combined/combined-runtime.tar.gz' | sha256sum -c -
+          python tools/verify-combined-pages.py /tmp/combined /tmp/runtime
+          tag=geodata-dgt-pedome-20261127
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          for tile in 178494 178495 179494 179495; do
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/church-input --pattern "LO-$tile-07-2025_v05.laz"
+          done
+      - name: Reconstruct measured church roof and estimated wall shell
+        run: |
+          python tools/build-local-church.py --input /tmp/church-input --runtime /tmp/runtime --output /tmp/local-3d
+          bash tools/stage-local-3d.sh /tmp/local-3d
+      - name: Render real candidate with both loaders
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          python -m http.server 8080 --bind 127.0.0.1 --directory /tmp/local-3d >/tmp/local-3d/http.log 2>&1 &
+          trap 'kill $! || true' EXIT
+          for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
+          node tests/local-3d-browser.mjs
+      - name: Archive only DGT-derived candidate and diagnostics privately
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/local-3d
+          cd /tmp/local-3d
+          shopt -s nullglob
+          files=(*.json *.png *.log)
+          if [ -f viewer-report.json ] && jq -e '.pass' viewer-report.json >/dev/null && jq -e '.pass' church-report.json >/dev/null; then
+            files+=(church.glb)
+          fi
+          if [ "${#files[@]}" -eq 0 ]; then echo 'No evidence produced'; exit 1; fi
+          sha256sum "${files[@]}" > SHA256SUMS.txt
+          tag=geodata-dgt-local-church-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Local DGT church candidate $GITHUB_RUN_ID" --notes "Roof envelope from LiDAR, walls estimated. Standalone viewer only, not approved for integration or publication." "${files[@]}" SHA256SUMS.txt
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          echo "PRIVATE_EVIDENCE $tag"
