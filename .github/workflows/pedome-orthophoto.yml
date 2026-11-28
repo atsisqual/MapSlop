@@ -29,13 +29,33 @@ jobs:
         run: |
           python -m pip install -r requirements-buildings.txt Pillow==11.3.0
           node tests/orthophoto-partition.test.mjs
-      - name: Retrieve only inventoried private orthophotos
+      - name: Retrieve reviewed private derivatives
         run: |
           set -euo pipefail
-          mkdir -p /tmp/ortho-input /tmp/ortho-results
-          tag=geodata-dgt-pedome-20261127
-          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
-          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/ortho-input --pattern 'ORTOS-2025-cog-25cm-084-2_v01.tif' --pattern 'ORTOS-2025-cog-25cm-084-4_v01.tif'
+          mkdir -p /tmp/ortho-results /tmp/ortho-input/{ortho,trees,heights,roofs} /tmp/ortho-tiles
+          fetch() {
+            local tag="$1" dir="$2"; shift 2
+            test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$dir" --pattern SHA256SUMS.txt "$@"
+          }
+          check() {
+            local dir="$1" file="$2"
+            (cd "$dir"; grep -E "^[0-9a-f]{64}  $file$" SHA256SUMS.txt | sha256sum -c -)
+          }
+          fetch geodata-dgt-orthophoto-46096919931-1 /tmp/ortho-input/ortho --pattern orthophoto-tiles.tar.gz --pattern orthophoto-render-report.json
+          check /tmp/ortho-input/ortho orthophoto-tiles.tar.gz
+          check /tmp/ortho-input/ortho orthophoto-render-report.json
+          tar -xzf /tmp/ortho-input/ortho/orthophoto-tiles.tar.gz -C /tmp/ortho-tiles
+          fetch geodata-dgt-vegetation-46095666103-1 /tmp/ortho-input/trees --pattern vegetation-candidates.json --pattern vegetation-report.json
+          check /tmp/ortho-input/trees vegetation-candidates.json
+          check /tmp/ortho-input/trees vegetation-report.json
+          fetch geodata-dgt-buildings-agent-dgt-building-heights /tmp/ortho-input/heights --pattern building-heights.json --pattern preview-height-verification.json
+          check /tmp/ortho-input/heights building-heights.json
+          check /tmp/ortho-input/heights preview-height-verification.json
+          fetch geodata-dgt-roofs-agent-building-roofs-facades /tmp/ortho-input/roofs --pattern converted-roofs.tar.gz --pattern building-detail-report.json
+          check /tmp/ortho-input/roofs converted-roofs.tar.gz
+          check /tmp/ortho-input/roofs building-detail-report.json
+          tar -xzf /tmp/ortho-input/roofs/converted-roofs.tar.gz -C /tmp/ortho-input/roofs
       - name: Fetch approved immutable terrain and pinned upstream
         run: |
           set -euo pipefail
@@ -56,27 +76,73 @@ jobs:
           git -C /tmp/three checkout --detach FETCH_HEAD
           mkdir /tmp/three-vendor
           cp -r /tmp/three/build /tmp/three/examples /tmp/three/LICENSE /tmp/three-vendor/
-      - name: Generate aligned tile pyramid and private game
+      - name: Verify reviewed inputs and build both variants
         run: |
           set -euo pipefail
-          python tools/build-orthophoto-tiles.py --input /tmp/ortho-input --terrain /tmp/ortho-terrain/terrain-tin.bin --output /tmp/ortho-tiles
+          python - <<'PY'
+          import json,hashlib,sys
+          from pathlib import Path
+          sys.path.insert(0,'tools')
+          from terrain_binary import decode
+          r=Path('/tmp/ortho-input');tiles=Path('/tmp/ortho-tiles')
+          def load(p):return json.loads(p.read_text())
+          def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
+          assert load(r/'ortho/orthophoto-render-report.json')['pass']
+          t=decode(Path('/tmp/ortho-terrain/terrain-tin.bin').read_bytes())
+          m=load(tiles/'manifest.json')
+          assert m['terrain_sha256']==sha(Path('/tmp/ortho-terrain/terrain-tin.bin')) and len(m['tiles'])==64
+          for tile in m['tiles']:
+              for d in tile['levels'].values():
+                  p=tiles/d['path'];assert p.stat().st_size==d['bytes'] and sha(p)==d['sha256']
+          assert len(load(r/'trees/vegetation-candidates.json')['trees'])==5702
+          h=load(r/'heights/building-heights.json')
+          p=Path('data/pedome/pedome-osm.json')
+          assert sha(p)==h['osm_sha256']
+          v=load(r/'heights/preview-height-verification.json');assert v['pass'] and v['matched']==370 and v['excluded_count']==1
+          osm=load(p);heights={row['osm_id']:row['height_m'] for row in h['rows'] if row.get('preview_policy')=='raster_p90_candidate'}
+          assert len(heights)==371
+          for e in osm['elements']:
+              if e['type']=='way' and e['id'] in heights:e['tags']['height']=str(heights[e['id']])
+          (r/'height-preview-osm.json').write_text(json.dumps(osm,allow_nan=False))
+          roof=load(r/'roofs/building-detail-report.json');assert roof['pass'] and roof['measured']>=17
+          converted=load(r/'roofs/converted/roof-conversion-report.json')
+          assert abs(converted['vertical_reference']['base_absolute_m']-t['base'])<.0001
+          inputs={str(p.relative_to(r)):sha(p) for p in r.rglob('*') if p.is_file() and p.suffix in ('.json','.gz')}
+          Path('/tmp/ortho-results/combined-inputs.json').write_text(json.dumps(inputs,indent=2))
+          PY
+          for variant in before after; do
+            out=/tmp/pedome-$variant
+            python tools/prepare-pedome.py /tmp/nairobi "$out" --osm-json /tmp/ortho-input/height-preview-osm.json --building-preview --roof-preview /tmp/ortho-input/roofs/converted/roof-preview.json --terrain-bin /tmp/ortho-terrain/terrain-tin.bin --three-vendor /tmp/three-vendor
+            cmp /tmp/ortho-terrain/terrain-tin.bin "$out/js/terrain.bin"
+            args=()
+            if [ "$variant" = before ]; then args+=(--baseline); fi
+            python tools/install-combined-preview.py "$out" /tmp/ortho-tiles /tmp/ortho-input/trees/vegetation-candidates.json data/pedome/pedome-osm.json "${args[@]}"
+            node --check "$out/js/pedome.js"
+            node --check "$out/js/street-geometry.js"
+            node --check "$out/js/pedome-buildings-detail.mjs"
+            node --check "$out/js/road-network.js"
+          done
+          cp /tmp/pedome-after/combined-source-report.json /tmp/ortho-results/
           cp /tmp/ortho-tiles/manifest.json /tmp/ortho-results/
-          python tools/prepare-pedome.py /tmp/nairobi /tmp/pedome-ortho --osm-json data/pedome/pedome-osm.json --terrain-bin /tmp/ortho-terrain/terrain-tin.bin --three-vendor /tmp/three-vendor
-          cmp /tmp/ortho-terrain/terrain-tin.bin /tmp/pedome-ortho/js/terrain.bin
-          cp /tmp/pedome-ortho/build-report.json /tmp/ortho-results/
-          python tools/install-orthophoto-preview.py /tmp/pedome-ortho /tmp/ortho-tiles
-          node --check /tmp/pedome-ortho/js/pedome-orthophoto-preview.mjs
-          node --check tests/orthophoto-real.mjs
           npm ci --ignore-scripts --no-audit --no-fund
           npx playwright install --with-deps chromium
-      - name: Private browser validation and performance
+      - name: Joint real browser comparison and performance
         run: |
           set -euo pipefail
-          python -m http.server 8080 --bind 127.0.0.1 --directory /tmp/pedome-ortho > /tmp/ortho-results/http.log 2>&1 &
-          server=$!
-          trap 'kill "$server" || true' EXIT
-          for i in {1..30}; do if curl -fsS http://127.0.0.1:8080/ >/dev/null; then break; fi; sleep 1; done
-          node tests/orthophoto-real.mjs
+          python -m http.server 8080 --bind 127.0.0.1 --directory /tmp/pedome-before > /tmp/ortho-results/before.log 2>&1 &
+          before=$!
+          python -m http.server 8081 --bind 127.0.0.1 --directory /tmp/pedome-after > /tmp/ortho-results/after.log 2>&1 &
+          after=$!
+          trap 'kill "$before" "$after" || true' EXIT
+          for port in 8080 8081; do
+            for i in {1..30}; do if curl -fsS "http://127.0.0.1:$port/" >/dev/null; then break; fi; sleep 1; done
+          done
+          node tests/combined-real.mjs
+      - name: Preserve exact candidate runtime for later authorized Pages preflight
+        run: |
+          set -euo pipefail
+          tar -C /tmp/pedome-after -czf /tmp/ortho-results/combined-runtime.tar.gz js ortho index.html build-report.json
+          test "$(stat -c %s /tmp/ortho-results/combined-runtime.tar.gz)" -lt 50000000
       - name: Preserve tiles and evidence in unique draft only
         if: always()
         run: |
@@ -89,6 +155,6 @@ jobs:
           if [ "${#files[@]}" -eq 0 ]; then echo 'No evidence'; exit 1; fi
           sha256sum "${files[@]}" > SHA256SUMS.txt
           tag=geodata-dgt-orthophoto-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
-          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Private orthophoto evidence ${GITHUB_RUN_ID}" --notes "DGT 2025 derivatives only; manual alignment, real-device performance and publication authorization pending." "${files[@]}" SHA256SUMS.txt
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Private combined evidence ${GITHUB_RUN_ID}" --notes "Joint preview: original data never published; visual review and Pages preflight required." "${files[@]}" SHA256SUMS.txt
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
           echo "PRIVATE_EVIDENCE $tag"
