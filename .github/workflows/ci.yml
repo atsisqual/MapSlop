@@ -52,6 +52,7 @@ jobs:
           node --check tests/traffic-real.mjs
           node --check tests/orthophoto-real.mjs
           node --check tests/combined-real.mjs
+          node --check tests/clean-orthophoto-real.mjs
           node tests/orthophoto-partition.test.mjs
       - name: Fixture and real Pedome builds
         run: |
