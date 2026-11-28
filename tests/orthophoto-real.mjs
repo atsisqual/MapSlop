@@ -13,7 +13,7 @@ page.on('pageerror',e=>report.errors.push(e.message));page.on('console',m=>{if(m
 await page.route('**/*',r=>r.request().url().startsWith(new URL(url).origin+'/')?r.continue():r.abort());
 const settled=()=>page.waitForFunction(()=>window.mapslop.orthoPreview.ortho.report().settled,{},{timeout:120000});
 const screenshot=name=>page.screenshot({path:path.join(out,name+'.png'),timeout:60000});
-const near=v=>v?.applied===true&&v.level==='near'&&v.metres_per_pixel===.25&&v.texture_px.every(n=>n===528)&&Number.isFinite(v.alignment_error_m)&&v.alignment_error_m<.02&&Number.isFinite(v.pixel_center_error_m)&&v.pixel_center_error_m<=.18;
+const near=v=>v?.applied===true&&v.level==='near'&&v.metres_per_pixel===132/512&&v.texture_px.every(n=>n===512)&&Number.isFinite(v.alignment_error_m)&&v.alignment_error_m<.02&&Number.isFinite(v.pixel_center_error_m)&&v.pixel_center_error_m<=Math.SQRT2*(132/512)/2+1e-6;
 async function renderFinal(){
  await page.evaluate(async()=>{const p=window.mapslop.orthoPreview;p.renderer.render(p.scene,p.captureCam||window.mapslop.camera);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));});
 }

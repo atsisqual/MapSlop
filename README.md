@@ -25,6 +25,31 @@ Abrir http://localhost:8080/?webgl. Setup instala as dependências e verifica os
 
 Controlo: WASD/setas, comando ou botões táteis; M amplia o mapa; R repõe o carro. A publicação é feita pelo GitHub Pages, sem servidor de jogo.
 
+## Diagnóstico gráfico no Android
+
+A build pública 255673d8bc58 apresentou ruído cromático em taludes e riscas no pavimento em Chrome Android físico. A causa ainda não está comprovada; o hotfix não altera o TIN, os dados, a física ou as reconstruções. Validar a build candidata do PR na rota isolada de preview, sem promover alterações visuais à raiz antes da aprovação do dono.
+
+Parâmetros (podem ser combinados):
+- `?debug=1` — painel com backend efetivo, GPU/adapter quando exposto pelo browser, anisotropia máxima, filtros, POT, número de texturas cuja geração de mipmaps foi chamada, níveis GPU alocados (WebGPU), erros e sombras. Relatório integral: `window.mapslop.renderDebug()` na consola.
+- `?renderer=webgl&debug=1` — WebGL2 obrigatório; o antigo `?webgl` continua a funcionar.
+- `?ortho=0&debug=1` — sem pedidos de ortofoto; no runtime combinado mostra o TIN sem fotografia (solo liso).
+- `?anisotropy=8&debug=1` — comparação com anisotropia antiga (limitada ao máximo do dispositivo); default Android 1, outros 8. `?paving=0` e `?shadows=0` isolam camadas e sombras.
+- Sem parâmetro renderer, Three tenta WebGPU e pode recorrer a WebGL2. O painel mostra o backend real, não o solicitado. O browser pode ocultar a identificação GPU; consulta alternativa do adapter não prova que é o mesmo dispositivo. O contador de geração regista a chamada no backend, não garante que o driver produziu pixels corretos.
+
+### Preview HTTPS antes do merge e gate
+
+No PR, o workflow Pages valida os dados aprovados, aplica o overlay e executa a condução, o gate WebGL2 (SwiftShader), e, se houver /dev/dri/renderD*, os gates WebGL2 e WebGPU em hardware (adapter WebGPU quando disponível; identificação GPU obrigatória no WebGL2). No run 46164297512, WebGL2 SwiftShader passou, mas WebGPU emulado excedeu 120 s. Sem GPU real, o relatório assinala que WebGPU não foi validado; não se confunde esse estado com PASS. A validação WebGPU no Android continua obrigatória antes do merge. Capturas e JSON: artefactos `android-render-evidence-candidate` (PR) e `android-render-evidence-preview` (dispatch). `mapslop-site-candidate` contém a build estática do PR. O gerador recupera os dois TIFFs DGT originais do draft, valida SHA, reprojeta offline a extensão de 132 m (128 m + gutter 2 m por lado) para near 512, mid 128, far 64; resoluções efetivas 0,2578125 / 1,03125 / 2,0625 m/px. O manifesto e hashes novos são arquivados num draft único por run; o WebP contém a imagem base e o backend gera mipmaps, sem redimensionamento JS.
+
+Para lançar a preview do #46 antes do merge, usar o workflow já registado em main, mas com a definição do branch:
+
+```sh
+gh workflow run pages.yml --repo atsisqual/MapSlop --ref main -f preview_ref=agent/android-render-hotfix
+```
+
+Após o deploy passar: https://atsisqual.github.io/MapSlop/preview/agent/android-render-hotfix/mobile.html?debug=1 . O workflow resolve os dois SHAs uma vez, faz checkout/build/test separados e agrega um único artefacto Pages. A raiz é main; a faixa `PREVIEW <sha>` só aparece na preview. Não há promoção automática. O caminho conserva a barra de `agent/`; outros branches agent/... precisam de tools/apply-pages-preview.py como contrato de build/overlay específico para não publicar silenciosamente código antigo. Requer o PR de infraestrutura #47 integrado primeiro; o environment github-pages só deve autorizar main. Remover a autorização temporária de agent/android-render-hotfix depois de validar o dispatch a partir de main. A preview é pública por URL, não privada. Um deploy normal de main remove previews anteriores. Confirmar SHA na faixa e `version.txt`; sem PASS e aprovação física não fazer merge.
+
+Testar no mesmo telemóvel, na mesma posição e ângulo onde ocorreram os defeitos: automático, WebGL2, orto desativada e, se necessário, sem pavimento. Filmar/capturar taludes de perfil e chão próximo ao conduzir. Anexar painel e indicar GPU, versão Chrome e qual variante elimina o ruído/riscas. **Não fazer merge nem publicar #42/#45 antes de confirmação visual do dono.**
+
 ## Documentação e dados
 
 - [AGENTS.md](AGENTS.md): regras obrigatórias para agentes.
@@ -36,3 +61,9 @@ Controlo: WASD/setas, comando ou botões táteis; M amplia o mapa; R repõe o ca
 Código MapSlop: [MIT](LICENSE). Base [Slop Nairobi](https://github.com/briankariuki/slop-nairobi), MIT declarado no README, adaptado de [Slop New York](https://github.com/mrdoob/slop-newyork) (Mr.doob, MIT); [Three.js](https://github.com/mrdoob/three.js), MIT. Inventário de assets upstream por concluir; não reutilizamos modelos capturados ou código/dados PortoSlop.
 
 Dados © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL 1.0. DGT: Direção-Geral do Território, CC BY 4.0 quando confirmado para o produto; licenças contraditórias mantêm arquivos em rascunho. Relevo alternativo: Copernicus WorldDEM-30 © DLR e.V. 2010–2014 e © Airbus Defence and Space GmbH 2014–2018, disponibilizado pela UE e ESA no programa COPERNICUS. Ferramentas GPL/AGPL de reconstrução são processos separados, não dependências do runtime. Cada fonte mantém os seus próprios termos.
+
+### Diagnóstico Xclipse — segunda revisão #46
+`?mips=0` desativa mipmaps e anisotropia; `?mips=gpu&srgb=0` isola RGBA8 + EOTF no shader; `?mips=offline` envia a cadeia RGBA8 pré-calculada, sem generateMipmap. Default offline, Xclipse default 0; `mips=gpu` apenas diagnóstico. Packs gzip por LOD, base WebP descodificada offline, downsample em luz linear, SHA de cada nível, sem resize no browser. CanvasTexture procedural usa mipmaps CPU (não existem na ortofoto arquivada). Teste físico obrigatório.
+
+### Isolamento de UV e renderer clássico
+`?ortho=uv` e `?ortho=flat` não carregam imagens; `?ortho=basic` usa MeshBasicNodeMaterial. `?engine=classic&ortho=basic&mips=0` usa o WebGLRenderer clássico verdadeiro, com as mesmas malhas e UV, câmara, controlos e ortofoto; estrada e carro têm materiais simplificados e outros efeitos ocultos. Não confundir `renderer=webgl` (fallback WebGPURenderer) com `engine=classic`. O modo clássico usa sRGB nativo.

@@ -188,6 +188,14 @@ export const tin = T.kind === 'tin' ? makeTin(T) : null;""")
     s=f.read_text(); s,n=re.subn(r'const TELEPORT_LOCATIONS = Object\.fromEntries\(\[.*?\]\s*\.map\(.*?\)\);',"const TELEPORT_LOCATIONS = {};",s,count=1,flags=re.S); assert n==1; f.write_text(s,encoding='utf-8')
     shutil.copy2(P(__file__).resolve().parent/'pedome-ui.js',out/'js/pedome-ui.js')
     # Minimal world shell keeps upstream rendering, steering, chase camera and collision routines; no Kenya traffic.
+    shutil.copy2(P(__file__).resolve().parent/'pedome-render-diagnostics.mjs',out/'js/pedome-render-diagnostics.mjs')
+    f=out/'js/ground.js'
+    patch(f,"new THREE.MeshStandardMaterial({ map, roughness: 0.95 })","new THREE.MeshStandardNodeMaterial({ map, roughness: 0.95 })")
+    patch(f,"  mesh.name = 'ground';","  if(map)setGroundMap(mesh.material,map,renderer);\n  mesh.name = 'ground';")
+    # Preserve painting coordinates while resampling the final texture to power-of-two dimensions.
+    patch(f,"import * as THREE from 'three/webgpu';","import * as THREE from 'three/webgpu';\nimport { configureGroundTexture,setGroundMap } from './pedome-render-diagnostics.mjs';")
+    patch(f,"  map.anisotropy = renderer.getMaxAnisotropy ? renderer.getMaxAnisotropy() : 8;","  configureGroundTexture(map,renderer);")
+    patch(f,"const map = new THREE.CanvasTexture(paintMap());","const painted=paintMap(); const pot=document.createElement(\'canvas\'); pot.width=painted.width; pot.height=2**Math.round(Math.log2(painted.height)); pot.getContext(\'2d\').drawImage(painted,0,0,pot.width,pot.height); const map = new THREE.CanvasTexture(pot);")
     (out/'js/pedome.js').write_text('''import * as THREE from 'three/webgpu';
 import { GEO } from './nairobi-geodata.js';
 import { buildGround } from './ground.js';
@@ -200,18 +208,19 @@ import { ThirdPersonControllerManager, roadSpawn } from './controllers.js';
 import { CameraSystem } from './cameras.js';
 import { GamepadControls } from './gamepad-controls.js';
 import { installPedomeUI } from './pedome-ui.js';
+import { rendererOptions,installRenderDiagnostics,improveDepth } from './pedome-render-diagnostics.mjs';
 const status=document.querySelector('#status');
 try {
- const renderer=new THREE.WebGPURenderer({antialias:true,forceWebGL:!navigator.gpu||new URLSearchParams(location.search).has('webgl')});
- renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); renderer.setSize(innerWidth,innerHeight); document.body.append(renderer.domElement); await renderer.init();
+ const renderer=new THREE.WebGPURenderer(rendererOptions());
+ renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); renderer.setSize(innerWidth,innerHeight); document.body.append(renderer.domElement); await renderer.init();const renderDiagnostics=await installRenderDiagnostics(renderer);
  const scene=new THREE.Scene(); scene.background=new THREE.Color(0xb8d4ef); scene.fog=new THREE.Fog(0xb8d4ef,350,1100);
  scene.add(new THREE.HemisphereLight(0xffffff,0x77805d,2.2)); const sun=new THREE.DirectionalLight(0xfff0d8,2.4); sun.position.set(90,140,50); scene.add(sun);
  scene.add(buildGround(renderer)); scene.add(await buildBuildings()); const bridges=buildBridges(); scene.add(bridges);
  const world=buildColliders(bridges.userData.piers); const network=buildRoadNetwork(); buildStreets(scene,network,[]);
- const controllers=new ThirdPersonControllerManager(scene,world); const cameras=new CameraSystem(renderer.domElement,controllers); const camera=cameras.camera; const gamepad=new GamepadControls(controllers,cameras);
+ const controllers=new ThirdPersonControllerManager(scene,world); const cameras=new CameraSystem(renderer.domElement,controllers); const camera=cameras.camera;improveDepth(camera,scene); const gamepad=new GamepadControls(controllers,cameras);
  /* P0 renders directly, without upstream screen-space reflection MRT buffers. */
  scene.traverse(o=>{for(const mat of (Array.isArray(o.material)?o.material:[o.material]))if(mat?.mrtNode){mat.mrtNode=null;mat.needsUpdate=true;}});
- window.mapslop={GEO,controllers,camera,world}; const spawn=roadSpawn(null,0,0); controllers.teleportActiveTo(spawn[0],spawn[1],spawn[2]); const ui=installPedomeUI(GEO,controllers,spawn,cameras);
+ window.mapslop={GEO,controllers,camera,world};window.mapslop.renderDebug=()=>renderDiagnostics(scene,window.mapslop.orthoPreview?.ortho,camera); const spawn=roadSpawn(null,0,0); controllers.teleportActiveTo(spawn[0],spawn[1],spawn[2]); const ui=installPedomeUI(GEO,controllers,spawn,cameras);
  window.addEventListener('keydown',e=>{if(e.code==='KeyR')controllers.teleportActiveTo(spawn[0],spawn[1],spawn[2]);});
  window.addEventListener('resize',()=>{renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();});
  let last=performance.now(); renderer.setAnimationLoop(now=>{const dt=Math.max(0,Math.min(.05,(now-last)/1000));last=now;gamepad.update(dt);controllers.update(dt,now/1000); cameras.update(dt,now/1000);renderer.render(scene,camera);ui.update(now);status.textContent=(GEO.frame.testFixture?'TESTE FICTÍCIO — ':GEO.frame.flatTerrain?'PEDOME — relevo plano — ':GEO.frame.demSource==='SYNTHETIC TEST TERRAIN'?'PEDOME — terreno de teste — ':'PEDOME — ')+Math.round(Math.abs(controllers.getActiveEntity().speed)*3.6)+' km/h'; window.mapslop.ready=true;});

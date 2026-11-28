@@ -12,7 +12,7 @@ for name in ("orthophoto-partition.mjs","pedome-orthophoto-preview.mjs"):
 shutil.copytree(tiles,out/"ortho")
 g=out/"js/ground.js"
 source=g.read_text()
-old="const map = new THREE.CanvasTexture(paintMap());\n  map.colorSpace = THREE.SRGBColorSpace;\n  map.anisotropy = renderer.getMaxAnisotropy ? renderer.getMaxAnisotropy() : 8;"
+old="const painted=paintMap(); const pot=document.createElement('canvas'); pot.width=painted.width; pot.height=2**Math.round(Math.log2(painted.height)); pot.getContext('2d').drawImage(painted,0,0,pot.width,pot.height); const map = new THREE.CanvasTexture(pot);\n  map.colorSpace = THREE.SRGBColorSpace;\n  configureGroundTexture(map,renderer);"
 if source.count(old)!=1:raise ValueError("Unexpected original ground texture")
 g.write_text(source.replace(old,"const map = null; // private tiled preview: no giant procedural canvas"))
 p=out/"js/pedome.js"

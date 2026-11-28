@@ -14,6 +14,11 @@ for(const [i,part] of r.parts.entries()){
   assert.ok(x>=i*128-1e-8&&x<=(i+1)*128+1e-8);
   assert.ok(Math.abs(part.uv[2*k/3]-(x-i*128+2)/132)<1e-8);
   assert.ok(Math.abs(part.uv[2*k/3+1]-(1-(z+2)/132))<1e-8);
+  for(const px of [64,128,512]){
+   const u=part.uv[2*k/3],v=part.uv[2*k/3+1],mpp=132/px;
+   const cx=Math.min(px-1,Math.max(0,Math.floor(u*px))),cz=Math.min(px-1,Math.max(0,Math.floor((1-v)*px)));
+   assert.ok(Math.hypot(i*128-2+(cx+.5)*mpp-x,-2+(cz+.5)*mpp-z)<=Math.SQRT2*mpp/2+1e-8);
+  }
  }
 }
 console.log('ORTHO_PARTITION_TEST PASS');

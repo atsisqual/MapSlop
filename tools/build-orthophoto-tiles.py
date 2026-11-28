@@ -2,6 +2,7 @@
 """Private DGT 2025 orthophoto tile pyramid in the exact MapSlop local frame."""
 import argparse
 import hashlib
+import gzip
 import importlib.util
 import json
 import math
@@ -20,13 +21,13 @@ b=importlib.util.module_from_spec(spec);spec.loader.exec_module(b)
 NAMES=["ORTOS-2025-cog-25cm-084-2_v01.tif","ORTOS-2025-cog-25cm-084-4_v01.tif"]
 TILE=128
 GUTTER=2
-LEVELS=[("far",2,75),("mid",1,78),("near",.25,82)]
+LEVELS=[("far",64,75),("mid",128,78),("near",512,82)]
 def digest(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    with path.open("rb") as f:return hashlib.file_digest(f,"sha256").hexdigest()
 def world_bounds(x0,z0,x1,z1):
     return (ORIGIN[1]+x0/KX,ORIGIN[0]-z1/KY,ORIGIN[1]+x1/KX,ORIGIN[0]-z0/KY)
 def render_tile(datasets,x,z):
-    size=int((TILE+2*GUTTER)/.25)
+    size=next(n for l,n,_ in LEVELS if l=="near")
     bounds=world_bounds(x-GUTTER,z-GUTTER,x+TILE+GUTTER,z+TILE+GUTTER)
     affine=from_bounds(*bounds,size,size)
     rgb=np.full((3,size,size),65535,dtype=np.uint16)
@@ -41,6 +42,23 @@ def render_tile(datasets,x,z):
     covered=np.all(rgb!=65535,axis=0)
     if not covered.all():raise ValueError(f"Orthophoto missing pixels at {x},{z}: {covered.mean():.6f}")
     return Image.fromarray(np.moveaxis(rgb.astype(np.uint8),0,2),"RGB")
+def offline_chain(target):
+    # Decode the exact encoded base; average in linear light, then encode sRGB.
+    # Bottom-up RGBA bytes match THREE.DataTexture flipY=false and terrain UVs.
+    rgb=np.asarray(Image.open(target).convert("RGB"),dtype=np.float32)/255
+    linear=np.where(rgb<=.04045,rgb/12.92,((rgb+.055)/1.055)**2.4)
+    chunks=[];sizes=[]
+    while True:
+        h,w=linear.shape[:2]
+        srgb=np.where(linear<=.0031308,linear*12.92,1.055*np.maximum(linear,0)**(1/2.4)-.055)
+        rgba=np.empty((h,w,4),dtype=np.uint8)
+        rgba[:,:,:3]=np.rint(np.clip(srgb,0,1)*255).astype(np.uint8);rgba[:,:,3]=255
+        raw=rgba[::-1].tobytes();chunks.append(raw);sizes.append({"px":w,"bytes":len(raw),"sha256":hashlib.sha256(raw).hexdigest()})
+        if w==1:break
+        linear=linear.reshape(h//2,2,w//2,2,3).mean(axis=(1,3))
+    pack=target.with_suffix(".rgba.gz")
+    pack.write_bytes(gzip.compress(b"".join(chunks),compresslevel=6,mtime=0))
+    return {"path":pack.name,"bytes":pack.stat().st_size,"sha256":digest(pack),"levels":sizes,"format":"rgba8-bottom-up-srgb-gzip-v1"}
 def main():
     p=argparse.ArgumentParser();p.add_argument("--input",type=Path,required=True);p.add_argument("--terrain",type=Path,required=True);p.add_argument("--output",type=Path,required=True);a=p.parse_args()
     sources=b.verify(a.input,NAMES,b.TAG)
@@ -51,6 +69,7 @@ def main():
     cols,rows=math.ceil((x1-x0)/TILE),math.ceil((z1-z0)/TILE)
     a.output.mkdir(parents=True,exist_ok=False)
     manifest={"schema":1,"year":2025,"attribution":"© Direção-Geral do Território, ortofotos 2025; CC BY 4.0; reprojected and cropped by MapSlop","license":"https://creativecommons.org/licenses/by/4.0/","origin_lat_lon":list(ORIGIN),"terrain_sha256":digest(a.terrain),"world_extent":[x0,z0,x1,z1],"tile_m":TILE,"gutter_m":GUTTER,"cols":cols,"rows":rows,"sources":sources,"tiles":[]}
+    manifest["sampling"]="pot-v1";manifest["source_metres_per_pixel"]=.25;manifest["offline_mips"]="rgba8-bottom-up-srgb-gzip-v1"
     total={l:0 for l,_,_ in LEVELS}
     with ExitStack() as stack:
         ds=[stack.enter_context(rasterio.open(a.input/n)) for n in NAMES]
@@ -62,14 +81,15 @@ def main():
                 x,z=x0+i*TILE,z0+j*TILE
                 image=render_tile(ds,x,z)
                 record={"i":i,"j":j,"bounds":[x,z,x+TILE,z+TILE],"levels":{}}
-                for name,px,q in LEVELS:
-                    n=int((TILE+2*GUTTER)/px)
-                    target=a.output/f"{i}-{j}-{name}.webp"
+                for name,n,q in LEVELS:
+                    assert n>0 and n&(n-1)==0
+                    px=(TILE+2*GUTTER)/n
+                    target=a.output/f"{i}-{j}-{name}-pot{n}.webp"
                     (image if n==image.width else image.resize((n,n),Image.Resampling.LANCZOS)).save(target,"WEBP",quality=q,method=4)
                     size=target.stat().st_size
                     if size>262144:raise ValueError("Tile exceeds 256 KiB")
                     total[name]+=size
-                    record["levels"][name]={"path":target.name,"px":n,"metres_per_pixel":px,"bytes":size,"sha256":digest(target)}
+                    record["levels"][name]={"path":target.name,"px":n,"metres_per_pixel":px,"mip_levels":n.bit_length(),"bytes":size,"sha256":digest(target),"offline":offline_chain(target)}
                 manifest["tiles"].append(record)
     if total["far"]>1_000_000:raise ValueError("Far pyramid exceeds initial transfer budget")
     manifest["bytes_by_level"]=total

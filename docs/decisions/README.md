@@ -25,3 +25,7 @@ Modelo:
 - [0009 — Motor local por git subtree (proposta)](0009-motor-subtree-proposta.md)
 
 - [0010 — Grelha MDT no referencial do motor](0010-grelha-mdt.md)
+
+- [0011 — Hotfix gráfico Android sem republicar o terreno](0011-android-render-hotfix.md)
+
+- [0012 — Pirâmide POT e preview Pages isolada](0012-pot-preview-pages.md)
