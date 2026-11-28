@@ -69,13 +69,13 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/combined /tmp/runtime /tmp/ortho-terrain /tmp/lighting-results
           tag=geodata-dgt-orthophoto-46098427966-1
-          test "$(gh release view "$tag" --json isDraft --jq '.isDraft')" = true
-          gh release download "$tag" --dir /tmp/combined --pattern combined-runtime.tar.gz --pattern combined-report.json --pattern combined-inputs.json --pattern SHA256SUMS.txt
+          test "$(gh release view --repo "$GITHUB_REPOSITORY" "$tag" --json isDraft --jq '.isDraft')" = true
+          gh release download --repo "$GITHUB_REPOSITORY" "$tag" --dir /tmp/combined --pattern combined-runtime.tar.gz --pattern combined-report.json --pattern combined-inputs.json --pattern SHA256SUMS.txt
           echo 'f9f574945cfe74923076b3d430fefb2848e0cad5a1b0ce67bcbd787b7fe0f57c  /tmp/combined/combined-runtime.tar.gz' | sha256sum -c -
           python tools/verify-combined-pages.py /tmp/combined /tmp/runtime
           tag=geodata-dgt-pages-road-46085062868
-          test "$(gh release view "$tag" --json isDraft --jq '.isDraft')" = true
-          gh release download "$tag" --dir /tmp/ortho-terrain --pattern terrain-road-preview.bin --pattern road-validation.json
+          test "$(gh release view --repo "$GITHUB_REPOSITORY" "$tag" --json isDraft --jq '.isDraft')" = true
+          gh release download --repo "$GITHUB_REPOSITORY" "$tag" --dir /tmp/ortho-terrain --pattern terrain-road-preview.bin --pattern road-validation.json
           python tools/verify-pages-terrain.py /tmp/ortho-terrain
           cmp /tmp/runtime/js/terrain.bin /tmp/ortho-terrain/terrain-tin.bin
           git init /tmp/three
@@ -114,4 +114,7 @@ jobs:
             files+=(lighting-runtime-patch.tar.gz)
           fi
           sha256sum "${files[@]}" > SHA256SUMS.txt
-          gh release create "geodata-pedome-lighting-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --draft --target "$GITHUB_SHA" --title "Private lighting candidate" --notes "Owner visual review required. No public deployment." "${files[@]}" SHA256SUMS.txt
+          tag="geodata-pedome-lighting-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          gh release create --repo "$GITHUB_REPOSITORY" "$tag" --draft --target "$GITHUB_SHA" --title "Private lighting candidate" --notes "Owner visual review required. No public deployment." "${files[@]}" SHA256SUMS.txt
+          test "$(gh release view --repo "$GITHUB_REPOSITORY" "$tag" --json isDraft --jq '.isDraft')" = true
+          echo "PRIVATE_EVIDENCE $tag"
