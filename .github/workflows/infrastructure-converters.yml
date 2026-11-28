@@ -1,0 +1,120 @@
+name: Infrastructure converter laboratory
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/osm-json-to-xml.py'
+      - 'tools/convert-infrastructure.py'
+      - 'tools/ifc-to-glb.py'
+      - 'tools/generate-infrastructure-fixture.py'
+      - 'tests/test_infrastructure_conversion.py'
+      - '.github/workflows/infrastructure-converters.yml'
+permissions:
+  contents: read
+jobs:
+  osm-sumo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Test exact OSM references and export bounded actual Pedome data
+        run: |
+          python -m unittest discover -s tests -p test_infrastructure_conversion.py -v
+          python tools/osm-json-to-xml.py data/pedome/pedome-osm.json /tmp/osm-all --bounds -8.395 41.4105 -8.383 41.4195
+          python tools/osm-json-to-xml.py data/pedome/pedome-osm.json /tmp/osm-roads --bounds -8.395 41.4105 -8.383 41.4195 --mode roads
+      - name: Real SUMO network and OpenDRIVE conversion
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y sumo
+          dpkg-query -W sumo
+          netconvert --version
+          python tools/convert-infrastructure.py sumo /tmp/osm-roads/map.osm /tmp/sumo --input-sha256 "$(sha256sum /tmp/osm-roads/map.osm | cut -d' ' -f1)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: infrastructure-osm-sumo-evidence
+          path: |
+            /tmp/osm-all/report.json
+            /tmp/osm-roads/report.json
+            /tmp/sumo/*.json
+            /tmp/sumo/*.log
+            /tmp/sumo/*.xodr
+  osm2world:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Get official numbered OSM2World release and record receipt
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 https://osm2world.org/download/files/0.4.0/OSM2World-0.4.0-bin.zip -o /tmp/osm2world.zip
+          sha256sum /tmp/osm2world.zip | tee /tmp/osm2world-sha256.txt
+          mkdir /tmp/osm2world
+          unzip -q /tmp/osm2world.zip -d /tmp/osm2world
+          find /tmp/osm2world -iname '*license*' -o -iname '*attribution*' > /tmp/osm2world-license-files.txt
+          launcher=$(find /tmp/osm2world -type f -name osm2world.sh -print -quit)
+          test -n "$launcher"
+          chmod +x "$launcher"
+          echo "O2W=$launcher" >> "$GITHUB_ENV"
+      - name: Convert a bounded real area around Pedome church into GLB
+        run: |
+          python tools/osm-json-to-xml.py data/pedome/pedome-osm.json /tmp/osm-church --bounds -8.391 41.413 -8.386 41.417
+          python tools/convert-infrastructure.py osm2world /tmp/osm-church/map.osm /tmp/o2w --executable "$O2W" --input-sha256 "$(sha256sum /tmp/osm-church/map.osm | cut -d' ' -f1)"
+      # No GLB artifact before style material licensing is reviewed. Keep numeric evidence.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: infrastructure-osm2world-evidence
+          path: |
+            /tmp/osm2world-sha256.txt
+            /tmp/osm2world-license-files.txt
+            /tmp/osm-church/report.json
+            /tmp/o2w/*.json
+            /tmp/o2w/*.log
+  bim-cityjson:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Install pinned open-format converters
+        run: |
+          python -m pip install numpy==1.26.4 ifcopenshell==0.8.3.post2 cjio==0.10.1 triangle==20250106
+          python -m pip freeze > /tmp/bim-lock.txt
+      - name: Execute IFC and CityJSON conversions on own known-dimension fixture
+        run: |
+          python tools/generate-infrastructure-fixture.py /tmp/fixture
+          python tools/ifc-to-glb.py /tmp/fixture/wall.ifc /tmp/ifc --origin 0 0 0 --input-sha256 "$(sha256sum /tmp/fixture/wall.ifc | cut -d' ' -f1)"
+          python tools/convert-infrastructure.py cityjson /tmp/fixture/wall.city.json /tmp/cj --input-sha256 "$(sha256sum /tmp/fixture/wall.city.json | cut -d' ' -f1)"
+          python - <<'PY'
+          import json,numpy as np
+          r=json.load(open('/tmp/ifc/report.json'))
+          assert r['pass'] and len(r['elements'])==1
+          e=r['elements'][0];assert e['ifc_class']=='IfcWall'
+          assert e['triangles']==12 and np.allclose(np.ptp(e['bounds'],axis=0),[5,3,.2],atol=1e-5),e
+          c=json.load(open('/tmp/cj/conversion-report.json'));assert c['pass'] and c['glb']['triangles']==12,c
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: infrastructure-bim-fixture
+          path: |
+            /tmp/bim-lock.txt
+            /tmp/fixture/
+            /tmp/ifc/
+            /tmp/cj/
