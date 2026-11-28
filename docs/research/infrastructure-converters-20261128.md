@@ -43,3 +43,35 @@ Converter OSM mantém IDs/nodes partilhados, rejeita conflito de coordenadas, ex
 ## Ligação às ferramentas existentes
 
 Dados vetoriais / BIM / CityJSON -> conversão -> manter IDs e atribuição -> alinhamento com TIN DGT e pelo menos 3 controlos independentes (asset-pipeline/Open3D, após #41) -> limpar geometria sem UV só com PyMeshLab -> Blender PBR/LOD, atlas sem destruir UV -> GLB/3D Tiles. Para novos muros/portões, usar medição LiDAR se houver suporte, senão defaults explicitamente estimados e notas do dono. Para postes, instancing; para muros, segmentos por altura do terreno, não construir sobre o eixo da estrada; para bridges, verificar deck e clearance, colisores só em PR separado. Medir sobreposição com roads/buildings, evitar duplicação do terreno, verificar alinhamento <=0,5m em controlos, capturas fixas, orçamento drawcalls/triângulos, 104m replay e teste de dispositivo. Este PR é laboratório de conversão; não é ainda cenário melhorado nem implementação das fases B/E/F. Não usar dados Google/Apple sem direitos. Nenhum merge ou Pages até resultados e revisão.
+
+## Execução e extensão — pedido de implementar todas as ferramentas úteis
+
+Run 46145498302:
+- OSM2World 0.4.0 PASS job 140980538971, recorte igreja 1047 nodes/171 ways, 341 meshes/341 primitives/5125 triângulos/29 materiais/44 imagens/30480444 bytes, SHA ae5b21302df0fdb18c8e0e96453ae0df56f6332aea6e50dc8dc74ec0b3e17b02. 796 ways excluídas por não caber inteiras, 5 relações incompletas; não é geometria fiel/levantamento. Falta alinhar CRS/estilo/licença.
+- IFC/cjio PASS job 140980538849, IFC4 IfcWall 12 triângulos, bounds [0,0,-.2] a [5,3,0] m; CityJSON 12 triângulos, 3564 bytes GLB. Fixtures, não projetos reais.
+- SUMO job 140980538969 FAIL (assert interno NBNodesEdgesSorter, ângulo fora [0,360) no 1.18.0). Troca para wheel oficial eclipse-sumo==1.28.0; sem alterar/remover elementos para forçar aprovação. Não declarar corrigido até teste.
+
+Implementações adicionais:
+- MOSAIQ (Apache-2.0, f73d030aecd3289007472a887d78aae2e74b6ea0) e OSM Highway Junction (Apache-2.0, c1381679da46c9e4700876c7840fa54a6c7f038b): tools/blender-infrastructure.py chama operador original MOSAIQ e pipeline original Junction, bpy 4.4.0, osmium 4.3.2, OSM da igreja, inventário de objetos, bounds, materiais e GLB. MOSAIQ Web Mercator com origem SW: escala horizontal não métrica no terreno, requer alinhamento; POIs desativados por falta prefabs licenciados. Junction circulação direita, largura passeio fallback 1.5, sem inferência de relva. Não substituir vias/colliders do jogo.
+- GDAL/OGR: tools/gis-infrastructure.py converte camadas SHP/DXF/GPKG para GPKG, EPSG explícito, rejeita CRS desconhecido/contraditório, valida contagem e atributos. Fixture linha Z em EPSG3763, ida/volta WGS84, <1cm erro, preservação Z. Não equivale à instalação do GUI QGIS nem prova reprojeção vertical; DXF sem CRS precisa confirmação. Em produção inventariar TODOS sidecars SHP/DXF e não só hash do .shp.
+- 3dfier: tools/3dfier-infrastructure.py gera LAS class2/17 com CRS EPSG3763, polígonos Road e Separation, configuração YAML; corre imagem oficial tudelft3d/3dfier por digest, offline, cópia de inputs; gate existência OBJ, faces, bounds Z conhecidos. Tag latest usada só para resolução inicial de digest; fixar digest observado depois do PASS. Classe17 sintética, não afirmar que DGT tem retornos apropriados. Ainda não reconstrução real de muros.
+- MRoadGen (CC0, 50dec2e600980f5128cda8ab0d59f137d0d80095) exige Blender >=5.0 e collection MRoadGenerator num .blend; repo contém apenas LICENSE/README, não ficheiro. Página autor https://www.patreon.com/MaartenNauta/posts/this-free-tool-163179046 ; fonte repo https://github.com/MaartenNauta-Pathtrace/MRoadGen . Se necessário obter .blend oficial, enviar como anexo/draft privado e registar nome/tamanho/SHA/licença; não adivinhar URL direta nem assumir nome. Não implementado/testado sem o asset; útil para taludes e estradas visuais, não bloqueia restante pipeline.
+
+### Reproduzir novos conversores
+```sh
+python -m pip install eclipse-sumo==1.28.0
+# Usar comando sumo anterior sobre o mesmo OSM.
+python -m pip install bpy==4.4.0 osmium==4.3.2 numpy==1.26.4
+# checkout upstream nos commits acima, MOSAIQ pasta mosaiq_osm_vr
+python tools/blender-infrastructure.py mosaiq /tmp/mosaiq_osm_vr outputs/osm/map.osm outputs/mosaiq --bounds -8.395 41.4105 -8.383 41.4195 --input-sha256 "$(sha256sum outputs/osm/map.osm | cut -d' ' -f1)"
+python tools/blender-infrastructure.py junction /tmp/osm_highway_junction outputs/osm/map.osm outputs/junction --bounds -8.395 41.4105 -8.383 41.4195 --input-sha256 "$(sha256sum outputs/osm/map.osm | cut -d' ' -f1)"
+# Ubuntu python3-gdal gdal-bin
+/usr/bin/python3 tools/gis-infrastructure.py --fixture outputs/gis-fixture
+/usr/bin/python3 tools/gis-infrastructure.py --input inputs/map.dxf --source-epsg 3763 --output outputs/gis
+python -m pip install numpy==1.26.4 laspy==2.6.1 pyproj==3.7.2
+python tools/3dfier-infrastructure.py fixture outputs/lift-input
+docker pull tudelft3d/3dfier:latest
+image=$(docker image inspect --format '{{index .RepoDigests 0}}' tudelft3d/3dfier:latest)
+python tools/3dfier-infrastructure.py run outputs/lift-input outputs/lift-output --image "$image"
+```
+Novos jobs em infrastructure-converters.yml: blender-roads (matrix), gis-conversion, lidar-3dfier. Resultados pendentes. Testes iniciais 2/3 PASS; sem integração, sem publicação. Prioridade após gates: comparar segmentos reais de muros/portões e lancis com TIN/LiDAR e capturas, escolher a ferramenta por evidência e evitar duplicar objetos.
