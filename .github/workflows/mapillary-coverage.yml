@@ -1,0 +1,19 @@
+name: Mapillary pilot coverage metadata
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  coverage:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Query coverage without logging credentials
+        env:
+          MAPILLARY_TOKEN: ${{ secrets.MAPILLARY_TOKEN }}
+        run: python3 tools/mapillary-coverage.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mapillary-coverage
+          path: mapillary-coverage.json

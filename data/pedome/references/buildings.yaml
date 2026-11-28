@@ -1,0 +1,255 @@
+# Identidades OSM; seleção inicial por proximidade e tamanho aparente, não inspeção visual.
+# null significa desconhecido. As notas do dono prevalecem sobre defaults procedurais.
+buildings:
+  - osm_id: 149406360
+    descricao: "Igreja de Pedome"
+    zona: igreja
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 191503827
+    descricao: "Salão paroquial de Pedome"
+    zona: igreja
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223203904
+    descricao: null
+    zona: igreja
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223180287
+    descricao: "Residência de Pedome"
+    zona: igreja
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223184527
+    descricao: null
+    zona: igreja
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223180380
+    descricao: null
+    zona: igreja
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223180375
+    descricao: null
+    zona: igreja
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223180282
+    descricao: "Capela Mortuária de Pedome"
+    zona: igreja
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223180401
+    descricao: null
+    zona: igreja
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223180292
+    descricao: null
+    zona: igreja
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223180342
+    descricao: null
+    zona: igreja
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223586227
+    descricao: null
+    zona: rua_das_boucas
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223586400
+    descricao: null
+    zona: rua_das_boucas
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223586224
+    descricao: null
+    zona: rua_das_boucas
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223586249
+    descricao: null
+    zona: rua_das_boucas
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223586331
+    descricao: null
+    zona: rua_das_boucas
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223586321
+    descricao: null
+    zona: rua_das_boucas
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223586464
+    descricao: null
+    zona: rua_das_boucas
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223586251
+    descricao: null
+    zona: rua_das_boucas
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223586389
+    descricao: null
+    zona: rua_das_boucas
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null
+  - osm_id: 223586222
+    descricao: null
+    zona: rua_das_boucas
+    cor_fachada: null
+    material: null
+    pisos: null
+    tipo_telhado: null
+    varandas: null
+    portoes_muros: null
+    fonte_referencia: null
+    notas: null
+    notas_dono: null

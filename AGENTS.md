@@ -54,3 +54,6 @@ Abrir http://localhost:8080/?webgl. Python 3.12.10, Node 22.16.0/npm 10.9.2, Git
 
 ## Idioma
 Documentação em português (PT-PT). Identificadores de código em inglês.
+
+## Referências fotográficas — regra obrigatória
+Proibido descarregar, guardar ou processar imagens Google (Street View, Earth, Maps). Usar apenas fotos próprias autorizadas, Mapillary/KartaView/Mapilio com licença verificada e Wikimedia Commons com licença individual. Derivados CC BY-SA 4.0 isolados e creditados no ecrã do jogo; ver data/pedome/references/README.md. Notas do dono prevalecem sobre defaults procedurais, não sobre evidência métrica sem revisão. Nunca expor tokens, EXIF sensível, rostos ou matrículas desnecessários.
