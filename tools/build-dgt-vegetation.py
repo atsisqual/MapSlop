@@ -80,8 +80,8 @@ def candidates(high,count,x0,z0,blocked,cos):
         if len(unique)!=1:
             rejected["missing_or_ambiguous_cos"]+=1;continue
         code=unique.pop()
-        if code.startswith(("1.5.","9.")):
-            rejected["cos_road_or_water"]+=1;continue
+        if code.startswith("9."):
+            rejected["cos_water"]+=1;continue
         # Spatial nonmaximum suppression, deterministic and independent of tile order.
         if any((a,bb) in seen for a in range(r-3,r+4) for bb in range(c-3,c+4) if (a-r)**2+(bb-c)**2<=9):
             rejected["nearer_higher_peak"]+=1;continue
