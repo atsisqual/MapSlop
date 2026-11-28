@@ -210,7 +210,7 @@ import { rendererOptions,installRenderDiagnostics,improveDepth } from './pedome-
 const status=document.querySelector('#status');
 try {
  const renderer=new THREE.WebGPURenderer(rendererOptions());
- renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); renderer.setSize(innerWidth,innerHeight); document.body.append(renderer.domElement); await renderer.init();const renderDiagnostics=installRenderDiagnostics(renderer);
+ renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); renderer.setSize(innerWidth,innerHeight); document.body.append(renderer.domElement); await renderer.init();const renderDiagnostics=await installRenderDiagnostics(renderer);
  const scene=new THREE.Scene(); scene.background=new THREE.Color(0xb8d4ef); scene.fog=new THREE.Fog(0xb8d4ef,350,1100);
  scene.add(new THREE.HemisphereLight(0xffffff,0x77805d,2.2)); const sun=new THREE.DirectionalLight(0xfff0d8,2.4); sun.position.set(90,140,50); scene.add(sun);
  scene.add(buildGround(renderer)); scene.add(await buildBuildings()); const bridges=buildBridges(); scene.add(bridges);
