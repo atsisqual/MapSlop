@@ -26,6 +26,20 @@ def main():
     p=argparse.ArgumentParser();p.add_argument("output",type=Path);p.add_argument("--lock",type=Path);a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
     report={"provider":"Poly Haven","license":"CC0-1.0","license_url":"https://polyhaven.com/license","api_terms":"https://polyhaven.com/our-api","assets":{}}
     lock=json.loads(a.lock.read_text()) if a.lock else None
+    if lock:
+        if lock["provider"]!="Poly Haven" or lock["license"]!="CC0-1.0":raise ValueError("Unapproved lock")
+        for role,asset in ASSETS.items():
+            e=lock["assets"][role]
+            if e["asset"]!=asset or set(e["maps"])!=set(MAPS):raise ValueError("Unexpected lock entry")
+            for key,m in e["maps"].items():
+                if m["file"]!=role+"-"+key+".jpg":raise ValueError("Unexpected filename")
+                raw=get(m["url"],4_000_000)
+                if len(raw)!=m["bytes"] or sha(raw)!=m["sha256"] or hashlib.md5(raw).hexdigest()!=m["provider_md5"]:raise ValueError("Locked material hash mismatch")
+                im=Image.open(io.BytesIO(raw));im.load()
+                if im.format!="JPEG" or im.size!=(1024,1024):raise ValueError("Unexpected locked texture")
+                (a.output/m["file"]).write_bytes(raw)
+        for name in ("manifest.json","materials.lock.json"):(a.output/name).write_text(json.dumps(lock,indent=2)+"\n")
+        print("PBR_LOCKED",json.dumps(lock));return
     for role,asset in ASSETS.items():
         files=get("https://api.polyhaven.com/files/"+asset,2_000_000);info=get("https://api.polyhaven.com/info/"+asset,2_000_000)
         (a.output/(asset+"-files.json")).write_bytes(files);(a.output/(asset+"-info.json")).write_bytes(info)
@@ -33,9 +47,6 @@ def main():
         entry={"asset":asset,"url":"https://polyhaven.com/a/"+asset,"authors":meta.get("authors",{}),"dimensions":meta.get("dimensions"),"metadata_sha256":sha(info),"files_sha256":sha(files),"maps":{}}
         for key,kind in MAPS.items():
             d=map_entry(data,kind);raw=get(d["url"],4_000_000)
-            if lock:
-                old=lock["assets"][role]["maps"][key]
-                if old["url"]!=d["url"] or old["sha256"]!=sha(raw):raise ValueError("Material lock mismatch")
             if len(raw)!=d["size"] or hashlib.md5(raw).hexdigest()!=d["md5"]:raise ValueError("Provider checksum/size mismatch")
             im=Image.open(io.BytesIO(raw));im.load()
             if im.format!="JPEG" or im.size!=(1024,1024):raise ValueError("Unexpected texture format or dimensions")
