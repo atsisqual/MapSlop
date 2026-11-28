@@ -6,6 +6,9 @@ on:
       - 'tools/asset-pipeline.py'
       - 'tools/texture-atlas.py'
       - 'tests/earth3d-offline.cjs'
+      - 'tests/lexsong-offline.py'
+      - 'tests/flyover-math_test.go'
+      - 'tools/blender-addon-qa.py'
       - 'tools/inpaint-local.py'
       - 'tools/reconstruct-photos.py'
       - 'tools/renderdoc-*'
@@ -189,7 +192,7 @@ jobs:
           name: toolchain-lama-fixture
           path: /tmp/inpaint/
   renderdoc:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -200,14 +203,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y renderdoccmd python3-renderdoc libsdl2-dev libgl-dev libgl1-mesa-dri xvfb xauth
           dpkg-query -W renderdoccmd python3-renderdoc
-          curl --fail --location --retry 3 https://raw.githubusercontent.com/baldurk/renderdoc/v1.31/renderdoc/api/app/renderdoc_app.h -o /tmp/renderdoc_app.h
+          curl --fail --location --retry 3 https://raw.githubusercontent.com/baldurk/renderdoc/v1.18/renderdoc/api/app/renderdoc_app.h -o /tmp/renderdoc_app.h
           sha256sum /tmp/renderdoc_app.h
           cc tools/renderdoc-fixture.c -I/tmp -lSDL2 -lGL -ldl -o /tmp/render-fixture
       - name: Capture owned synthetic draw and replay with actual bindings
         run: |
           set -euo pipefail
           mkdir /tmp/render-evidence
-          lib=$(find /usr/lib -name librenderdoc.so -print -quit)
+          lib=$(find /usr/lib -name 'librenderdoc.so*' -type f -print -quit)
           test -n "$lib"
           xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 LD_PRELOAD="$lib" /tmp/render-fixture /tmp/render-evidence/frame
           cap=$(find /tmp/render-evidence -name '*.rdc' -print -quit)
@@ -242,7 +245,7 @@ jobs:
           git -C /tmp/earth3d checkout --detach FETCH_HEAD
           mkdir /tmp/earth3d-tools
           npm install --prefix /tmp/earth3d-tools --save-exact typescript@4.9.5
-          /tmp/earth3d-tools/node_modules/.bin/tsc /tmp/earth3d/src/node/decoder/LatLonBox.ts --module commonjs --target es2020 --outDir /tmp/earth3d-qa
+          /tmp/earth3d-tools/node_modules/.bin/tsc /tmp/earth3d/src/node/decoder/LatLonBox.ts /tmp/earth3d/src/node/decoder/MeshDecoder.ts /tmp/earth3d/src/node/decoder/BufferGeometryUtils.ts --module commonjs --target es2020 --outDir /tmp/earth3d-qa
           # Only pure geometry; never instantiate network NodeManager or query any map endpoint.
           node tests/earth3d-offline.cjs /tmp/earth3d-qa/LatLonBox.js | tee /tmp/earth3d-qa/test.json
       - uses: actions/upload-artifact@v4
@@ -250,3 +253,72 @@ jobs:
         with:
           name: toolchain-earth3d-offline
           path: /tmp/earth3d-qa/test.json
+
+  related-offline-math:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.12'
+          cache: false
+      - name: Test pinned LexSong and Flyover pure geometry offline
+        run: |
+          set -euo pipefail
+          git init /tmp/lexsong
+          git -C /tmp/lexsong remote add origin https://github.com/LexSong/earth-reverse-engineering-utils.git
+          git -C /tmp/lexsong fetch --depth 1 origin cd5c4d66760d44d1388ee9634a8d3a35876b284c
+          git -C /tmp/lexsong checkout --detach FETCH_HEAD
+          python tests/lexsong-offline.py /tmp/lexsong | tee /tmp/lexsong-test.json
+          git init /tmp/flyover
+          git -C /tmp/flyover remote add origin https://github.com/retroplasma/flyover-reverse-engineering.git
+          git -C /tmp/flyover fetch --depth 1 origin ce5f9c6fa873e65709c31c604b8296e35da1db85
+          git -C /tmp/flyover checkout --detach FETCH_HEAD
+          mkdir /tmp/flyover-qa
+          cp /tmp/flyover/pkg/mth/mth.go tests/flyover-math_test.go /tmp/flyover-qa/
+          (cd /tmp/flyover-qa; GO111MODULE=off GOPROXY=off go test -v -json .) | tee /tmp/flyover-test.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: toolchain-related-offline-math
+          path: |
+            /tmp/lexsong-test.json
+            /tmp/flyover-test.json
+  blender-addons:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install exact Blender LTS and pin addon source checkouts
+        run: |
+          set -euo pipefail
+          base=https://download.blender.org/release/Blender4.2
+          name=blender-4.2.0-linux-x64.tar.xz
+          cd /tmp
+          curl -fL --retry 3 "$base/$name" -o "$name"
+          curl -fL --retry 3 "$base/blender-4.2.0.sha256" -o blender.sha256
+          grep -E "^[0-9a-f]{64} [ *]$name$" blender.sha256 | sha256sum -c -
+          tar -xf "$name"
+          git init /tmp/BlenderGIS
+          git -C /tmp/BlenderGIS remote add origin https://github.com/domlysz/BlenderGIS.git
+          git -C /tmp/BlenderGIS fetch --depth 1 origin 2add45ffec547f419cc77563a7fe976fd6c8f0c4
+          git -C /tmp/BlenderGIS checkout --detach FETCH_HEAD
+          git init /tmp/mmi
+          git -C /tmp/mmi remote add origin https://github.com/eliemichel/MapsModelsImporter.git
+          git -C /tmp/mmi fetch --depth 1 origin 70fca735bd42b1785356622a07e13c2604ff9af1
+          git -C /tmp/mmi checkout --detach FETCH_HEAD
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libxi6 libxrender1 libxxf86vm1 libgl1 libxfixes3
+      - name: Actual addon registration and BlenderGIS CRS roundtrip (no web services)
+        run: |
+          /tmp/blender-4.2.0-linux-x64/blender --background --factory-startup --python-exit-code 1 --python tools/blender-addon-qa.py -- /tmp/BlenderGIS /tmp/mmi/blender/MapsModelsImporter /tmp/blender-addons.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: toolchain-blender-addons
+          path: /tmp/blender-addons.json
