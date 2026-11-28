@@ -83,6 +83,12 @@ if "pedome-traffic.yml" in workflows:
     callers=[name for name,workflow in workflows.items() for job in workflow.get("jobs",{}).values() if job.get("uses")=="./.github/workflows/pedome-traffic.yml"]
     if callers!=["pedome-terrain.yml"] or set(workflows["pedome-terrain.yml"]["on"])!={"workflow_dispatch"}:
         errors.append("Traffic validation must use registered manual launcher")
+if "pedome-orthophoto.yml" in workflows:
+    if set(workflows["pedome-orthophoto.yml"]["on"]) != {"workflow_call"}:
+        errors.append("Orthophoto workflow must be callable only")
+    callers=[name for name,workflow in workflows.items() for job in workflow.get("jobs",{}).values() if job.get("uses")=="./.github/workflows/pedome-orthophoto.yml"]
+    if callers!=["pedome-terrain.yml"] or set(workflows["pedome-terrain.yml"]["on"])!={"workflow_dispatch"}:
+        errors.append("Orthophoto must use registered manual launcher")
 if any(n.startswith("dgt-") for n in workflows):
     errors.append("Duplicated DGT workflows")
 if workflows["pages.yml"]["on"]["push"]["branches"] != ["main"]:
