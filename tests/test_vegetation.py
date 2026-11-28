@@ -55,6 +55,19 @@ class VegetationTests(unittest.TestCase):
         trees,_,cells=v.candidates(self.h,self.n,0,0,box(20,20,21,21),cos())
         self.assertEqual((trees,cells),([],0))
 
+    def test_measured_subcell_peaks_and_tie_order(self):
+        high=np.zeros(2,dtype=np.float32);x=np.full(2,np.inf);z=x.copy()
+        idx=np.array([0,0,1,0]);dh=np.array([8,8,7,6]);xx=np.array([.8,.2,1.7,.1]);zz=np.array([.1,.9,.4,.1])
+        for i in (np.arange(4),np.arange(3,-1,-1)):
+            high[:]=0;x[:]=np.inf;z[:]=np.inf
+            for j in i:v.accumulate_peaks(high,x,z,idx[j:j+1],dh[j:j+1],xx[j:j+1],zz[j:j+1])
+            np.testing.assert_allclose(high,[8,7]);np.testing.assert_allclose(x,[.2,1.7]);np.testing.assert_allclose(z,[.9,.4])
+        px=np.full(self.h.shape,np.inf);pz=px.copy();px[4,4]=4.17;pz[4,4]=4.81
+        trees,_,_=v.candidates(self.h,self.n,0,0,box(20,20,21,21),cos(),px,pz)
+        self.assertEqual((trees[0]["x"],trees[0]["z"]),(4.17,4.81))
+        trees,rej,_=v.candidates(self.h,self.n,0,0,box(3.8,4.7,4,5),cos(),px,pz)
+        self.assertEqual(trees,[]);self.assertEqual(rej["road_or_building_trunk_overlap"],1)
+
     def test_plateau_suppression(self):
         self.h[4,5]=8
         self.n[4,5]=3
