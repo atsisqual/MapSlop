@@ -294,16 +294,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Install exact Blender LTS and pin addon source checkouts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.9'
+      - name: Install pinned official Blender Python wheel and addon source checkouts
         run: |
           set -euo pipefail
-          base=https://download.blender.org/release/Blender4.2
-          name=blender-4.2.0-linux-x64.tar.xz
-          cd /tmp
-          curl -fL --retry 3 "$base/$name" -o "$name"
-          curl -fL --retry 3 "$base/blender-4.2.0.sha256" -o blender.sha256
-          grep -E "^[0-9a-f]{64} [ *]$name$" blender.sha256 | sha256sum -c -
-          tar -xf "$name"
+          python -m pip install bpy==4.2.0
+          python -c 'import bpy; print(bpy.app.version_string); assert bpy.app.version >= (4,2,0)'
           git init /tmp/BlenderGIS
           git -C /tmp/BlenderGIS remote add origin https://github.com/domlysz/BlenderGIS.git
           git -C /tmp/BlenderGIS fetch --depth 1 origin 2add45ffec547f419cc77563a7fe976fd6c8f0c4
@@ -316,7 +314,7 @@ jobs:
           sudo apt-get install --no-install-recommends -y libxi6 libxrender1 libxxf86vm1 libgl1 libxfixes3
       - name: Actual addon registration and BlenderGIS CRS roundtrip (no web services)
         run: |
-          /tmp/blender-4.2.0-linux-x64/blender --background --factory-startup --python-exit-code 1 --python tools/blender-addon-qa.py -- /tmp/BlenderGIS /tmp/mmi/blender/MapsModelsImporter /tmp/blender-addons.json
+          python tools/blender-addon-qa.py -- /tmp/BlenderGIS /tmp/mmi/blender/MapsModelsImporter /tmp/blender-addons.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
