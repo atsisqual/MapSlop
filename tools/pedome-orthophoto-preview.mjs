@@ -13,7 +13,9 @@ export async function installOrthophoto(scene,ground,renderer){
  const manifest=await res.json();
  if(manifest.schema!==1||manifest.tiles.length!==manifest.cols*manifest.rows)throw Error('Invalid orthophoto manifest');
  for(const tile of manifest.tiles)for(const l of levels){
-  if(!isPOT(tile.levels[l]?.px))throw Error('Non-POT tile in manifest: '+tile.i+','+tile.j+' '+l);
+  const d=tile.levels[l];
+  if(!isPOT(d?.px))throw Error('Non-POT tile in manifest: '+tile.i+','+tile.j+' '+l);
+  if(Math.abs(d.metres_per_pixel-(manifest.tile_m+2*manifest.gutter_m)/d.px)>1e-10||d.mip_levels!==1+Math.log2(d.px))throw Error('Invalid POT sampling metadata: '+d.path);
  }
  const geom=ground.geometry;
  const partition=partitionTin(geom.attributes.position.array,geom.attributes.normal.array,geom.index.array,manifest);
