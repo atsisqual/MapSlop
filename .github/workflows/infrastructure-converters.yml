@@ -4,6 +4,9 @@ on:
     branches: [main]
     paths:
       - 'tools/osm-json-to-xml.py'
+      - 'tools/blender-infrastructure.py'
+      - 'tools/3dfier-infrastructure.py'
+      - 'tools/gis-infrastructure.py'
       - 'tools/convert-infrastructure.py'
       - 'tools/ifc-to-glb.py'
       - 'tools/generate-infrastructure-fixture.py'
@@ -29,9 +32,8 @@ jobs:
           python tools/osm-json-to-xml.py data/pedome/pedome-osm.json /tmp/osm-roads --bounds -8.395 41.4105 -8.383 41.4195 --mode roads
       - name: Real SUMO network and OpenDRIVE conversion
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y sumo
-          dpkg-query -W sumo
+          python -m pip install eclipse-sumo==1.28.0
+          python -m pip freeze > /tmp/sumo-lock.txt
           netconvert --version
           python tools/convert-infrastructure.py sumo /tmp/osm-roads/map.osm /tmp/sumo --input-sha256 "$(sha256sum /tmp/osm-roads/map.osm | cut -d' ' -f1)"
       - uses: actions/upload-artifact@v4
@@ -118,3 +120,90 @@ jobs:
             /tmp/fixture/
             /tmp/ifc/
             /tmp/cj/
+
+  blender-roads:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [mosaiq, junction]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.9'
+      - name: Install exact Blender Python and pinned add-on
+        run: |
+          python -m pip install bpy==4.4.0 osmium==4.3.2 numpy==1.26.4
+          python -m pip freeze > /tmp/blender-roads-lock.txt
+          if [ "${{ matrix.backend }}" = mosaiq ]; then
+            addon=/tmp/mosaiq_osm_vr
+            repo=https://github.com/TUMFTM/MOSAIQ-OpenStreetMap-to-Blender-Add-On.git
+            commit=f73d030aecd3289007472a887d78aae2e74b6ea0
+          else
+            addon=/tmp/osm_highway_junction
+            repo=https://github.com/p-schulz/osm_highway_junction.git
+            commit=c1381679da46c9e4700876c7840fa54a6c7f038b
+          fi
+          git init "$addon"
+          git -C "$addon" remote add origin "$repo"
+          git -C "$addon" fetch --depth 1 origin "$commit"
+          git -C "$addon" checkout --detach FETCH_HEAD
+          echo "ADDON=$addon" >> "$GITHUB_ENV"
+      - name: Generate actual road geometry in bounded Pedome area
+        run: |
+          python tools/osm-json-to-xml.py data/pedome/pedome-osm.json /tmp/osm-church --bounds -8.391 41.413 -8.386 41.417
+          python tools/blender-infrastructure.py "${{ matrix.backend }}" "$ADDON" /tmp/osm-church/map.osm /tmp/road-candidate --bounds -8.391 41.413 -8.386 41.417 --input-sha256 "$(sha256sum /tmp/osm-church/map.osm | cut -d' ' -f1)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: infrastructure-blender-${{ matrix.backend }}
+          path: |
+            /tmp/blender-roads-lock.txt
+            /tmp/road-candidate/report.json
+  gis-conversion:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install GDAL and run real SHP/GPKG/DXF roundtrip
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y python3-gdal gdal-bin
+          /usr/bin/python3 tools/gis-infrastructure.py --fixture /tmp/gis-test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: infrastructure-gis-evidence
+          path: /tmp/gis-test/report.json
+  lidar-3dfier:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Generate a synthetic classified road and wall point cloud
+        run: |
+          python -m pip install numpy==1.26.4 laspy==2.6.1 pyproj==3.7.2
+          python tools/3dfier-infrastructure.py fixture /tmp/lift-input
+      - name: Resolve official container and execute without network
+        run: |
+          docker pull tudelft3d/3dfier:latest
+          image=$(docker image inspect --format '{{index .RepoDigests 0}}' tudelft3d/3dfier:latest)
+          python tools/3dfier-infrastructure.py run /tmp/lift-input /tmp/lift-output --image "$image"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: infrastructure-3dfier-evidence
+          path: |
+            /tmp/lift-input/manifest.json
+            /tmp/lift-output/
