@@ -159,7 +159,12 @@ def main():
         if code.startswith(("5","6")):
             forest.append(transform(lambda lon,lat,h=None:to_world(np.asarray(lon),np.asarray(lat)),geomshape(feature["geometry"])))
     forest_mask=raster(forest,coarse,cx,cz,.5)
-    protected=up(veg|building|roofs|forest_mask)
+    # Also protect the rendered crown footprint of every tree in the approved runtime.
+    trees,_=json.JSONDecoder().raw_decode((a.runtime/"js/pedome-trees.mjs").read_text().split("export const trees=",1)[1])
+    if len(trees)!=5702:raise ValueError("Unexpected approved tree inventory")
+    tree_polys=[sh.Point(t["x"],t["z"]).buffer(float(t["crown_radius_proxy_m"])*1.25+.35,quad_segs=8) for t in trees]
+    tree_mask=raster(tree_polys,coarse,cx,cz,.5)
+    protected=up(veg|building|roofs|forest_mask|tree_mask)
     paved=up(road|parking)
     yy,xx=np.ogrid[:shape[0],:shape[1]]
     church_zone=((cx+(xx+.5)*.25)**2+(cz+(yy+.5)*.25)**2)<=60**2
