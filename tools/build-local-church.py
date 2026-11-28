@@ -251,7 +251,7 @@ def main():
     rmse=float(np.sqrt(np.mean(err**2)))
     roofs,walls,dist,area,height,regions=mesh_planar(p,samples,ground)
     details,facade_report=facade(p,ground,height,config)
-    pbr,material_manifest=(synthetic_pbr(),{"source":"synthetic fixture only"}) if a.fixture else (load_pbr(a.materials) if a.materials else ({},None))
+    pbr,material_manifest=load_pbr(a.materials) if a.materials else ((synthetic_pbr(),{"source":"synthetic fixture only"}) if a.fixture else ({},None))
     out=a.output/"church.glb";glb(out,roofs,walls,texture,uv,details,config,pbr)
     # Compare exact geometry bytes and roof image against an untextured-facade baseline.
     baseline=a.output/"geometry-control.glb";glb(baseline,roofs,walls,texture,uv,details,config)
